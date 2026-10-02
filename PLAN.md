@@ -276,7 +276,7 @@ Made by the owner on 2026-10-02 unless marked as a default.
 
 One install runs at a time; others wait in a queue the user can see and edit.
 
-1. **Refuse early.** Not a ZIP; the app is withdrawn; its file doesn't verify
+1. **Refuse early.** Not a ZIP; its file doesn't verify
    against the signed catalog; the download address isn't on GitHub (D20);
    already installed outside the store; the target location is missing or
    read-only; not enough free space for the download itself; no elevation.
