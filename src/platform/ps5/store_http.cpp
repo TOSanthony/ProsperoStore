@@ -38,6 +38,19 @@ extern "C"
 
 namespace store::net
 {
+namespace
+{
+std::string system_roots;
+}
+int prepare_system_trust()
+{
+    const int ssl = sceSslInit(2 * 1024 * 1024);
+    if (ssl < 0)
+        return ssl;
+    const int result = https_trust::read_builtin_roots(ssl, system_roots);
+    const int released = sceSslTerm(ssl);
+    return result < 0 ? result : released;
+}
 void Control::cancel()
 {
     cancelled.store(true);
@@ -81,7 +94,7 @@ Response request_once(const std::string &url, std::uint64_t limit, const Sink &s
         result = resources.http = sceHttpInit(resources.pool, resources.ssl, 4 * 1024 * 1024);
     if (result >= 0)
     {
-        result = https_trust::load_builtin_roots(resources.ssl, resources.http);
+        result = https_trust::load_pem_roots(resources.http, system_roots);
         if (result < 0)
             out.error = "The system certificate store could not be loaded";
     }

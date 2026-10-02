@@ -59,6 +59,8 @@ int main()
 {
     using namespace hui;
     sys::log("[STORE] PPSA99000 startup");
+    const int trust = store::net::prepare_system_trust();
+    sys::log("[STORE] system trust snapshot rc=0x%08x", static_cast<unsigned>(trust));
 #ifdef STORE_SANDBOX_CONTROL
     const auto elevation_status = elevation::Status::unavailable;
 #else

@@ -27,7 +27,7 @@ extern "C" int sceSslFreeCaCerts(int ssl_context, BuiltinRoots *roots);
 } // namespace
 namespace https_trust
 {
-int load_builtin_roots(int ssl_context, int http_context)
+int read_builtin_roots(int ssl_context, std::string &out)
 {
     BuiltinRoots roots{};
     const int queried = sceSslGetCaCerts(ssl_context, &roots);
@@ -71,7 +71,14 @@ int load_builtin_roots(int ssl_context, int http_context)
     const int freed = sceSslFreeCaCerts(ssl_context, &roots);
     if (!valid || freed < 0)
         return freed < 0 ? freed : -1;
-    return load_pem_roots(http_context, pem);
+    out = std::move(pem);
+    return 0;
+}
+int load_builtin_roots(int ssl_context, int http_context)
+{
+    std::string pem;
+    const int result = read_builtin_roots(ssl_context, pem);
+    return result < 0 ? result : load_pem_roots(http_context, pem);
 }
 int load_pem_roots(int http_context, std::string_view pem)
 {

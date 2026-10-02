@@ -12,6 +12,8 @@
 
 namespace store::net
 {
+// Console startup only: snapshot system trust before elevation and workers.
+int prepare_system_trust();
 enum class Purpose
 {
     catalog,
