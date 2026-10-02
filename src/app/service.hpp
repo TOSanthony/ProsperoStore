@@ -32,6 +32,7 @@ class Service
     void stop();
     bool take(std::vector<Update> &updates);
     bool request_detail(const std::string &id);
+    void report_frames(std::string report);
 
   private:
     static void *entry(void *self);
@@ -44,5 +45,6 @@ class Service
     std::mutex mutex_;
     std::vector<Update> updates_;
     std::string detail_;
+    std::string frame_report_;
 };
 } // namespace store

@@ -162,7 +162,7 @@ int main()
         {
             char report[256]{};
             stats.format(report, sizeof(report));
-            sys::log("[STORE] %s", report);
+            service.report_frames(report);
             stats.reset();
         }
     }

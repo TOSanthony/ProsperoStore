@@ -50,6 +50,12 @@ void Service::publish(Update update)
         updates_.erase(updates_.begin());
     updates_.push_back(std::move(update));
 }
+void Service::report_frames(std::string report)
+{
+    std::unique_lock lock(mutex_, std::try_to_lock);
+    if (lock.owns_lock())
+        frame_report_ = std::move(report);
+}
 void *Service::entry(void *self)
 {
     static_cast<Service *>(self)->run();
@@ -83,6 +89,7 @@ void Service::run()
             refreshed = true;
             break;
         }
+        hui::sys::log("[STORE] catalog attempt=%u error=%s", attempt + 1, error.c_str());
         if (attempt < 3)
             for (unsigned tick = 0; tick < (10U << attempt) && !control_.cancelled.load(); ++tick)
                 hui::sys::sleep_us(100000);
@@ -102,10 +109,14 @@ void Service::run()
     while (!control_.cancelled.load())
     {
         std::string id;
+        std::string frame_report;
         {
             std::lock_guard lock(mutex_);
             id.swap(detail_);
+            frame_report.swap(frame_report_);
         }
+        if (!frame_report.empty())
+            hui::sys::log("[STORE] %s", frame_report.c_str());
         if (!id.empty())
         {
             Update result;

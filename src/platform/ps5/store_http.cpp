@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "net/http.hpp"
+#include "platform/ps5/system.hpp"
 #include <algorithm>
 #include <vector>
 
@@ -147,6 +148,12 @@ Response request_once(const std::string &url, std::uint64_t limit, const Sink &s
         out.error = "Cancelled";
     else if (result < 0)
         out.error = "The network request failed";
+    hui::sys::log("[STORE] http rc=0x%x status=%d bytes=%llu pool=%d ssl=%d http=%d tmpl=%d "
+                  "conn=%d req=%d headers=%zu error=%s",
+                  static_cast<unsigned>(result), out.status,
+                  static_cast<unsigned long long>(out.bytes), resources.pool, resources.ssl,
+                  resources.http, resources.tmpl, resources.connection, resources.request, size,
+                  out.error.c_str());
     return out;
 }
 } // namespace store::net
