@@ -20,6 +20,7 @@ parser.add_argument("--protocol", type=Path, required=True)
 parser.add_argument("--ui-tools", type=Path, required=True)
 parser.add_argument("--results", type=Path, required=True)
 parser.add_argument("--close-prior", help="Exact previously identified title to close before the case")
+parser.add_argument("--sandbox-control", action="store_true")
 args = parser.parse_args()
 root = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("console_tour", args.ui_tools / "console-tour.py")
@@ -54,6 +55,8 @@ logger = None
 console = None
 result = {"classification": "no-run", "title": title, "commit": commit}
 remote = "/data/homebrew/" + title
+log_root = (f"/mnt/sandbox/{title}_000/download0/prosperostore/logs"
+            if args.sandbox_control else "/data/prosperostore/logs")
 try:
     if not all(transport.port_open(args.host, port) for port in (2121, 3232, 9021)):
         raise RuntimeError("Required console services are unavailable")
@@ -115,10 +118,9 @@ try:
     for _ in range(12):
         time.sleep(5)
         console = transport.Console(args.host, 2121, raw_self=True)
-        log = console.read("/data/prosperostore/logs/app.log") or console.read(
-            f"/mnt/sandbox/{title}_000/download0/prosperostore/logs/app.log") or log
+        log = console.read(log_root + "/app.log") or log
         (args.results / "app.log").write_bytes(log)
-        crash = console.read("/data/prosperostore/logs/crash-latest.txt")
+        crash = console.read(log_root + "/crash-latest.txt")
         if crash:
             (args.results / "crash.txt").write_bytes(crash)
         console.close()
@@ -131,7 +133,7 @@ try:
     closed = False
     for _ in range(12):
         time.sleep(5)
-        current = console.read("/data/prosperostore/logs/app.log")
+        current = console.read(log_root + "/app.log")
         if current:
             log = current
             (args.results / "app.log").write_bytes(log)

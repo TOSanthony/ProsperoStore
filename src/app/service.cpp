@@ -63,6 +63,14 @@ void *Service::entry(void *self)
 }
 void Service::run()
 {
+#ifdef STORE_SANDBOX_CONTROL
+    std::string probe_body;
+    const auto probe =
+        net::fetch("https://homebrew.page/api/v1/manifest.json", net::Purpose::catalog,
+                   catalog::kVersionsLimit, probe_body, control_);
+    hui::sys::log("[STORE] sandbox TLS control status=%d bytes=%zu error=%s", probe.status,
+                  probe_body.size(), probe.error.c_str());
+#endif
     if (!hui::save::ensure_directory(root_))
     {
         Update failure;

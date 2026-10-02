@@ -6,6 +6,7 @@
 #include "core/save_file.hpp"
 #include <fcntl.h>
 #include <cerrno>
+#include <cstdio>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -108,6 +109,8 @@ bool Client::refresh(Snapshot &out, net::Control &control, std::string &error)
     const int trust_exists = ::lstat(trust_path.c_str(), &trust_stat);
     if (trust_exists != 0 && errno != ENOENT)
     {
+        std::fprintf(stderr, "[STORE] trust stat rc=%d errno=%d path=%s\n", trust_exists, errno,
+                     trust_path.c_str());
         error = "The saved catalog trust record is inaccessible";
         return false;
     }
