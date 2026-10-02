@@ -1,6 +1,6 @@
 # ProsperoStore: implementation plan
 
-Draft 3, 2026-10-02. Title ID **PPSA99000** (reserved in the catalog).
+Draft 4, 2026-10-02. Title ID **PPSA99000** (reserved in the catalog).
 
 ProsperoStore is a native PS5 app store for the homebrew catalog at
 [homebrew.page](https://homebrew.page). With the controller, from the couch,
@@ -16,11 +16,22 @@ no install that can leave the console in a broken state.
 code. Everything it reads from the network is treated as hostile until
 verified, and the catalog it trusts is signed.
 
-It is built on `ps5-native-app-boilerplate` and `ps5-opengl` (OpenGL 4.6 Core,
-SDK 1.0.0), with the interface taken from `ps5-homebrew-ui` (Homebrew UI Lab:
-its component library and its `store` design). The catalog side is the store
-API specified in the catalog repository's `docs/api.md`. Console work follows
-`ps5-agent-runbook`.
+It is built on top of two of our own repositories, and on nothing that
+duplicates them:
+
+- **[ps5-native-app-boilerplate](https://github.com/blackbearreloaded/ps5-native-app-boilerplate)**, the native app template: build,
+  packaging, runtime, lint and tests, the sandbox elevation and the update
+  check.
+- **[ps5-homebrew-ui](https://github.com/blackbearreloaded/ps5-homebrew-ui)** (Homebrew UI Lab, private), the UI library: its
+  renderer, component library, themes, sound and its `store` design.
+
+Rendering is [ps5-opengl](https://github.com/blackbearreloaded/ps5-opengl) (OpenGL 4.6 Core, SDK 1.0.0). The catalog side
+is the store API specified in the
+[catalog repository](https://github.com/blackbearreloaded/ps5-homebrew-catalog)'s `docs/api.md`. Console work follows the
+[ps5-agent-runbook](https://github.com/blackbearreloaded/ps5-agent-runbook). [Foundations](#foundations) says how the store
+builds on the two repositories, and [The quality bar](#the-quality-bar) says
+what "extremely high quality" means here, in checks a milestone passes or
+fails.
 
 Every statement about the console below is marked with how well it is known:
 
@@ -41,6 +52,76 @@ Changes since draft 2: the signing key is a plain Ed25519 key held as a
 deployment secret of the catalog repository, with a spare kept offline (D18);
 and a recall is simply the removal of the app's record from the catalog, which
 the store detects from its own receipts, so no recall list is needed (D19).
+
+Changes since draft 3: the two foundations are linked and their rules written
+down, and the quality bar is stated as checks (D31, D32).
+
+---
+
+## Foundations
+
+The store is an app **built from the boilerplate** whose interface is **built
+from the UI library**. Both are ours, both have run on a console, and the store
+is their first demanding customer. The rules:
+
+### [ps5-native-app-boilerplate](https://github.com/blackbearreloaded/ps5-native-app-boilerplate)
+
+| The store takes from it | How |
+| --- | --- |
+| Project skeleton, build, packaging (`make`, the `.zip` release) | The repository is created from the template and keeps its `Makefile`, `tools/` and `tooling/` |
+| Lint, formatting, static analysis, host test setup, CI | Unchanged; the store's own code passes the same `make lint` and `make test` |
+| `sce_sys/` layout and versioning from `param.json` | As the template's README sets it; this is also what makes the store conformant with the catalog |
+| Sandbox elevation ([`docs/SANDBOX_ELEVATION.md`](https://github.com/blackbearreloaded/ps5-native-app-boilerplate/blob/main/docs/SANDBOX_ELEVATION.md)) | The example's client and helper, with the helper built for PPSA99000 |
+| Update check ([`docs/UPDATE_CHECK.md`](https://github.com/blackbearreloaded/ps5-native-app-boilerplate/blob/main/docs/UPDATE_CHECK.md)) | Its HTTPS transport is the starting point for the store's network layer; the store's own update notice uses it as it is |
+
+### [ps5-homebrew-ui](https://github.com/blackbearreloaded/ps5-homebrew-ui)
+
+| The store takes from it | How |
+| --- | --- |
+| Renderer, draw list, fonts, backdrops (`src/gfx`) | Taken as the kit, following its `docs/ADOPTING.md` |
+| Component library: grids, lists, tabs, dialogs, sheets, toasts, forms, progress (`src/ui/components`) | Every screen is assembled from components; see its `docs/COMPONENTS.md` |
+| Themes, motion, controller glyphs, sound sets, vibration (`src/ui`, `src/audio`) | One theme chosen for the store; nothing restyled by hand |
+| The `store` design (`src/concepts/store.cpp`) | The starting point for Browse and the app page |
+| The PC host renderer and the snapshot tools | Every screen is developed and photographed on the PC first |
+| The console tour and its remote requests | The model for the store's test mode (section 6.9) |
+| The craft rules (`docs/CRAFT.md`) | The checklist every screen passes before it is called done |
+
+### Rules for building on them
+
+1. **No copies that drift.** What the store takes is recorded with the commit
+   it was taken from, in one file, and updated as a whole. The store never
+   edits a taken file in place.
+2. **Missing pieces go upstream first.** A component, a fix or a capability the
+   store needs is added to the boilerplate or the UI library, tested there,
+   and then taken. The store is not where they are developed.
+3. **The store's own code is only what is specific to a store:** the catalog
+   client, the installer, the system layer and the screens.
+4. **Their checks are the store's checks.** The boilerplate's lint and tests and
+   the UI library's craft checklist and console validation apply unchanged.
+
+## The quality bar
+
+"AAA" is not a feeling the plan can test. This is what it means here. A
+milestone is done only when its work passes every line that applies; the
+numbers are defaults to confirm with the owner.
+
+| Area | The check | Measured by |
+| --- | --- | --- |
+| **Frame rate** | 4K, 60 frames per second on every screen: average frame at most 16.7 ms and no frame over 21 ms in steady use, with a full grid of icons, during a download, and while a dialog is open | The UI library's console validation, which its 21 designs already pass at 16.68 ms |
+| **Responsiveness** | The focus moves on the frame after the button press. The render thread never waits on the network or the disk | A test build that fails on any blocking call from the render thread |
+| **Start** | The first interactive screen within 2 seconds of the splash, showing the last catalog while the fresh one loads | Timed in the console tour |
+| **Every state is designed** | Each screen has its loading, empty, error, offline and read-only states, and each has a reviewed picture | PC snapshots of every state in section 5.9, kept with the code |
+| **Craft** | Every screen passes the UI library's `docs/CRAFT.md` checklist: safe area, text sizes, one visible focus, hint row, motion, sound, vibration | The checklist, per screen, in the milestone's review |
+| **Text** | Nothing clips or overlaps in any supported language, with the longest names and descriptions the catalog allows | Snapshots with worst-case strings |
+| **No broken installs** | At every instant an app's folder is the complete old version, the complete new one, or absent | Fault injection at every step of install, update and uninstall (section 6.4) |
+| **No crashes** | No crash, hang or forced close across the whole test matrix and a soak test | Host tests under sanitizers, fuzzing in CI, the console tour, and a soak run of hours with repeated installs of a test title |
+| **Hostile input** | Nothing read from the network can corrupt memory or escape its folder | Section 6.7, with fuzz targets as release blockers |
+| **Code** | Zero warnings with warnings as errors, clean static analysis, formatted, every module with host tests | The boilerplate's `make lint` and `make test` in CI |
+| **Honesty** | The interface never claims more than it knows: "unknown version", "not managed", "couldn't verify" are said plainly | Review of every message against sections 5.6 to 5.13 |
+| **Console proof** | Each hardware gate is passed on a console and recorded: build, what was seen, how the app ended | The runbook's evidence, kept per milestone |
+
+What the bar excludes: features added to look complete. A smaller store that
+passes every line is the goal; a larger one that misses lines is not.
 
 ---
 
@@ -89,13 +170,13 @@ the store detects from its own receipts, so no recall list is needed (D19).
 | Piece | Used for | State |
 | --- | --- | --- |
 | Store API, `https://homebrew.page/api/v1/` | Catalog data, versions, icons | Live. Specified in the catalog's `docs/api.md`; versioned (`schema` 3) and signed. |
-| `ps5-native-app-boilerplate` | Build, packaging, runtime, title layout | In use by every Prospero app. |
+| [`ps5-native-app-boilerplate`](https://github.com/blackbearreloaded/ps5-native-app-boilerplate) | Build, packaging, runtime, title layout (see [Foundations](#foundations)) | In use by every Prospero app. |
 | Sandbox elevation (`docs/SANDBOX_ELEVATION.md` in the boilerplate) | Reaching `/data` and the other install locations | Used by ProsperoEden. |
-| `ps5-opengl` SDK 1.0.0 | Rendering | Passed the OpenGL 4.6 conformance run. |
-| `ps5-homebrew-ui` | Components, themes, sound, the `store` design, the PC host renderer, the remote test requests | All 21 designs validated on a console at 4K, 16.68 ms average frame. |
+| [`ps5-opengl`](https://github.com/blackbearreloaded/ps5-opengl) SDK 1.0.0 | Rendering | Passed the OpenGL 4.6 conformance run. |
+| [`ps5-homebrew-ui`](https://github.com/blackbearreloaded/ps5-homebrew-ui) | Components, themes, sound, the `store` design, the PC host renderer, the remote test requests (see [Foundations](#foundations)) | All 21 designs validated on a console at 4K, 16.68 ms average frame. |
 | `sceHttp` / `sceSsl` / `sceNet` | HTTPS | **[proven]** in ProsperoTV, ProsperoRadio and ProsperoLichess, with certificate checks. |
 | ProsperoEden's crash report and clean exit | Diagnostics, and closing without a forced kill | **[proven]** on a console. |
-| ShadowMountPlus | Puts installed apps on the home screen | Its behaviour below is **[source]** (branch 1.7). |
+| [ShadowMountPlus](https://github.com/drakmor/ShadowMountPlus) | Puts installed apps on the home screen | Its behaviour below is **[source]** (branch 1.7). |
 
 ---
 
@@ -240,6 +321,8 @@ Made by the owner on 2026-10-02 unless marked as a default.
 | D28 | **Scripted test mode**: console runs are driven and closed by a script, never by a forced kill. |
 | D29 | **Update-check kit** for other apps, delivered in the boilerplate. |
 | D30 | **In-app notice**: the website's disclaimer, shown at first start and in About. |
+| D31 | **Built on our two repositories.** The store is created from `ps5-native-app-boilerplate` and its interface comes from `ps5-homebrew-ui`. Nothing they provide is reimplemented or forked; what is missing is added to them first (see Foundations). |
+| D32 | **Extremely high quality, as checks.** A milestone is done only when it passes the quality bar; scope is cut before quality is. |
 
 ---
 
@@ -569,8 +652,8 @@ removed last in an uninstall.
   settings, L1/R1 switch sections.
 - Motion, sound and vibration come from the kit's themes. Every wait has a
   visible state; nothing freezes the picture.
-- Budget: 16.67 ms per frame at 4K with a full grid on screen, measured the
-  way the kit's console validation measures it.
+- Frame time, responsiveness, designed states, craft and text all follow
+  [The quality bar](#the-quality-bar).
 
 ### 6.7 Security rules
 
@@ -687,11 +770,12 @@ remains from this section is one Prospero app adopting it.
 
 ## 9. Milestones
 
-Each ends with something that can be shown. Hardware gates are marked.
+Each ends with something that can be shown, and is done only when its work
+passes [The quality bar](#the-quality-bar). Hardware gates are marked.
 
 | # | Milestone | Done when |
 | --- | --- | --- |
-| M0 | Bootstrap | The repository builds an empty title for PPSA99000 from the boilerplate with the OpenGL SDK and the UI kit, on the console build and on the PC host. The log, the crash report and the test mode with a clean remote exit are in from the first build. |
+| M0 | Bootstrap | The repository is created from the boilerplate template and builds an empty title for PPSA99000 with the OpenGL SDK and the UI library taken as its `docs/ADOPTING.md` describes, on the console build and on the PC host; the file recording what was taken, and from which commits, exists. The log, the crash report and the test mode with a clean remote exit are in from the first build. |
 | M1 | **Gate: filesystem** | On a console, after elevation, the store creates, renames and deletes a test folder in `/data/homebrew`; reads ShadowMountPlus's configuration and lists the scanned locations; and, for each other location, reports its filesystem and whether a rename is a single step there. Read-only mode appears when elevation is refused. This decides which locations the first release offers. |
 | M2 | **Gate: network and trust** | On a console, the store fetches the signed catalog from homebrew.page with certificate checks and verifies it; refuses a tampered and an outdated copy; and downloads one real release from GitHub through the redirect with a correct SHA-256, refusing a redirect to another host. Resume is tried and recorded. If `sceHttp` can't, the curl fallback is built here. |
 | M3 | Catalog and browse | The full catalog scrolls at 60 frames per second with icons, sections, search and sort, from live data and from the offline cache. PC host first, then console. |
@@ -804,3 +888,15 @@ To be confirmed and listed in `THIRD_PARTY_NOTICES.md` when each is added.
 | Ed25519 signature check | A small audited implementation such as Monocypher or TweetNaCl |
 | QR codes | Project Nayuki's QR Code generator |
 | Icons (PNG decode) | stb_image |
+
+## Appendix D: Related repositories
+
+| Repository | Role |
+| --- | --- |
+| [ps5-native-app-boilerplate](https://github.com/blackbearreloaded/ps5-native-app-boilerplate) | The template the store is created from; elevation and update check |
+| [ps5-homebrew-ui](https://github.com/blackbearreloaded/ps5-homebrew-ui) (private) | The UI library: renderer, components, themes, sound, the `store` design |
+| [ps5-opengl](https://github.com/blackbearreloaded/ps5-opengl) | The OpenGL 4.6 SDK both of them render with |
+| [ps5-homebrew-catalog](https://github.com/blackbearreloaded/ps5-homebrew-catalog) | The catalog, its signed store API (`docs/api.md`) and version rules (`docs/versioning.md`) |
+| [ps5-agent-runbook](https://github.com/blackbearreloaded/ps5-agent-runbook) | The contract for every console run |
+| [ps5-homebrew-dev-protocol](https://github.com/blackbearreloaded/ps5-homebrew-dev-protocol) | The launch helper and console tooling |
+| [ShadowMountPlus](https://github.com/drakmor/ShadowMountPlus) | Registers installed apps on the console |
