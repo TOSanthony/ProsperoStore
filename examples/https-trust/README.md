@@ -5,7 +5,7 @@ unreachable after elevation. Keep certificate verification enabled. Call
 `https_trust::read_builtin_roots(ssl_context, pem)` before elevation, then
 `load_pem_roots(http_context, pem)` on a worker after `sceHttpInit`, before
 making templates or requests. The read obtains the platform's
-built-in DER roots through `sceSslGetCaCerts`, encodes them as PEM, releases
+roots through `sceSslGetCaCerts`, preserves PEM or encodes DER as PEM, releases
 the platform allocation. The import uses `sceHttpsLoadCert`.
 The root query itself can depend on sandbox paths, so it must precede elevation.
 `load_builtin_roots` combines both steps for callers whose filesystem view is unchanged.

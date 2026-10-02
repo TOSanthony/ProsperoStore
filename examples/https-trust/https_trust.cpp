@@ -46,6 +46,16 @@ int read_builtin_roots(int ssl_context, std::string &out)
             break;
         }
         const auto *bytes = static_cast<const unsigned char *>(certificate.data);
+        const std::string_view encoded(static_cast<const char *>(certificate.data),
+                                       certificate.size);
+        if (encoded.starts_with("-----BEGIN CERTIFICATE-----"))
+        {
+            pem.append(encoded);
+            if (pem.back() == '\0')
+                pem.pop_back();
+            pem += '\n';
+            continue;
+        }
         pem += "-----BEGIN CERTIFICATE-----\n";
         unsigned column = 0;
         for (std::size_t i = 0; i < certificate.size; i += 3)

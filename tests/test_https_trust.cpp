@@ -19,12 +19,15 @@ struct BuiltinRoots
 };
 int frees = 0;
 bool builtin = false;
+bool pem_format = false;
 extern "C" int sceSslGetCaCerts(int context, BuiltinRoots *out)
 {
     assert(context == 3);
     static const unsigned char first[] = {1, 2, 3};
     static const unsigned char second[] = {255};
     static Certificate roots[] = {{first, sizeof(first)}, {second, sizeof(second)}};
+    static const char pem[] = "-----BEGIN CERTIFICATE-----\nAQID\n-----END CERTIFICATE-----";
+    roots[0] = pem_format ? Certificate{pem, sizeof(pem)} : Certificate{first, sizeof(first)};
     *out = {roots, 2, nullptr};
     return 0;
 }
@@ -66,4 +69,7 @@ int main()
     builtin = true;
     assert(https_trust::load_builtin_roots(3, 7) == 123);
     assert(imports == 2 && frees == 1);
+    pem_format = true;
+    assert(https_trust::load_builtin_roots(3, 7) == 123);
+    assert(imports == 3 && frees == 2);
 }
