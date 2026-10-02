@@ -88,7 +88,7 @@ the store detects from its own receipts, so no recall list is needed (D19).
 
 | Piece | Used for | State |
 | --- | --- | --- |
-| Store API, `https://homebrew.page/api/v1/` | Catalog data, versions, icons | Live. Specified in the catalog's `docs/api.md`; versioned (`schema` 2). |
+| Store API, `https://homebrew.page/api/v1/` | Catalog data, versions, icons | Live. Specified in the catalog's `docs/api.md`; versioned (`schema` 3) and signed. |
 | `ps5-native-app-boilerplate` | Build, packaging, runtime, title layout | In use by every Prospero app. |
 | Sandbox elevation (`docs/SANDBOX_ELEVATION.md` in the boilerplate) | Reaching `/data` and the other install locations | Used by ProsperoEden. |
 | `ps5-opengl` SDK 1.0.0 | Rendering | Passed the OpenGL 4.6 conformance run. |
@@ -500,8 +500,10 @@ elevation request runs before any of these threads exists (3.1).
   Ed25519 signature from a key the store carries. The store carries two public
   keys, the one the catalog signs with and the offline spare, so the key can
   be replaced without stranding installed stores. A small, audited Ed25519
-  implementation is vendored for this. The exact form (a signature per file, or one signed list of file
-  hashes) is settled with the catalog work in section 7.
+  implementation is vendored for this. The form is settled and live: one signed list, `manifest.json`
+  with `manifest.sig` (64 raw bytes), naming every API file by its SHA-256.
+  The store verifies it once per refresh and then checks each file it
+  downloads against it (the catalog's `docs/api.md`, "Verifying the catalog").
 - **No going back.** The signed data carries the catalog's build sequence. The
   store keeps the highest it has accepted and rejects lower ones, and it
   refuses to install a `content_version` below the one in the current
@@ -641,7 +643,7 @@ addition to the API (a higher `schema`), so existing clients keep working.
 
 | Item | What it is | Needed by |
 | --- | --- | --- |
-| **Signing** | The deploy job signs the files the store relies on with the Ed25519 key in its environment secret `CATALOG_SIGNING_KEY`, using the runner's own `openssl`, and adds the build sequence to the signed data. Both public keys are committed to the catalog repository and published in its documentation. A build without the secret (a fork, a local build) is simply unsigned. How to switch to the spare key, and what to do if a key leaks, is written down before the first store release. | M2 |
+| **Signing** | **Done** (API `schema` 3). The deploy signs `manifest.json` with the Ed25519 key in its `CATALOG_SIGNING_KEY` secret, using the runner's `openssl`, and refuses to deploy unsigned or with an unpublished key. `sequence` is the number of commits in the catalog's history. Both public keys are in the catalog repository's `keys/` folder and in its `docs/api.md`. Switching to the spare is replacing the secret. | M2 |
 | **Release notes** | The release's notes as text in `apps/<TITLEID>.json`, with a length limit. | M8 |
 | **Icons** | A lighter 256-pixel icon, and a cache of converted icons so catalog builds stay within their time limit as the catalog grows. | M3 |
 | **The store's listing** | PPSA99000 moves from a reservation to a release, with a `param.json` in its repository so `content_version` is right. | M6 |
@@ -762,7 +764,7 @@ Each ends with something that can be shown. Hardware gates are marked.
 | Start, and on refresh | `GET /api/v1/index.json` |
 | Start, and on refresh | `GET /api/v1/versions.json` |
 | Opening an app | `GET /api/v1/apps/<TITLEID>.json` |
-| With each of the above | Its signature, in the form section 7 settles |
+| Start, and on refresh, before anything else is trusted | `GET /api/v1/manifest.json` and `manifest.sig` |
 | A tile or page needs an icon it doesn't have, or its `icon_hash` changed | `GET` the `icon_small` or `icon` address |
 | Install or update | `GET` the app's `artifact_url` |
 
