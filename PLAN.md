@@ -897,6 +897,6 @@ To be confirmed and listed in `THIRD_PARTY_NOTICES.md` when each is added.
 | [ps5-homebrew-ui](https://github.com/blackbearreloaded/ps5-homebrew-ui) (private) | The UI library: renderer, components, themes, sound, the `store` design |
 | [ps5-opengl](https://github.com/blackbearreloaded/ps5-opengl) | The OpenGL 4.6 SDK both of them render with |
 | [ps5-homebrew-catalog](https://github.com/blackbearreloaded/ps5-homebrew-catalog) | The catalog, its signed store API (`docs/api.md`) and version rules (`docs/versioning.md`) |
-| [ps5-agent-runbook](https://github.com/blackbearreloaded/ps5-agent-runbook) | The contract for every console run |
+| [ps5-agent-runbook](https://github.com/blackbearreloaded/ps5-agent-runbook) (private) | The contract for every console run |
 | [ps5-homebrew-dev-protocol](https://github.com/blackbearreloaded/ps5-homebrew-dev-protocol) | The launch helper and console tooling |
 | [ShadowMountPlus](https://github.com/drakmor/ShadowMountPlus) | Registers installed apps on the console |
