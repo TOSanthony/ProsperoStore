@@ -1,6 +1,6 @@
 # ProsperoStore: implementation plan
 
-Draft 1, 2026-10-02. Title ID **PPSA99000** (reserved in the catalog).
+Draft 2, 2026-10-02. Title ID **PPSA99000** (reserved in the catalog).
 
 ProsperoStore is a native PS5 app store for the homebrew catalog at
 [homebrew.page](https://homebrew.page). With the controller, from the couch,
@@ -11,6 +11,10 @@ and update.**
 **The bar:** it should feel like a first-party store. Beautiful, polished,
 fast: 4K at a steady 60 frames per second, no screen that waits on the network,
 no install that can leave the console in a broken state.
+
+**The responsibility:** the store runs with elevated privileges and installs
+code. Everything it reads from the network is treated as hostile until
+verified, and the catalog it trusts is signed.
 
 It is built on `ps5-native-app-boilerplate` and `ps5-opengl` (OpenGL 4.6 Core,
 SDK 1.0.0), with the interface taken from `ps5-homebrew-ui` (Homebrew UI Lab:
@@ -27,6 +31,12 @@ Every statement about the console below is marked with how well it is known:
 | **[assumed]** | A working assumption the owner accepted; to be confirmed when it is first used |
 | **[open]** | Not known; a milestone finds out |
 
+Changes since draft 1: the owner accepted thirteen additions (decisions D18 to
+D30): a signed catalog, a recall list, GitHub-only downloads, hardened parsers,
+an exact space check, proven drives first, ShadowMountPlus's own configuration,
+interruption handling, a first-run check, logs and crash reports, a scripted
+test mode, an update-check kit for other apps, and an in-app notice.
+
 ---
 
 ## 1. Scope
@@ -41,20 +51,31 @@ Every statement about the console below is marked with how well it is known:
 | **Installed** | Everything found in the install locations, with its installed version. Apps the store didn't install are listed and marked as not managed. |
 | **Updates** | Apps the store manages whose catalog version is higher than the installed one, with Update and Update all. Includes the store itself. |
 | **Uninstall** | Removes an app the store installed. |
-| **Install location** | A setting: any location ShadowMountPlus scans (section 3.3). |
+| **Install location** | A setting: the locations ShadowMountPlus scans on this console, internal storage and the M.2 drive first (section 3.3). |
 | **Running-app guard** | An app that is running can't be updated or uninstalled. |
+| **Recall warnings** | An installed app that the catalog has withdrawn is flagged, with the reason. |
+| **First-run check** | One screen that says what the console is missing for installs to work, and how to fix it. |
 | **Works offline** | The last catalog and all icons it has seen stay available; installing needs the network. |
+| **Interruptions handled** | A dropped connection, rest mode or a power cut never leaves a half-installed app. |
 
 ### Not in the first release
 
 | Left out | Why |
 | --- | --- |
 | Image artifacts (`.ffpkg`, `.ffpfsc`) | Owner's decision: ZIP first. 14 of the 15 listed apps ship a ZIP. Images are shown with "can't be installed by this version". |
+| USB drives as an install location | Offered only after milestone M1 proves renames and permissions on their filesystems (D23). |
 | Launching apps | Owner's decision: the store manages install, uninstall and updates. Apps are started from the home screen. |
 | Taking over apps installed by hand | Owner's decision: they are listed with a note, nothing more. |
 | Restarting itself after its own update | Owner's decision: the store asks the user to restart it. |
 | Waiting for ShadowMountPlus | Owner's decision: after an install the store says that ShadowMountPlus will add the app to the home screen shortly. |
 | Other catalogs, accounts, ratings, payments | Out of scope. |
+
+### Delivered alongside the store
+
+| Deliverable | Where it lives |
+| --- | --- |
+| **Update-check kit** for other apps (section 8) | `ps5-native-app-boilerplate` |
+| **Catalog signing and the recall list** (section 7) | The catalog repository's automation and API |
 
 ---
 
@@ -66,8 +87,9 @@ Every statement about the console below is marked with how well it is known:
 | `ps5-native-app-boilerplate` | Build, packaging, runtime, title layout | In use by every Prospero app. |
 | Sandbox elevation (`docs/SANDBOX_ELEVATION.md` in the boilerplate) | Reaching `/data` and the other install locations | Used by ProsperoEden. |
 | `ps5-opengl` SDK 1.0.0 | Rendering | Passed the OpenGL 4.6 conformance run. |
-| `ps5-homebrew-ui` | Components, themes, sound, the `store` design, the PC host renderer | All 21 designs validated on a console at 4K, 16.68 ms average frame. |
+| `ps5-homebrew-ui` | Components, themes, sound, the `store` design, the PC host renderer, the remote test requests | All 21 designs validated on a console at 4K, 16.68 ms average frame. |
 | `sceHttp` / `sceSsl` / `sceNet` | HTTPS | **[proven]** in ProsperoTV, ProsperoRadio and ProsperoLichess, with certificate checks. |
+| ProsperoEden's crash report and clean exit | Diagnostics, and closing without a forced kill | **[proven]** on a console. |
 | ShadowMountPlus | Puts installed apps on the home screen | Its behaviour below is **[source]** (branch 1.7). |
 
 ---
@@ -82,6 +104,9 @@ Every statement about the console below is marked with how well it is known:
   port 9021, a helper ELF built for this title ID and shipped in the app, and
   it must run during single-threaded startup, before any worker starts.
   **[source]**; `/data` access through it is **[proven]** in ProsperoEden.
+- The elevation is not limited to the filesystem: the boilerplate's own
+  documentation says it grants broad process privileges. **[source]** This is
+  why section 6.7 exists.
 - Access to `/mnt/ext0`, `/mnt/ext1` and `/mnt/usb*` through the same
   elevation is **[open]** (milestone M1).
 - Elevation can fail (no loader, unsupported firmware). The store must then
@@ -101,17 +126,26 @@ Every statement about the console below is marked with how well it is known:
 - `sceHttpAbortRequest` from another thread unblocks a read. **[proven]** This
   is how Cancel works.
 - A timeout shows as `0x80431068`. **[proven]**
+- GitHub's redirect for a release file points at a temporary address on its
+  file host; how long it stays valid is **[open]**. It is treated as expiring:
+  a resumed or retried download always starts again from the app's
+  `artifact_url`.
 - Whether `sceHttp` decompresses gzip, and whether `Range` requests work for
   resuming, are **[open]**. Neither is required: the API files are small
-  uncompressed, and a failed download can restart.
+  uncompressed, and a failed download can restart from zero.
 - Certificate verification is never switched off to make something work.
 
 ### 3.3 ShadowMountPlus
 
-- It scans `/data/homebrew`, `/data/etaHEN/games`, `/mnt/ext0` and `/mnt/ext1`
-  (their `homebrew` and `etaHEN/games` folders), and `/mnt/usb0` to `/mnt/usb7`
-  (the same). A full scan runs every 15 seconds, and a folder is picked up
-  about 10 seconds after it stops changing. **[source]**
+- By default it scans `/data/homebrew`, `/data/etaHEN/games`, `/mnt/ext0` and
+  `/mnt/ext1` (their `homebrew` and `etaHEN/games` folders), and `/mnt/usb0`
+  to `/mnt/usb7` (the same). Extra paths come from `manual.lst`, and options
+  such as the scan depth from `/data/shadowmount/config.ini`. **[source]**
+- The store reads those two files to learn what this console actually scans,
+  instead of assuming the defaults (D24). If they can't be read, it falls back
+  to the defaults and says ShadowMountPlus wasn't found.
+- A full scan runs every 15 seconds, and a folder is picked up about 10
+  seconds after it stops changing. **[source]**
 - **One copy per title ID.** A second folder or image of the same title gives
   a "duplicate titleId" notice. **[source]** The store never leaves two.
 - It copies a title's metadata (`sce_sys`) into the system **once**; an
@@ -137,6 +171,22 @@ Every statement about the console below is marked with how well it is known:
 - `icon_hash` tells the store when an icon changed, so icons are downloaded
   once.
 
+### 3.5 Trust
+
+- Today the only thing between the catalog and the console is HTTPS. Whoever
+  could serve files as `homebrew.page` (a hijacked domain, a compromised
+  deployment) could publish their own download address with a matching hash,
+  and the store would install it with elevated privileges.
+- The record's `sha256` protects against a developer's release file being
+  replaced. It does not protect against the catalog itself being replaced.
+- So the catalog is signed at build time and the store carries the public key
+  (D18, sections 6.3 and 7). A file whose signature doesn't verify is treated
+  as if the network were down.
+- Signed files can still be old. The store remembers the newest catalog it has
+  accepted and refuses to go back to an older one, and it never installs a
+  `content_version` lower than the one the current signed `versions.json`
+  names for that app.
+
 ---
 
 ## 4. Decisions
@@ -160,8 +210,21 @@ Made by the owner on 2026-10-02 unless marked as a default.
 | D13 | Uninstall is part of the first release. |
 | D14 | The interface is based on Homebrew UI Lab. |
 | D15 *(default)* | Uninstall removes the app's folder only. The app's own saved data (`/user/download/<TITLEID>` and anything the app wrote elsewhere) is left alone and the dialog says so. |
-| D16 *(default)* | The store's own files live in `/data/prosperostore` (settings, receipts, cached catalog and icons, journal), and in a `prosperostore` folder at the top of each other drive it installs to (staging only). |
+| D16 *(default)* | The store's own files live in `/data/prosperostore` (settings, receipts, cached catalog and icons, journal, logs), and in a `prosperostore` folder at the top of each other drive it installs to (staging only). |
 | D17 *(default)* | Pre-releases are offered like any other release, because the catalog lists one current release per app. |
+| D18 | **Signed catalog.** The catalog build signs what the store relies on; the store verifies it with a public key it carries and refuses anything unsigned, wrongly signed, or older than what it has already accepted. |
+| D19 | **Recall list.** The API publishes withdrawn apps with a reason; the store warns users who have one installed. |
+| D20 | **GitHub-only downloads.** Artifacts are fetched over HTTPS from `github.com` and GitHub's release file host only, including every redirect. The API is fetched from `homebrew.page` only. |
+| D21 | **Hardened parsers.** Size limits on everything read from the network, strict validation, and fuzz tests for the JSON and ZIP code on the PC. |
+| D22 | **Exact space check.** After the download, the unpacked size is read from the archive's own directory and checked against free space before anything is unpacked. |
+| D23 | **Proven drives first.** Internal storage and the M.2 drive in the first release; a USB location appears only once M1 has proven it on that filesystem. |
+| D24 | **ShadowMountPlus's own configuration** decides which locations are offered, not a hard-coded list. |
+| D25 | **Interruptions.** Retries with increasing waits, resume where the server and `sceHttp` allow it, and clean handling of rest mode and a lost connection. |
+| D26 | **First-run check**, also reachable from Settings. |
+| D27 | **Logs and crash reports**: a rotating log and ProsperoEden's crash-report handler. |
+| D28 | **Scripted test mode**: console runs are driven and closed by a script, never by a forced kill. |
+| D29 | **Update-check kit** for other apps, delivered in the boilerplate. |
+| D30 | **In-app notice**: the website's disclaimer, shown at first start and in About. |
 
 ---
 
@@ -171,8 +234,8 @@ Made by the owner on 2026-10-02 unless marked as a default.
 
 - Data: `index.json`, fetched at start and on demand, with `If-None-Match`.
   The last good copy is kept on disk and shown immediately at the next start;
-  the fresh one replaces it when it arrives. The header shows when the catalog
-  was last refreshed and whether the store is offline.
+  the fresh one replaces it when it arrives and verifies. The header shows
+  when the catalog was last refreshed and whether the store is offline.
 - Icons: `icon_small` for tiles, `icon` for the app page, kept on disk with
   their `icon_hash` and fetched again only when the hash changes. A few
   downloads run at a time, nearest tiles first; a tile shows a placeholder
@@ -181,12 +244,13 @@ Made by the owner on 2026-10-02 unless marked as a default.
   Installed and Updates.
 - Search by name and developer with the system keyboard; sort by name, newest
   release, recently updated.
-- Each tile carries a state badge: Installed, Update, Coming soon, or nothing.
+- Each tile carries a state badge: Installed, Update, Withdrawn, Coming soon,
+  or nothing.
 
 ### 5.2 App page
 
 - Data: `apps/<TITLEID>.json`, fetched when the page opens (cached with its
-  `ETag`).
+  `ETag`), verified before it is shown as installable.
 - Shows: icon, name, developer, kind, description, release tag, release date,
   download size, license, source repository, and installed version when there
   is one.
@@ -201,24 +265,33 @@ Made by the owner on 2026-10-02 unless marked as a default.
 
 One install runs at a time; others wait in a queue the user can see and edit.
 
-1. **Refuse early.** Not a ZIP; already installed outside the store; the
-   target location is missing or read-only; not enough free space (the
-   download plus an estimate of the unpacked size, plus a margin); no
-   elevation.
-2. **Download** `artifact_url` to the staging folder, following redirects,
-   computing SHA-256 as bytes arrive. Progress shows bytes, speed and time
-   left. Cancel aborts the request and deletes the partial file.
-3. **Verify.** The hash must equal the catalog's `sha256`. A mismatch deletes
-   the file and reports "the file doesn't match the listing"; nothing is
-   unpacked.
-4. **Unpack** into the staging folder. The archive must contain exactly one
-   top-level folder named after the title ID. Rejected: absolute paths, `..`,
-   symbolic links, names outside that folder, an unpacked size beyond a limit,
-   a `sce_sys/param.json` that is missing or names another `titleId`.
-5. **Put in place** with one rename from staging to
-   `<location>/<TITLEID>`. Staging is on the same filesystem as the location
-   so the rename is a single step.
-6. **Record** a receipt (section 6.5) and show: "Installed. ShadowMountPlus
+1. **Refuse early.** Not a ZIP; the app is withdrawn; its file doesn't verify
+   against the signed catalog; the download address isn't on GitHub (D20);
+   already installed outside the store; the target location is missing or
+   read-only; not enough free space for the download itself; no elevation.
+2. **Download** `artifact_url` to the staging folder. Every redirect is
+   checked against the allowed hosts. Progress shows bytes, speed and time
+   left. Cancel aborts the request and deletes the partial file. A failure is
+   retried as section 5.12 describes.
+3. **Verify.** The SHA-256 of the complete file must equal the catalog's
+   `sha256`. A mismatch deletes the file and reports "the file doesn't match
+   the listing"; nothing is unpacked.
+4. **Read the archive's directory, unpack nothing yet.** The archive must
+   contain exactly one top-level folder named after the title ID. Rejected:
+   absolute paths, `..`, symbolic links, names outside that folder, more
+   entries or longer names than the limits in 6.7, and a
+   `sce_sys/param.json` that is missing.
+5. **Exact space check (D22).** The directory gives every file's unpacked
+   size. Their sum, plus the previous version during an update, plus a margin,
+   must fit in the location's free space. If not, the install stops here with
+   the exact numbers.
+6. **Unpack** into the staging folder. A file that turns out larger than the
+   directory declared stops the install. Afterwards `sce_sys/param.json` must
+   name this `titleId`.
+7. **Put in place** with one rename from staging to `<location>/<TITLEID>`.
+   Staging is on the same filesystem as the location so the rename is a single
+   step.
+8. **Record** a receipt (section 6.5) and show: "Installed. ShadowMountPlus
    will add it to your home screen in a moment."
 
 If the unpacked app's `contentVersion` differs from the catalog's
@@ -298,23 +371,77 @@ actually on disk.
 | Managed, update available | Update | Uninstall as second action |
 | Managed, version unknown | Uninstall | "This app doesn't publish a comparable version" |
 | Not managed | none | The note from 5.6 |
+| Withdrawn, installed | Uninstall (when managed) | The recall warning from 5.11 |
+| Withdrawn, not installed | none | Not shown in Browse at all |
 | Running | actions disabled | "Close the app first" |
 | In the queue / downloading / verifying / unpacking | Cancel | |
 | Failed | Retry | With the reason |
 
 Failure reasons shown to the user: no network; the catalog can't be reached;
-the download failed; the file doesn't match the listing; the archive isn't a
-valid app; not enough space; the location isn't available; the app is running;
-no permission to write (elevation missing).
+the catalog couldn't be verified; the download failed; the download address
+isn't allowed; the file doesn't match the listing; the archive isn't a valid
+app; not enough space (with the numbers); the location isn't available; the
+app is running; no permission to write (elevation missing).
 
 ### 5.10 Settings
 
-- **Install location**: the locations from 3.3 that exist and can be written,
+- **Install location**: the locations ShadowMountPlus scans on this console
+  (D24) that the first release supports (D23), that exist and can be written,
   each with its free space. Default `/data/homebrew`. Changing it affects new
   installs only; an update stays where the app is.
 - Check for updates at start: on by default.
 - Language (follows the system; can be forced), theme, sound and vibration.
-- About: version, the catalog's build, licences, and a storage summary.
+- **Check this console**: reopens the first-run check (5.13).
+- **About**: version, the catalog's build and signature status, licences, the
+  notice from 5.14, a storage summary, and "Save logs", which copies the logs
+  to a folder the user can reach.
+
+### 5.11 Recall warnings
+
+- The API's recall list (section 7) names apps the catalog has withdrawn, with
+  a reason and a date. It is part of the signed catalog.
+- A withdrawn app disappears from Browse. If it is installed, it stays in
+  Installed with a **Withdrawn** badge, and the store shows a warning once per
+  app: the reason, and Uninstall when the store manages it.
+- The store never removes anything by itself. The user decides.
+- An app that merely isn't in the catalog (installed by hand, never listed) is
+  not "withdrawn" and gets no warning.
+
+### 5.12 Interruptions
+
+| Event | What the store does |
+| --- | --- |
+| A request fails or times out | Retries up to three times, waiting longer each time; then reports the failure with Retry. |
+| A download breaks part-way | Resumes with a `Range` request if that is proven to work (3.2), always starting again from `artifact_url`; otherwise restarts. The hash is always computed over the complete file before it is accepted. |
+| The connection is lost | Downloads pause and say so; browsing continues from the cache; they continue when the network returns. |
+| Rest mode, or the console is switched off | Treated as a lost connection or a power cut: at the next start the journal finishes or undoes what was in progress (6.4). |
+| The drive disappears | The job fails with "the location isn't available"; staging on that drive is cleaned at the next start it is present. |
+| The store is closed during a job | It asks for confirmation; closing cancels the job cleanly. |
+
+### 5.13 First-run check
+
+Shown at first start, after an update of the store, whenever a requirement
+fails, and from Settings. One row per requirement, each with its state and,
+when it fails, what to do:
+
+| Requirement | Checked by |
+| --- | --- |
+| The loader the elevation needs | The elevation request's result |
+| Write access to the install location | Creating and deleting a test file |
+| ShadowMountPlus | Its configuration folder and log |
+| Network, and the catalog reachable | Fetching `versions.json` |
+| The catalog verifies | Its signature |
+| Free space | The location's free space against a sensible minimum |
+
+When something required for installing fails, the store continues in
+read-only mode and the Install buttons explain why.
+
+### 5.14 Notice
+
+At first start, and always in About: the catalog lists apps published by their
+own developers; each developer is solely responsible for their app's licensing
+and content; ProsperoStore and the catalog come without warranty; a listing is
+not a security audit. The wording follows the website's disclaimer.
 
 ---
 
@@ -324,15 +451,16 @@ no permission to write (elevation missing).
 
 ```text
 src/app/          shell, navigation, screens
-src/catalog/      API client, models, version comparison, on-disk cache
+src/catalog/      API client, models, version comparison, signature check, on-disk cache
 src/net/          HTTP transport (sceHttp on console, a host implementation for tests)
 src/install/      queue, download, verify, unpack, transaction, journal, receipts
 src/system/       elevation, install locations, free space, running check, installed scan
+src/diag/         log, crash report, test mode
 src/ui/           taken from ps5-homebrew-ui: components, themes, sound
 platform/ps5/     console implementations
 platform/host/    PC implementations for development and tests
 payload/          the elevation helper, built for PPSA99000
-tests/            host tests and fixtures (saved API responses, sample archives)
+tests/            host tests, fixtures (saved API responses, sample archives), fuzz targets
 tools/            build, packaging, host snapshots, console scripts
 sce_sys/          param.json, icon and home-screen art
 docs/             user guide, architecture notes
@@ -352,13 +480,25 @@ elevation request runs before any of these threads exists (3.1).
 
 ### 6.3 Catalog client
 
-- Reads `index.json` for lists, `apps/<TITLEID>.json` for one app, and
-  `versions.json` for the update check.
+- Reads `index.json` for lists, `apps/<TITLEID>.json` for one app,
+  `versions.json` for the update check, and the recall list.
+- **Verification (D18).** Each of those files is accepted only with a valid
+  signature from a key the store carries. The store carries two public keys,
+  the current one and the next, so the key can be rotated without stranding
+  installed stores. A small, audited Ed25519 implementation is vendored for
+  this. The exact form (a signature per file, or one signed list of file
+  hashes) is settled with the catalog work in section 7.
+- **No going back.** The signed data carries the catalog's build sequence. The
+  store keeps the highest it has accepted and rejects lower ones, and it
+  refuses to install a `content_version` below the one in the current
+  `versions.json`.
 - Tolerant by rule: ignores unknown fields, accepts `null` wherever the API
   allows it, and refuses to act on a `schema` it can't read rather than
   guessing.
 - Version comparison is one function with its own tests, implementing the
   table in the API specification.
+- Icons are not signed. They are images shown on screen and are decoded with
+  the limits in 6.7.
 
 ### 6.4 The install transaction
 
@@ -386,6 +526,9 @@ reads the journal and finishes or undoes whatever was interrupted:
 The rule the transaction keeps: at every instant, `L/<TITLEID>` is either the
 complete old version, the complete new version, or absent. Never a mix.
 
+A location is offered only if a rename inside it is a single step on its
+filesystem, which M1 establishes per filesystem (D23).
+
 ### 6.5 Receipts
 
 `/data/prosperostore/receipts/<TITLEID>.json`: title ID, location, the
@@ -398,8 +541,9 @@ removed last in an uninstall.
 - Start from Homebrew UI Lab's `store` design and component library (lists,
   grids, dialogs, forms, progress, toasts), on the kit's 1920 x 1080 virtual
   canvas rendered at the display's resolution.
-- Screens: Browse, App page, Installed, Updates, Queue, Settings, and the
-  dialogs (confirm, error, restart after self-update, read-only mode).
+- Screens: Browse, App page, Installed, Updates, Queue, Settings, First-run
+  check, and the dialogs (confirm, error, recall warning, notice, restart
+  after self-update, read-only mode).
 - Controls follow the kit: D-pad and left stick move, Cross confirms, Circle
   goes back, Triangle opens search, Square opens the queue, Options opens
   settings, L1/R1 switch sections.
@@ -408,70 +552,175 @@ removed last in an uninstall.
 - Budget: 16.67 ms per frame at 4K with a full grid on screen, measured the
   way the kit's console validation measures it.
 
+### 6.7 Security rules
+
+The store is elevated for its whole life (3.1), so these are hard rules, each
+with a test.
+
+**Where it connects**
+
+| For | Allowed hosts |
+| --- | --- |
+| The API and icons | `homebrew.page` |
+| Artifacts | `github.com`, and GitHub's release file host reached by redirect from it |
+
+HTTPS only, certificates verified, at most five redirects, each checked. A
+catalog entry pointing anywhere else is refused before any request is made.
+
+**How much it reads** (defaults; adjust when real data says so)
+
+| Input | Limit |
+| --- | --- |
+| `versions.json`, recall list | 1 MiB |
+| `index.json` | 4 MiB |
+| `apps/<TITLEID>.json` | 64 KiB |
+| An icon | 2 MiB, and at most 1024 pixels on a side once decoded |
+| An artifact | The catalog's `size` when known, never more than 2 GiB |
+| Entries in an archive | 100,000 |
+| A path inside an archive | 512 bytes |
+| Unpacked size | What the directory declares, enforced while unpacking |
+
+**How it reads**
+
+- JSON and ZIP are parsed by small, well-known libraries with every length
+  checked; no parser is handed more than its limit.
+- Nothing from the network is ever used as a path without validation, and
+  nothing is executed, interpreted or passed to a shell.
+- The archive rules of section 5.3 apply to every archive, including the
+  store's own update.
+- **Fuzz tests on the PC** feed the JSON reader, the archive reader and the
+  icon decoder with mutated inputs in CI, with the sanitizers on. A crash is a
+  release blocker.
+
+### 6.8 Diagnostics
+
+- **Log:** `/data/prosperostore/logs/store.log`, rotated by size with a few
+  generations kept; inside the sandbox (`/download0`) when not elevated. It
+  records every state change of the installer and every refusal with its
+  reason. No personal data, no full addresses beyond the host and title ID.
+- **Crash report:** ProsperoEden's handler: it writes a report file, restarts
+  the store, and the store shows a notice that it recovered. The journal then
+  repairs any transaction that was in progress.
+- **Save logs** in About copies the logs and reports to a folder the user can
+  reach, for attaching to a problem report.
+
+### 6.9 Test mode
+
+For development builds only; a release build ignores it.
+
+- A request file in the app's folder tells the store what to do: run a named
+  tour (a list of screens and actions), install a test title, or quit. Each
+  request carries a token and is honoured once, as in the UI kit.
+- Results (log, screenshots, a report) are written where the PC can fetch them
+  after the store has closed.
+- The store closes itself through the clean exit that ProsperoEden uses. A
+  console run never ends with a forced kill.
+- Test installs use dedicated test title IDs and their own folders, never a
+  real app.
+
 ---
 
 ## 7. Work the catalog side owes this plan
 
-Done by the catalog's automation, not by the store:
+Done by the catalog's automation and API, not by the store. Each is an
+addition to the API (a higher `schema`), so existing clients keep working.
 
-| Item | Why the store needs it |
-| --- | --- |
-| Release notes text in `apps/<TITLEID>.json` | "What's new" on the app page without leaving the store |
-| A lighter 256-pixel icon and a cache of converted icons in the build | Faster first load of the grid, and catalog builds that stay within their time limit as it grows |
-| The store's own listing, with a `param.json` in its repository | Self-update depends on a correct `content_version` for PPSA99000 |
-| Developers raising `contentVersion` | Without it their apps never show an update; the catalog already warns them |
+| Item | What it is | Needed by |
+| --- | --- | --- |
+| **Signing** | The build signs the files the store relies on with an Ed25519 key kept as a deployment secret, and adds the build sequence to the signed data. The public keys (current and next) are published in the catalog's documentation. Key rotation and what happens if the key is lost are written down before the first store release. | M2 |
+| **Recall list** | A file in the API naming withdrawn title IDs with a reason and date, fed by a small file in the catalog repository that maintainers edit when they withdraw an app. Signed like the rest. | M5 |
+| **Release notes** | The release's notes as text in `apps/<TITLEID>.json`, with a length limit. | M8 |
+| **Icons** | A lighter 256-pixel icon, and a cache of converted icons so catalog builds stay within their time limit as the catalog grows. | M3 |
+| **The store's listing** | PPSA99000 moves from a reservation to a release, with a `param.json` in its repository so `content_version` is right. | M6 |
+| **Developer guidance** | Already in place: the catalog warns developers who don't raise `contentVersion`. | |
 
 ---
 
-## 8. Milestones
+## 8. Update-check kit for other apps
+
+Every app should be able to tell its user that a newer version exists. This is
+a small, separate deliverable in `ps5-native-app-boilerplate`, usable by any
+developer, not only by Prospero apps.
+
+- **What it does:** once per launch, in the background, it fetches the app's
+  own `apps/<TITLEID>.json`, compares `content_version` with the
+  `contentVersion` the app was built with (the rule in the API specification),
+  and reports one of: up to date, update available (with the release name and
+  the app's page), or unknown.
+- **What the app shows** is up to the app; the kit ships a ready-made, unobtrusive
+  notice: "Update available: <version>. Update it in ProsperoStore." It
+  doesn't launch the store and it downloads nothing.
+- **Rules it enforces:** never blocks start-up or the UI; one request with a
+  short timeout; any failure means "unknown" and nothing is shown; the same
+  size limit and tolerant parsing as the store; HTTPS to `homebrew.page` only.
+- **No elevation and no signature check:** it only displays a notice, so the
+  transport's certificate check is enough, and it works inside the sandbox.
+- **Deliverables:** the source in the boilerplate with an example, host tests
+  for the comparison and the parser, and a section in the catalog's
+  `docs/api.md` pointing developers to it.
+
+---
+
+## 9. Milestones
 
 Each ends with something that can be shown. Hardware gates are marked.
 
 | # | Milestone | Done when |
 | --- | --- | --- |
-| M0 | Bootstrap | The repository builds an empty title for PPSA99000 from the boilerplate with the OpenGL SDK and the UI kit, on the console build and on the PC host. |
-| M1 | **Gate: filesystem** | On a console, after elevation, the store creates, renames and deletes a test folder in `/data/homebrew`, and reports for each other location whether it exists and can be written. Read-only mode appears when elevation is refused. |
-| M2 | **Gate: network** | On a console, the store fetches `index.json` from homebrew.page with certificate checks, and downloads one real release from GitHub through the redirect with a correct SHA-256. If `sceHttp` can't, the curl fallback is built here. |
+| M0 | Bootstrap | The repository builds an empty title for PPSA99000 from the boilerplate with the OpenGL SDK and the UI kit, on the console build and on the PC host. The log, the crash report and the test mode with a clean remote exit are in from the first build. |
+| M1 | **Gate: filesystem** | On a console, after elevation, the store creates, renames and deletes a test folder in `/data/homebrew`; reads ShadowMountPlus's configuration and lists the scanned locations; and, for each other location, reports its filesystem and whether a rename is a single step there. Read-only mode appears when elevation is refused. This decides which locations the first release offers. |
+| M2 | **Gate: network and trust** | On a console, the store fetches the signed catalog from homebrew.page with certificate checks and verifies it; refuses a tampered and an outdated copy; and downloads one real release from GitHub through the redirect with a correct SHA-256, refusing a redirect to another host. Resume is tried and recorded. If `sceHttp` can't, the curl fallback is built here. |
 | M3 | Catalog and browse | The full catalog scrolls at 60 frames per second with icons, sections, search and sort, from live data and from the offline cache. PC host first, then console. |
-| M4 | Install | A real catalog app installs from the store and appears on the home screen. Every refusal and failure in 5.3 has a test. |
-| M5 | Installed, update, uninstall, running guard | The Installed and Updates screens are correct for managed and unmanaged apps; update and uninstall work; a running app is refused. Needs the owner's running check (D9). |
+| M4 | Install | A real catalog app installs from the store and appears on the home screen. Every refusal and failure in 5.3 has a test, including the exact space check and the archive limits. The fuzz tests run in CI. |
+| M5 | Installed, update, uninstall, running guard, recall | The Installed and Updates screens are correct for managed and unmanaged apps; update and uninstall work; a running app is refused; a withdrawn test app shows its warning. Needs the owner's running check (D9). |
 | M6 | **Gate: self-update** | Either the store replaces itself safely and asks for a restart, or the manual path is in place. |
-| M7 | Recovery | Power loss is simulated at every step of install, update and uninstall on the PC host, and the journal brings the folder back to a complete state each time. A subset is repeated on a console with a test title. |
-| M8 | Polish and release | Languages, sound, art, the user guide, the settings screen, a soak test, the first tagged release, and the catalog listing. |
+| M7 | Recovery and interruptions | Power loss is simulated at every step of install, update and uninstall on the PC host, and the journal brings the folder back to a complete state each time. Lost connections, timeouts and a removed drive behave as in 5.12. A subset is repeated on a console with a test title. |
+| M8 | First-run check, notice, polish | The first-run check, the notice, languages, sound, art, release notes on the app page, the settings screen and the user guide. |
+| M9 | Update-check kit | The kit is in the boilerplate with its example and tests, and one Prospero app uses it. |
+| M10 | Release | A soak test, the security rules of 6.7 reviewed against the code, the first tagged release, and the catalog listing. |
 
 ---
 
-## 9. Testing
+## 10. Testing
 
 - **On the PC host:** everything that isn't the console. The API client
-  against saved responses of the live API; the version table; archive
+  against saved responses of the live API; signature checks against good,
+  tampered, wrongly signed and outdated files; the version table; archive
   validation against hostile archives (path escapes, links, wrong title,
-  oversized); the transaction with a failure injected at every step; screen
-  snapshots of every state in 5.9.
+  oversized, lying about sizes); the transaction with a failure injected at
+  every step; the retry and resume logic against a test server that drops
+  connections; screen snapshots of every state in 5.9.
+- **Fuzzing:** the JSON reader, the archive reader and the icon decoder, in
+  CI, with the sanitizers on.
 - **On the console:** only what the host can't answer: the gates M1, M2 and
-  M6, real installs, the running check, frame time. Every console run follows
-  `ps5-agent-runbook` and needs the owner's go-ahead.
+  M6, real installs, the running check, frame time. Runs are driven by the
+  test mode (6.9), follow `ps5-agent-runbook`, and need the owner's go-ahead.
 - **Never against a real install.** Destructive tests use dedicated test title
   IDs and their own folders.
 
 ---
 
-## 10. Risks
+## 11. Risks
 
 | Risk | Effect | Answer |
 | --- | --- | --- |
-| Elevation unavailable on a user's setup | Nothing can be installed | Read-only mode with a clear explanation; requirements documented |
+| The catalog's domain or deployment is compromised | Malicious installs with elevated privileges | Signed catalog, no going back to older data, GitHub-only downloads |
+| The signing key leaks or is lost | Signatures stop meaning anything, or stores can't be updated | Two keys carried by the store; a written rotation and loss procedure before release |
+| A listed app turns out to be harmful | Users keep running it | Recall list and warning; the catalog's withdrawal process |
+| A hostile archive or response | Code execution in an elevated process | Limits, strict validation, fuzz tests, hash check before unpacking |
+| Elevation unavailable on a user's setup | Nothing can be installed | First-run check and read-only mode with a clear explanation |
 | A crash or power loss during an install | A half-written app | Staging outside scanned folders, single-rename activation, journal recovery |
 | Replacing a running app's files | Console instability | The running guard; the store's own update handled separately |
+| A drive's filesystem doesn't rename atomically | A mixed or missing app after an interruption | Only locations proven in M1 are offered |
 | Developers not raising `contentVersion` | Updates never appear for their apps | Shown honestly as "no comparable version"; the catalog warns the developer |
 | A developer replaces a release file | The download no longer matches | Refused by the hash check; the catalog's health check flags the listing |
-| External or USB drive removed during an install | Failed install | Location checked before each step; the journal cleans up at the next start |
-| GitHub or homebrew.page unreachable | No installs | Offline browsing from the cache; clear messages; retry |
+| A drive is removed during an install | Failed install | Location checked before each step; the journal cleans up at the next start |
+| GitHub or homebrew.page unreachable | No installs | Offline browsing from the cache; retries; clear messages |
 | Two copies of one title | ShadowMountPlus "duplicate titleId" | Refuse to install what is already present in any location |
 
 ---
 
-## 11. Open questions for the owner
+## 12. Open questions for the owner
 
 1. **Running check (D9):** which call reports that a title is running, and
    does it need anything beyond the filesystem elevation?
@@ -486,6 +735,12 @@ Each ends with something that can be shown. Hardware gates are marked.
    first?
 6. **Design:** start from the kit's `store` design as it is, or a variant that
    matches the website's Holo look?
+7. **Signing key:** it would be a secret of the catalog's deployment, like the
+   Cloudflare token. Is that where you want it, and who else, if anyone,
+   should be able to sign?
+8. **Recall policy:** which reasons put an app on the recall list (harmful,
+   withdrawn by its developer, legal), and should a developer's own withdrawal
+   warn users at all?
 
 ---
 
@@ -494,8 +749,9 @@ Each ends with something that can be shown. Hardware gates are marked.
 | When | Request |
 | --- | --- |
 | Start, and on refresh | `GET /api/v1/index.json` |
-| Start, and on refresh | `GET /api/v1/versions.json` |
+| Start, and on refresh | `GET /api/v1/versions.json` and the recall list |
 | Opening an app | `GET /api/v1/apps/<TITLEID>.json` |
+| With each of the above | Its signature, in the form section 7 settles |
 | A tile or page needs an icon it doesn't have, or its `icon_hash` changed | `GET` the `icon_small` or `icon` address |
 | Install or update | `GET` the app's `artifact_url` |
 
@@ -510,5 +766,19 @@ naming itself and its version.
 | `/data/prosperostore/settings.json` | Settings |
 | `/data/prosperostore/receipts/` | One receipt per managed app |
 | `/data/prosperostore/journal.json` | The transaction in progress, if any |
-| `/data/prosperostore/cache/` | The last catalog files and the icons |
+| `/data/prosperostore/cache/` | The last verified catalog files and the icons |
+| `/data/prosperostore/logs/` | The log and crash reports |
 | `<drive>/prosperostore/staging/`, `backup/` | Work folders, one set per drive |
+
+## Appendix C: Third-party code the plan expects
+
+To be confirmed and listed in `THIRD_PARTY_NOTICES.md` when each is added.
+
+| For | Candidate |
+| --- | --- |
+| ZIP reading | zlib with a small reader, or miniz |
+| JSON | A small, strict parser |
+| SHA-256 | A small public-domain implementation, or the console's own |
+| Ed25519 signature check | A small audited implementation such as Monocypher or TweetNaCl |
+| QR codes | Project Nayuki's QR Code generator |
+| Icons (PNG decode) | stb_image |
