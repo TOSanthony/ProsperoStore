@@ -147,7 +147,10 @@ try:
     healthy = all(transport.port_open(args.host, port) for port in (2121, 3232, 9021))
     result.update(closed=closed, healthy=healthy)
     required = (b"interactive width=3840 height=2160", b"first-swap ok", b"teardown complete")
-    passed = closed and healthy and all(marker in log for marker in required)
+    done.set()
+    logger.join(timeout=5)
+    receipts = log + (args.results / "klog.txt").read_bytes()
+    passed = closed and healthy and all(marker in receipts for marker in required)
     result["classification"] = "pass" if passed else "failed"
     if not passed:
         raise RuntimeError("Startup or teardown criterion failed; inspect saved evidence")

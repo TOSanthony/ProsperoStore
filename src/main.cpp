@@ -59,7 +59,11 @@ int main()
 {
     using namespace hui;
     sys::log("[STORE] PPSA99000 startup");
+#ifdef STORE_SANDBOX_CONTROL
+    const auto elevation_status = elevation::Status::unavailable;
+#else
     const auto elevation_status = elevation::request(elevation::Capability::filesystem);
+#endif
     const char *storage_root = elevation_status == elevation::Status::ok
                                    ? "/data/prosperostore"
                                    : "/download0/prosperostore";

@@ -22,3 +22,7 @@ clang++ -std=c++20 "${flags[@]}" -Wall -Wextra -Wpedantic -Werror -I"$root/src" 
     "$root/src/catalog/client.cpp" "$root/src/core/save_file.cpp" "${objects[@]}" \
     -o "$build/cache-test"
 ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 "$build/cache-test"
+clang++ -std=c++20 "${flags[@]}" -Wall -Wextra -Wpedantic -Werror -I"$root/src" \
+    "$root/tests/store_http_test.cpp" "$root/src/catalog/catalog.cpp" \
+    "$root/src/net/http.cpp" "${objects[@]}" -o "$build/http-test"
+ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 "$build/http-test"
