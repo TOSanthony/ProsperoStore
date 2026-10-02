@@ -4,6 +4,7 @@
 #include "https_trust.hpp"
 #include <array>
 #include <cstddef>
+#include <string>
 
 namespace
 {
@@ -15,9 +16,63 @@ struct Certificate
 };
 extern "C" int sceHttpsLoadCert(int context, int count, const Certificate *const *roots,
                                 const Certificate *client, const Certificate *key);
+struct BuiltinRoots
+{
+    Certificate *certificates;
+    std::size_t count;
+    void *buffer;
+};
+extern "C" int sceSslGetCaCerts(int ssl_context, BuiltinRoots *roots);
+extern "C" int sceSslFreeCaCerts(int ssl_context, BuiltinRoots *roots);
 } // namespace
 namespace https_trust
 {
+int load_builtin_roots(int ssl_context, int http_context)
+{
+    BuiltinRoots roots{};
+    const int queried = sceSslGetCaCerts(ssl_context, &roots);
+    if (queried < 0)
+        return queried;
+    bool valid = roots.certificates && roots.count > 0 && roots.count <= 256;
+    std::string pem;
+    constexpr char alphabet[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    for (std::size_t index = 0; valid && index < roots.count; ++index)
+    {
+        const auto &certificate = roots.certificates[index];
+        if (!certificate.data || certificate.size == 0 || certificate.size > 12u * 1024 ||
+            pem.size() + certificate.size * 2 + 100 > (512u << 10))
+        {
+            valid = false;
+            break;
+        }
+        const auto *bytes = static_cast<const unsigned char *>(certificate.data);
+        pem += "-----BEGIN CERTIFICATE-----\n";
+        unsigned column = 0;
+        for (std::size_t i = 0; i < certificate.size; i += 3)
+        {
+            const unsigned value = (unsigned(bytes[i]) << 16) |
+                                   (i + 1 < certificate.size ? unsigned(bytes[i + 1]) << 8 : 0) |
+                                   (i + 2 < certificate.size ? unsigned(bytes[i + 2]) : 0);
+            pem += alphabet[(value >> 18) & 63];
+            pem += alphabet[(value >> 12) & 63];
+            pem += i + 1 < certificate.size ? alphabet[(value >> 6) & 63] : '=';
+            pem += i + 2 < certificate.size ? alphabet[value & 63] : '=';
+            column += 4;
+            if (column == 64)
+            {
+                pem += '\n';
+                column = 0;
+            }
+        }
+        if (column)
+            pem += '\n';
+        pem += "-----END CERTIFICATE-----\n";
+    }
+    const int freed = sceSslFreeCaCerts(ssl_context, &roots);
+    if (!valid || freed < 0)
+        return freed < 0 ? freed : -1;
+    return load_pem_roots(http_context, pem);
+}
 int load_pem_roots(int http_context, std::string_view pem)
 {
     constexpr std::string_view begin = "-----BEGIN CERTIFICATE-----";

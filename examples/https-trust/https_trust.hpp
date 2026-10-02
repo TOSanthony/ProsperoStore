@@ -8,4 +8,6 @@ namespace https_trust
 // Caller reads the console's immutable CA bundle. Does not change TLS options.
 // Returns the platform result; -1 means malformed or oversized PEM input.
 int load_pem_roots(int http_context, std::string_view pem);
+// Reuse the SSL library's built-in public roots, independent of filesystem root.
+int load_builtin_roots(int ssl_context, int http_context);
 } // namespace https_trust

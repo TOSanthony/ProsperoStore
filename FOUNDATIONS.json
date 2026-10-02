@@ -1,7 +1,7 @@
 [
   {
     "repository": "https://github.com/blackbearreloaded/ps5-native-app-boilerplate",
-    "commit": "845952e38e062b94566bdbe356f05999e64a0b8d",
+    "commit": "f10178edb5efc7156fd3a97c936086818624771f",
     "files": {
       ".clang-format": "a50f76a95278c40be80009087751cca989ab2585cb4a4fd3e6be200c12e0f6ae",
       ".clang-tidy": "ae89f6c9302fb4031e755fdce925bf0d38b3189072b90f5a3180f064ec2c0b7d",
@@ -102,10 +102,10 @@
       "examples/crash-report/crash_report.cpp": "1581496287e894a62ecc894fbd2952c4d013143b54de6d790322837fd53bd162",
       "examples/crash-report/crash_report.hpp": "1887f577e298316eacb9e43231f63ba20a1af030a066973d04194e9cfc14489e",
       "tests/test_crash_report.cpp": "7e5514333d2d608b2f28a537f11f0b7a09b2d6230c66e8be4519df5c2887cf3e",
-      "examples/https-trust/README.md": "cffcc73691866a205f323b35be7f2e20c4033e1e445c64e9cbce501ba6844897",
-      "examples/https-trust/https_trust.cpp": "45784191b689532b4c75ea9c9ecbe3a09ab18046831556d1a56f1774ce5ca370",
-      "examples/https-trust/https_trust.hpp": "40f5118e46e33d5b8d3236182459873bf01ee15271d237e6c0f242e2061b9364",
-      "tests/test_https_trust.cpp": "b430fd7a77df4fb95a8b0646be5bf7b56040e0ebb18be3062c5bbc9f4628b41b"
+      "examples/https-trust/README.md": "81317c7eed37edceff86ee8a2deba3ed5eabb0e6119207e9ee854616101a8bbb",
+      "examples/https-trust/https_trust.cpp": "2e4b46bcdb068e635164c102a8cd1efde4a18e1eaaf21bcbfeec6f1d6ff96197",
+      "examples/https-trust/https_trust.hpp": "156eb5acc1b7b452a9cf0d9d6cfb1f26642269766d2e98ae86e675928c0e71a0",
+      "tests/test_https_trust.cpp": "04ae921dc0254d2c57306e914586b13cf54ef50a2308d814de3ee92f91fc7da0"
     }
   },
   {

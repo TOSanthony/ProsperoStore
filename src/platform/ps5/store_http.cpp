@@ -4,7 +4,6 @@
 
 #include "net/http.hpp"
 #include "platform/ps5/system.hpp"
-#include "core/save_file.hpp"
 #include "../../../examples/https-trust/https_trust.hpp"
 #include <algorithm>
 #include <vector>
@@ -82,11 +81,7 @@ Response request_once(const std::string &url, std::uint64_t limit, const Sink &s
         result = resources.http = sceHttpInit(resources.pool, resources.ssl, 4 * 1024 * 1024);
     if (result >= 0)
     {
-        std::string roots;
-        const bool found =
-            hui::save::read_file("/system/common/cert/CA_LIST.cer", &roots, 512u << 10) ||
-            hui::save::read_file("/common/cert/CA_LIST.cer", &roots, 512u << 10);
-        result = found ? https_trust::load_pem_roots(resources.http, roots) : -1;
+        result = https_trust::load_builtin_roots(resources.ssl, resources.http);
         if (result < 0)
             out.error = "The system certificate store could not be loaded";
     }
