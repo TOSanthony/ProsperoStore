@@ -32,14 +32,15 @@ bool start(const std::string &root)
     const auto log = directory + "/app.log";
     rotate(log);
     rotate(directory + "/crash-latest.txt");
-    // Open both files before redirecting either stream, preserving startup logging on failure.
-    FILE *output = std::fopen(log.c_str(), "a");
-    if (!output)
-        return false;
+    // Reopen the runtime's FILE objects as in the qualified Eden lifecycle.
     std::fflush(nullptr);
-    const bool redirected = ::dup2(::fileno(output), STDOUT_FILENO) >= 0 &&
-                            ::dup2(::fileno(output), STDERR_FILENO) >= 0;
-    std::fclose(output);
+    const bool redirected =
+        std::freopen(log.c_str(), "a", stdout) && std::freopen(log.c_str(), "a", stderr);
+    if (redirected)
+    {
+        std::setvbuf(stdout, nullptr, _IONBF, 0);
+        std::setvbuf(stderr, nullptr, _IONBF, 0);
+    }
     return redirected && crash_report::install(directory.c_str(), "01.000.000", lifecycle);
 }
 void stop()

@@ -891,6 +891,11 @@ To be confirmed and listed in `THIRD_PARTY_NOTICES.md` when each is added.
 
 ## Appendix D: Related repositories
 
+### Implementation evidence
+
+- 2026-10-02 | M0 | 24601ac | host | partial-pass: signed catalog, offline cache, sanitizers, lint, native build | build/candidate-tests.log | console startup
+- 2026-10-02 | M0 | 61a38a3 | PS5 6.02 | failed: elevated startup, asset path failure, runtime released | results/m0-smoke-raw | correct post-elevation paths
+
 | Repository | Role |
 | --- | --- |
 | [ps5-native-app-boilerplate](https://github.com/blackbearreloaded/ps5-native-app-boilerplate) | The template the store is created from; elevation and update check |

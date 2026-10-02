@@ -24,16 +24,16 @@
 namespace
 {
 std::atomic<bool> quit{false};
+std::string request_path;
+std::string handled_path;
 
 void *development_requests(void *)
 {
 #ifdef STORE_DEVELOPMENT
-    const char *handled_path = "/download0/prosperostore/handled.txt";
-    hui::save::ensure_directory("/download0/prosperostore");
     while (!quit.load())
     {
         std::string request;
-        if (hui::save::read_file("/app0/dev/request.txt", &request, 256))
+        if (hui::save::read_file(request_path, &request, 256))
         {
             char verb[16]{};
             char argument[64]{};
@@ -63,6 +63,10 @@ int main()
     const char *storage_root = elevation_status == elevation::Status::ok
                                    ? "/data/prosperostore"
                                    : "/download0/prosperostore";
+    const std::string app_root =
+        elevation_status == elevation::Status::ok ? "/mnt/sandbox/PPSA99000_000/app0" : "/app0";
+    request_path = app_root + "/dev/request.txt";
+    handled_path = std::string(storage_root) + "/handled.txt";
     if (!store::diag::start(storage_root))
         sys::log("[STORE] persistent diagnostics unavailable");
     sys::log("[STORE] elevation status=%u", static_cast<unsigned>(elevation_status));
@@ -74,9 +78,12 @@ int main()
     }
     gfx::Renderer renderer;
     store::Fonts fonts;
-    if (!renderer.init() || !fonts.load(renderer, "/app0/assets"))
+    const bool rendered = renderer.init();
+    const bool loaded_fonts = rendered && fonts.load(renderer, app_root + "/assets");
+    if (!rendered || !loaded_fonts)
     {
-        sys::log("[STORE] renderer initialization failed");
+        sys::log("[STORE] initialization failed renderer=%d fonts=%d root=%s", rendered,
+                 loaded_fonts, app_root.c_str());
         sys::quit();
     }
     ps5::Pad pad;
@@ -84,7 +91,7 @@ int main()
         sys::log("[STORE] controller unavailable");
     audio::Mixer mixer;
     audio::SoundBank sounds;
-    const auto bank = sounds.load("/app0/assets/audio/sfx");
+    const auto bank = sounds.load(app_root + "/assets/audio/sfx");
     sys::log("[STORE] sound files=%d rejected=%d", bank.files, bank.rejected);
     ps5::AudioOut audio;
     audio.start(mixer);

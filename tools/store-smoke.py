@@ -143,7 +143,7 @@ try:
     (args.results / "shadowmount.log").write_text("\n".join(
         line for line in lifecycle.decode(errors="replace").splitlines() if title in line))
     if closed:
-        console.ftp.delete(remote + "/dev/request.txt")
+        console.ftp.sendcmd("DELE " + remote + "/dev/request.txt")
     healthy = all(transport.port_open(args.host, port) for port in (2121, 3232, 9021))
     result.update(closed=closed, healthy=healthy)
     required = (b"interactive width=3840 height=2160", b"first-swap ok", b"teardown complete")
