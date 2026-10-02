@@ -1,6 +1,6 @@
 # ProsperoStore: implementation plan
 
-Draft 2, 2026-10-02. Title ID **PPSA99000** (reserved in the catalog).
+Draft 3, 2026-10-02. Title ID **PPSA99000** (reserved in the catalog).
 
 ProsperoStore is a native PS5 app store for the homebrew catalog at
 [homebrew.page](https://homebrew.page). With the controller, from the couch,
@@ -37,6 +37,11 @@ an exact space check, proven drives first, ShadowMountPlus's own configuration,
 interruption handling, a first-run check, logs and crash reports, a scripted
 test mode, an update-check kit for other apps, and an in-app notice.
 
+Changes since draft 2: the signing key is a plain Ed25519 key held as a
+deployment secret of the catalog repository, with a spare kept offline (D18);
+and a recall is simply the removal of the app's record from the catalog, which
+the store detects from its own receipts, so no recall list is needed (D19).
+
 ---
 
 ## 1. Scope
@@ -53,7 +58,7 @@ test mode, an update-check kit for other apps, and an in-app notice.
 | **Uninstall** | Removes an app the store installed. |
 | **Install location** | A setting: the locations ShadowMountPlus scans on this console, internal storage and the M.2 drive first (section 3.3). |
 | **Running-app guard** | An app that is running can't be updated or uninstalled. |
-| **Recall warnings** | An installed app that the catalog has withdrawn is flagged, with the reason. |
+| **Recall warnings** | An app the store installed that has since been removed from the catalog is flagged as no longer listed. |
 | **First-run check** | One screen that says what the console is missing for installs to work, and how to fix it. |
 | **Works offline** | The last catalog and all icons it has seen stay available; installing needs the network. |
 | **Interruptions handled** | A dropped connection, rest mode or a power cut never leaves a half-installed app. |
@@ -75,7 +80,7 @@ test mode, an update-check kit for other apps, and an in-app notice.
 | Deliverable | Where it lives |
 | --- | --- |
 | **Update-check kit** for other apps (section 8) | `ps5-native-app-boilerplate` |
-| **Catalog signing and the recall list** (section 7) | The catalog repository's automation and API |
+| **Catalog signing** (section 7) | The catalog repository's automation and API |
 
 ---
 
@@ -186,6 +191,12 @@ test mode, an update-check kit for other apps, and an in-app notice.
   accepted and refuses to go back to an older one, and it never installs a
   `content_version` lower than the one the current signed `versions.json`
   names for that app.
+- **Removal is the recall.** Maintainers withdraw an app by deleting its
+  record from the catalog repository. The store keeps a receipt for every app
+  it installed, so an app with a receipt that is absent from the verified
+  catalog was listed once and has been removed. No separate list is needed.
+  The store can't know why it was removed, and it can't tell a removed app
+  from a never-listed one when the app was installed by hand.
 
 ---
 
@@ -212,8 +223,8 @@ Made by the owner on 2026-10-02 unless marked as a default.
 | D15 *(default)* | Uninstall removes the app's folder only. The app's own saved data (`/user/download/<TITLEID>` and anything the app wrote elsewhere) is left alone and the dialog says so. |
 | D16 *(default)* | The store's own files live in `/data/prosperostore` (settings, receipts, cached catalog and icons, journal, logs), and in a `prosperostore` folder at the top of each other drive it installs to (staging only). |
 | D17 *(default)* | Pre-releases are offered like any other release, because the catalog lists one current release per app. |
-| D18 | **Signed catalog.** The catalog build signs what the store relies on; the store verifies it with a public key it carries and refuses anything unsigned, wrongly signed, or older than what it has already accepted. |
-| D19 | **Recall list.** The API publishes withdrawn apps with a reason; the store warns users who have one installed. |
+| D18 | **Signed catalog.** The catalog build signs what the store relies on with a plain Ed25519 key (not GPG: the console would need an OpenPGP parser). The private key is a secret of the catalog repository's deployment environment, never a file in the repository; a second key is generated at the same time and kept offline as the spare. The store carries both public keys and refuses anything unsigned, wrongly signed, or older than what it has already accepted. |
+| D19 | **Recall by removal.** Withdrawing an app means deleting its record from the catalog. The store warns, in neutral words, about any app it installed that is no longer in the verified catalog. No recall list and no reason. |
 | D20 | **GitHub-only downloads.** Artifacts are fetched over HTTPS from `github.com` and GitHub's release file host only, including every redirect. The API is fetched from `homebrew.page` only. |
 | D21 | **Hardened parsers.** Size limits on everything read from the network, strict validation, and fuzz tests for the JSON and ZIP code on the PC. |
 | D22 | **Exact space check.** After the download, the unpacked size is read from the archive's own directory and checked against free space before anything is unpacked. |
@@ -244,8 +255,8 @@ Made by the owner on 2026-10-02 unless marked as a default.
   Installed and Updates.
 - Search by name and developer with the system keyboard; sort by name, newest
   release, recently updated.
-- Each tile carries a state badge: Installed, Update, Withdrawn, Coming soon,
-  or nothing.
+- Each tile carries a state badge: Installed, Update, Coming soon, or
+  nothing.
 
 ### 5.2 App page
 
@@ -371,8 +382,7 @@ actually on disk.
 | Managed, update available | Update | Uninstall as second action |
 | Managed, version unknown | Uninstall | "This app doesn't publish a comparable version" |
 | Not managed | none | The note from 5.6 |
-| Withdrawn, installed | Uninstall (when managed) | The recall warning from 5.11 |
-| Withdrawn, not installed | none | Not shown in Browse at all |
+| Managed, no longer in the catalog | Uninstall | The warning from 5.11 |
 | Running | actions disabled | "Close the app first" |
 | In the queue / downloading / verifying / unpacking | Cancel | |
 | Failed | Retry | With the reason |
@@ -398,14 +408,18 @@ app is running; no permission to write (elevation missing).
 
 ### 5.11 Recall warnings
 
-- The API's recall list (section 7) names apps the catalog has withdrawn, with
-  a reason and a date. It is part of the signed catalog.
-- A withdrawn app disappears from Browse. If it is installed, it stays in
-  Installed with a **Withdrawn** badge, and the store shows a warning once per
-  app: the reason, and Uninstall when the store manages it.
+- An app is recalled by removing its record from the catalog (D19).
+- After every verified catalog refresh, the store compares its receipts with
+  the catalog. A managed app whose title ID is not there any more is marked
+  **No longer listed** in Installed, and the store shows a warning once per
+  app: "This app is no longer in the catalog. It may have been withdrawn by
+  its developer or removed by the catalog. You can keep it or uninstall it."
 - The store never removes anything by itself. The user decides.
-- An app that merely isn't in the catalog (installed by hand, never listed) is
-  not "withdrawn" and gets no warning.
+- The check uses only a catalog that verified and isn't older than the last
+  one accepted (3.5), so a network problem or a stale copy can't produce the
+  warning. If the app comes back to the catalog, the mark goes away.
+- Apps installed by hand get no warning: without a receipt the store can't
+  tell a removed app from one that was never listed.
 
 ### 5.12 Interruptions
 
@@ -480,13 +494,13 @@ elevation request runs before any of these threads exists (3.1).
 
 ### 6.3 Catalog client
 
-- Reads `index.json` for lists, `apps/<TITLEID>.json` for one app,
-  `versions.json` for the update check, and the recall list.
+- Reads `index.json` for lists, `apps/<TITLEID>.json` for one app, and
+  `versions.json` for the update check and the recall comparison (5.11).
 - **Verification (D18).** Each of those files is accepted only with a valid
-  signature from a key the store carries. The store carries two public keys,
-  the current one and the next, so the key can be rotated without stranding
-  installed stores. A small, audited Ed25519 implementation is vendored for
-  this. The exact form (a signature per file, or one signed list of file
+  Ed25519 signature from a key the store carries. The store carries two public
+  keys, the one the catalog signs with and the offline spare, so the key can
+  be replaced without stranding installed stores. A small, audited Ed25519
+  implementation is vendored for this. The exact form (a signature per file, or one signed list of file
   hashes) is settled with the catalog work in section 7.
 - **No going back.** The signed data carries the catalog's build sequence. The
   store keeps the highest it has accepted and rejects lower ones, and it
@@ -571,7 +585,7 @@ catalog entry pointing anywhere else is refused before any request is made.
 
 | Input | Limit |
 | --- | --- |
-| `versions.json`, recall list | 1 MiB |
+| `versions.json` | 1 MiB |
 | `index.json` | 4 MiB |
 | `apps/<TITLEID>.json` | 64 KiB |
 | An icon | 2 MiB, and at most 1024 pixels on a side once decoded |
@@ -627,8 +641,7 @@ addition to the API (a higher `schema`), so existing clients keep working.
 
 | Item | What it is | Needed by |
 | --- | --- | --- |
-| **Signing** | The build signs the files the store relies on with an Ed25519 key kept as a deployment secret, and adds the build sequence to the signed data. The public keys (current and next) are published in the catalog's documentation. Key rotation and what happens if the key is lost are written down before the first store release. | M2 |
-| **Recall list** | A file in the API naming withdrawn title IDs with a reason and date, fed by a small file in the catalog repository that maintainers edit when they withdraw an app. Signed like the rest. | M5 |
+| **Signing** | The deploy job signs the files the store relies on with the Ed25519 key in its environment secret `CATALOG_SIGNING_KEY`, using the runner's own `openssl`, and adds the build sequence to the signed data. Both public keys are committed to the catalog repository and published in its documentation. A build without the secret (a fork, a local build) is simply unsigned. How to switch to the spare key, and what to do if a key leaks, is written down before the first store release. | M2 |
 | **Release notes** | The release's notes as text in `apps/<TITLEID>.json`, with a length limit. | M8 |
 | **Icons** | A lighter 256-pixel icon, and a cache of converted icons so catalog builds stay within their time limit as the catalog grows. | M3 |
 | **The store's listing** | PPSA99000 moves from a reservation to a release, with a `param.json` in its repository so `content_version` is right. | M6 |
@@ -672,7 +685,7 @@ Each ends with something that can be shown. Hardware gates are marked.
 | M2 | **Gate: network and trust** | On a console, the store fetches the signed catalog from homebrew.page with certificate checks and verifies it; refuses a tampered and an outdated copy; and downloads one real release from GitHub through the redirect with a correct SHA-256, refusing a redirect to another host. Resume is tried and recorded. If `sceHttp` can't, the curl fallback is built here. |
 | M3 | Catalog and browse | The full catalog scrolls at 60 frames per second with icons, sections, search and sort, from live data and from the offline cache. PC host first, then console. |
 | M4 | Install | A real catalog app installs from the store and appears on the home screen. Every refusal and failure in 5.3 has a test, including the exact space check and the archive limits. The fuzz tests run in CI. |
-| M5 | Installed, update, uninstall, running guard, recall | The Installed and Updates screens are correct for managed and unmanaged apps; update and uninstall work; a running app is refused; a withdrawn test app shows its warning. Needs the owner's running check (D9). |
+| M5 | Installed, update, uninstall, running guard, recall | The Installed and Updates screens are correct for managed and unmanaged apps; update and uninstall work; a running app is refused; a test app removed from a test catalog shows the "no longer listed" warning. Needs the owner's running check (D9). |
 | M6 | **Gate: self-update** | Either the store replaces itself safely and asks for a restart, or the manual path is in place. |
 | M7 | Recovery and interruptions | Power loss is simulated at every step of install, update and uninstall on the PC host, and the journal brings the folder back to a complete state each time. Lost connections, timeouts and a removed drive behave as in 5.12. A subset is repeated on a console with a test title. |
 | M8 | First-run check, notice, polish | The first-run check, the notice, languages, sound, art, release notes on the app page, the settings screen and the user guide. |
@@ -705,8 +718,9 @@ Each ends with something that can be shown. Hardware gates are marked.
 | Risk | Effect | Answer |
 | --- | --- | --- |
 | The catalog's domain or deployment is compromised | Malicious installs with elevated privileges | Signed catalog, no going back to older data, GitHub-only downloads |
-| The signing key leaks or is lost | Signatures stop meaning anything, or stores can't be updated | Two keys carried by the store; a written rotation and loss procedure before release |
-| A listed app turns out to be harmful | Users keep running it | Recall list and warning; the catalog's withdrawal process |
+| The signing key leaks or is lost | Signatures stop meaning anything, or stores can't be updated | The store carries a second public key whose private half is kept offline; a written procedure to switch to it before release |
+| A listed app turns out to be harmful | Users keep running it | Its record is removed; the store warns everyone who installed it through the store. Apps installed by hand aren't covered |
+| A record is removed by mistake | False "no longer listed" warnings | Neutral wording, nothing is removed automatically, and the mark clears when the record returns |
 | A hostile archive or response | Code execution in an elevated process | Limits, strict validation, fuzz tests, hash check before unpacking |
 | Elevation unavailable on a user's setup | Nothing can be installed | First-run check and read-only mode with a clear explanation |
 | A crash or power loss during an install | A half-written app | Staging outside scanned folders, single-rename activation, journal recovery |
@@ -735,12 +749,8 @@ Each ends with something that can be shown. Hardware gates are marked.
    first?
 6. **Design:** start from the kit's `store` design as it is, or a variant that
    matches the website's Holo look?
-7. **Signing key:** it would be a secret of the catalog's deployment, like the
-   Cloudflare token. Is that where you want it, and who else, if anyone,
-   should be able to sign?
-8. **Recall policy:** which reasons put an app on the recall list (harmful,
-   withdrawn by its developer, legal), and should a developer's own withdrawal
-   warn users at all?
+7. **Recall wording:** is the neutral message in 5.11 what you want users to
+   read, given the store can't say why an app was removed?
 
 ---
 
@@ -749,7 +759,7 @@ Each ends with something that can be shown. Hardware gates are marked.
 | When | Request |
 | --- | --- |
 | Start, and on refresh | `GET /api/v1/index.json` |
-| Start, and on refresh | `GET /api/v1/versions.json` and the recall list |
+| Start, and on refresh | `GET /api/v1/versions.json` |
 | Opening an app | `GET /api/v1/apps/<TITLEID>.json` |
 | With each of the above | Its signature, in the form section 7 settles |
 | A tile or page needs an icon it doesn't have, or its `icon_hash` changed | `GET` the `icon_small` or `icon` address |
