@@ -36,7 +36,10 @@ if not files or not (package / "eboot.bin").is_file():
     raise SystemExit("Build the development candidate first")
 args.results.mkdir(parents=True, exist_ok=False)
 manifest = {str(path.relative_to(package)): hashlib.sha256(path.read_bytes()).hexdigest() for path in files}
-(args.results / "candidate.json").write_text(json.dumps({"commit": commit, "files": manifest}, indent=2))
+(args.results / "candidate.json").write_text(json.dumps({
+    "commit": commit, "files": manifest,
+    "transport_sha256": hashlib.sha256((args.ui_tools / "console-tour.py").read_bytes()).hexdigest()
+}, indent=2))
 token = "prosperostore-" + uuid.uuid4().hex
 while True:
     try:
@@ -54,7 +57,7 @@ remote = "/data/homebrew/" + title
 try:
     if not all(transport.port_open(args.host, port) for port in (2121, 3232, 9021)):
         raise RuntimeError("Required console services are unavailable")
-    console = transport.Console(args.host, 2121)
+    console = transport.Console(args.host, 2121, raw_self=True)
     names = console.names("/mnt/sandbox")
     if names is None:
         raise RuntimeError("Cannot establish an idle console")
@@ -111,7 +114,7 @@ try:
     log = b""
     for _ in range(12):
         time.sleep(5)
-        console = transport.Console(args.host, 2121)
+        console = transport.Console(args.host, 2121, raw_self=True)
         log = console.read("/data/prosperostore/logs/app.log") or console.read(
             f"/mnt/sandbox/{title}_000/download0/prosperostore/logs/app.log") or log
         (args.results / "app.log").write_bytes(log)
@@ -123,7 +126,7 @@ try:
         if crash:
             result["classification"] = "failed"
             raise RuntimeError("App crash detected; do not retry")
-    console = transport.Console(args.host, 2121)
+    console = transport.Console(args.host, 2121, raw_self=True)
     console.write(remote + "/dev/request.txt", f"quit - {token}\n".encode())
     closed = False
     for _ in range(12):
