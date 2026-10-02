@@ -1,7 +1,7 @@
 [
   {
     "repository": "https://github.com/blackbearreloaded/ps5-native-app-boilerplate",
-    "commit": "4a0c2f0e2ae1a83ceaf5449b41a6c9b9d95c0fc1",
+    "commit": "845952e38e062b94566bdbe356f05999e64a0b8d",
     "files": {
       ".clang-format": "a50f76a95278c40be80009087751cca989ab2585cb4a4fd3e6be200c12e0f6ae",
       ".clang-tidy": "ae89f6c9302fb4031e755fdce925bf0d38b3189072b90f5a3180f064ec2c0b7d",
@@ -9,7 +9,7 @@
       ".github/workflows/tooling.yml": "ed89240bcdf3cff31b7cd1f45e8adb9b1c66998a74c763e91c9bd12cbbe4c93b",
       ".gitignore": "ccbdea5397c44a74a6271be9794255013deae8a666f82734296f84cbb7ca0017",
       "LICENSE": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
-      "Makefile": "44a59b2d51f786e84083bbec6b16cc711cad9bb543aa03156e0bb90699a8d50a",
+      "Makefile": "0f61db178ce020966c0bc9c4a65509fcf77e075fe86dae6bb5795874e9827d99",
       "THIRD_PARTY_NOTICES.md": "e2641a293be9b1b84241c17e17f3b805c7a011a76f658da6048f366ad35198c6",
       "build.ps1": "826a8e8320a1881720f87ced4dae8006a5ec865494a85d3f1d33458ff8cec1e3",
       "docs/CONFIGURATION.md": "fdec7d2fffd98a2a4e6ebeaee6b296aae2131a3e323290fd35f5544bfd294b15",
@@ -101,12 +101,16 @@
       "examples/crash-report/README.md": "5ce6626945ca01c0d82a190a35ed9ea6307a7cb1264e580d0ff7d90783bdca6d",
       "examples/crash-report/crash_report.cpp": "1581496287e894a62ecc894fbd2952c4d013143b54de6d790322837fd53bd162",
       "examples/crash-report/crash_report.hpp": "1887f577e298316eacb9e43231f63ba20a1af030a066973d04194e9cfc14489e",
-      "tests/test_crash_report.cpp": "7e5514333d2d608b2f28a537f11f0b7a09b2d6230c66e8be4519df5c2887cf3e"
+      "tests/test_crash_report.cpp": "7e5514333d2d608b2f28a537f11f0b7a09b2d6230c66e8be4519df5c2887cf3e",
+      "examples/https-trust/README.md": "cffcc73691866a205f323b35be7f2e20c4033e1e445c64e9cbce501ba6844897",
+      "examples/https-trust/https_trust.cpp": "45784191b689532b4c75ea9c9ecbe3a09ab18046831556d1a56f1774ce5ca370",
+      "examples/https-trust/https_trust.hpp": "40f5118e46e33d5b8d3236182459873bf01ee15271d237e6c0f242e2061b9364",
+      "tests/test_https_trust.cpp": "b430fd7a77df4fb95a8b0646be5bf7b56040e0ebb18be3062c5bbc9f4628b41b"
     }
   },
   {
     "repository": "https://github.com/blackbearreloaded/ps5-homebrew-ui",
-    "commit": "e146953a5ae1cd7a7ef2837338ba9957709cc80d",
+    "commit": "d53e45ec5ae6370a4a8f802b9ac7c94d2fd849ba",
     "files": {
       "assets/audio/music/first-light.ogg": "7329a7fcfcce3d144837723e5797f07df1703052972623a05df52b8c9b457b75",
       "assets/audio/music/open-strings.ogg": "98847200e3bbeca384aa15fb46476057e3ecb2ba0390b07c148bcb3edb34b036",

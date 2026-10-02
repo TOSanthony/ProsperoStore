@@ -4,6 +4,8 @@
 
 #include "net/http.hpp"
 #include "platform/ps5/system.hpp"
+#include "core/save_file.hpp"
+#include "../../../examples/https-trust/https_trust.hpp"
 #include <algorithm>
 #include <vector>
 
@@ -75,9 +77,19 @@ Response request_once(const std::string &url, std::uint64_t limit, const Sink &s
     Response out;
     int result = resources.pool = sceNetPoolCreate("ProsperoStore", 1024 * 1024, 0);
     if (result >= 0)
-        result = resources.ssl = sceSslInit(304 * 1024);
+        result = resources.ssl = sceSslInit(2 * 1024 * 1024);
     if (result >= 0)
         result = resources.http = sceHttpInit(resources.pool, resources.ssl, 4 * 1024 * 1024);
+    if (result >= 0)
+    {
+        std::string roots;
+        const bool found =
+            hui::save::read_file("/system/common/cert/CA_LIST.cer", &roots, 512u << 10) ||
+            hui::save::read_file("/common/cert/CA_LIST.cer", &roots, 512u << 10);
+        result = found ? https_trust::load_pem_roots(resources.http, roots) : -1;
+        if (result < 0)
+            out.error = "The system certificate store could not be loaded";
+    }
     if (result >= 0)
         result = resources.tmpl =
             sceHttpCreateTemplate(resources.http, "ProsperoStore/01.000.000", 2, 0);
@@ -146,7 +158,7 @@ Response request_once(const std::string &url, std::uint64_t limit, const Sink &s
     }
     if (control.cancelled.load())
         out.error = "Cancelled";
-    else if (result < 0)
+    else if (result < 0 && out.error.empty())
         out.error = "The network request failed";
     hui::sys::log("[STORE] http rc=0x%x status=%d bytes=%llu pool=%d ssl=%d http=%d tmpl=%d "
                   "conn=%d req=%d headers=%zu error=%s",

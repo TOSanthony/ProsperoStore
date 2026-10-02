@@ -68,7 +68,14 @@ doctor:
 	@printf '%s\n' '==> [doctor] Checking the Linux/WSL host without changing it'
 	@bash tools/doctor.sh
 
-test: test-unit test-integration test-elevation test-update-check test-crash-report
+test: test-unit test-integration test-elevation test-update-check test-crash-report test-https-trust
+
+.PHONY: test-https-trust
+test-https-trust:
+	@mkdir -p build/tests
+	@$(HOST_CXX) $(HOST_TEST_CXXFLAGS) -fsanitize=address,undefined tests/test_https_trust.cpp \
+		examples/https-trust/https_trust.cpp -o build/tests/test-https-trust
+	@build/tests/test-https-trust
 
 .PHONY: test-crash-report
 test-crash-report:

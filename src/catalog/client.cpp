@@ -6,7 +6,6 @@
 #include "core/save_file.hpp"
 #include <fcntl.h>
 #include <cerrno>
-#include <cstdio>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -15,6 +14,46 @@ namespace store::catalog
 namespace
 {
 constexpr const char *kApi = "https://homebrew.page/api/v1/";
+// open with O_NOFOLLOW also works where the sandbox prohibits lstat. Keep the
+// descriptor through validation and read so a path swap cannot replace it.
+int read_trust(const std::string &path, std::string &out)
+{
+    const int fd = ::open(path.c_str(), O_RDONLY | O_NOFOLLOW);
+    if (fd < 0)
+        return errno == ENOENT ? 0 : -1;
+    struct stat info
+    {
+    };
+    bool valid = ::fstat(fd, &info) == 0 && S_ISREG(info.st_mode) && info.st_size > 64 &&
+                 static_cast<std::uint64_t>(info.st_size) <= kVersionsLimit + 64;
+    std::string candidate;
+    char bytes[4096];
+    while (valid)
+    {
+        const auto count = ::read(fd, bytes, sizeof(bytes));
+        if (count < 0 && errno == EINTR)
+            continue;
+        if (count < 0)
+        {
+            valid = false;
+            break;
+        }
+        if (count == 0)
+            break;
+        if (candidate.size() + static_cast<std::size_t>(count) > kVersionsLimit + 64)
+        {
+            valid = false;
+            break;
+        }
+        candidate.append(bytes, static_cast<std::size_t>(count));
+    }
+    if (::close(fd) != 0)
+        valid = false;
+    if (!valid)
+        return -1;
+    out = std::move(candidate);
+    return 1;
+}
 bool flush_directory(const std::string &path)
 {
     const int descriptor = ::open(path.c_str(), O_RDONLY | O_DIRECTORY);
@@ -84,7 +123,7 @@ bool Client::parse(const std::string &bundle, std::uint64_t highest, Snapshot &o
 bool Client::cached(Snapshot &out, std::string &error)
 {
     std::string bundle;
-    if (!hui::save::read_file(cache_ + "/current", &bundle, kVersionsLimit + 64))
+    if (read_trust(cache_ + "/current", bundle) != 1)
     {
         error = "No verified offline catalog";
         return false;
@@ -103,27 +142,19 @@ bool Client::refresh(Snapshot &out, net::Control &control, std::string &error)
     std::uint64_t highest = out.manifest.sequence;
     std::string current;
     const std::string trust_path = cache_ + "/current";
-    struct stat trust_stat
+    const int trust_state = read_trust(trust_path, current);
+    if (trust_state < 0)
     {
-    };
-    const int trust_exists = ::lstat(trust_path.c_str(), &trust_stat);
-    if (trust_exists != 0 && errno != ENOENT)
-    {
-        std::fprintf(stderr, "[STORE] trust stat rc=%d errno=%d path=%s\n", trust_exists, errno,
-                     trust_path.c_str());
-        error = "The saved catalog trust record is inaccessible";
+        error = "The saved catalog trust record is inaccessible or damaged";
         return false;
     }
-    if (trust_exists == 0)
+    if (trust_state == 1)
     {
         Manifest previous;
         std::string ignored;
-        if (!S_ISREG(trust_stat.st_mode) ||
-            !hui::save::read_file(trust_path, &current, kVersionsLimit + 64) ||
-            current.size() <= 64 ||
-            !verify_manifest(std::string_view(current).substr(64),
-                             std::string_view(current).substr(0, 64), highest, public_keys(),
-                             previous, ignored))
+        if (current.size() <= 64 || !verify_manifest(std::string_view(current).substr(64),
+                                                     std::string_view(current).substr(0, 64),
+                                                     highest, public_keys(), previous, ignored))
         {
             error = "The saved catalog trust record is damaged";
             return false;

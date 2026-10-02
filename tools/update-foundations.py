@@ -27,7 +27,7 @@ for record, argument in zip(records, sys.argv[1:]):
     tracked = subprocess.check_output(["git", "-C", str(source), "ls-files"], text=True).splitlines()
     if record["repository"].endswith("/ps5-native-app-boilerplate"):
         for name in tracked:
-            if name.startswith("examples/") or name == "tests/test_crash_report.cpp":
+            if name.startswith("examples/") or name in ("tests/test_crash_report.cpp", "tests/test_https_trust.cpp"):
                 record["files"].setdefault(name, "")
     for name in record["files"]:
         (root / name).parent.mkdir(parents=True, exist_ok=True)
