@@ -19,6 +19,7 @@ parser.add_argument("--lock", type=Path, required=True)
 parser.add_argument("--protocol", type=Path, required=True)
 parser.add_argument("--ui-tools", type=Path, required=True)
 parser.add_argument("--results", type=Path, required=True)
+parser.add_argument("--close-prior", help="Exact previously identified title to close before the case")
 args = parser.parse_args()
 root = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("console_tour", args.ui_tools / "console-tour.py")
@@ -58,6 +59,22 @@ try:
     if names is None:
         raise RuntimeError("Cannot establish an idle console")
     active = [name for name in names if name.startswith("PPSA")]
+    if args.close_prior and active == [args.close_prior + "_000"]:
+        prior = subprocess.run(
+            ["bash", str(args.protocol / "scripts/send-controller.sh"), "close", args.close_prior, args.host, "9021"],
+            env={**os.environ, "PS5_PAYLOAD_SDK": str(root / ".deps/native/ps5-payload-sdk")},
+            capture_output=True, timeout=60)
+        (args.results / "close-prior.log").write_bytes(prior.stdout + prior.stderr)
+        if prior.returncode:
+            raise RuntimeError("Exact prior title could not be closed")
+        for _ in range(12):
+            time.sleep(5)
+            names = console.names("/mnt/sandbox")
+            if names is None:
+                raise RuntimeError("Console health became uncertain during preflight")
+            active = [name for name in names if name.startswith("PPSA")]
+            if not active:
+                break
     if active:
         raise RuntimeError("Console has a running title: " + ", ".join(active))
     logger = threading.Thread(target=transport.record_klog,
