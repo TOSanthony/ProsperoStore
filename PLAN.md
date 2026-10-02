@@ -122,8 +122,12 @@ the store detects from its own receipts, so no recall list is needed (D19).
 
 - HTTPS with certificate verification works through `sceHttp` with the system
   certificate store. **[proven]** against lichess.org.
-- The same against `homebrew.page` (Cloudflare) and GitHub's release file host
-  (a redirect from `github.com` to `release-assets.githubusercontent.com`) is
+- The same against `homebrew.page` (Cloudflare) is **[proven]**: on
+  2026-10-02 the update-check example title made five API requests from a
+  console's sandbox with certificate verification on, each answered in 71 to
+  154 ms, including creating and destroying the `sceHttp` contexts.
+- GitHub's release file host (a redirect from `github.com` to
+  `release-assets.githubusercontent.com`) and a large download are still
   **[assumed]**. Fallback agreed with the owner: curl. Note for that path:
   libcurl with PacBrew OpenSSL failed to start in a native app before.
 - `sceHttpReadData` returns only when the buffer it was given is full.
@@ -657,6 +661,11 @@ Every app should be able to tell its user that a newer version exists. This is
 a small, separate deliverable in `ps5-native-app-boilerplate`, usable by any
 developer, not only by Prospero apps.
 
+**Status: delivered and validated on a console (2026-10-02).** It is
+`examples/update-check/` in the boilerplate (`update_check.h`, `update_check.c`,
+an example title, host tests under sanitizers) with `docs/UPDATE_CHECK.md`. What
+remains from this section is one Prospero app adopting it.
+
 - **What it does:** once per launch, in the background, it fetches the app's
   own `apps/<TITLEID>.json`, compares `content_version` with the
   `contentVersion` the app was built with (the rule in the API specification),
@@ -691,7 +700,7 @@ Each ends with something that can be shown. Hardware gates are marked.
 | M6 | **Gate: self-update** | Either the store replaces itself safely and asks for a restart, or the manual path is in place. |
 | M7 | Recovery and interruptions | Power loss is simulated at every step of install, update and uninstall on the PC host, and the journal brings the folder back to a complete state each time. Lost connections, timeouts and a removed drive behave as in 5.12. A subset is repeated on a console with a test title. |
 | M8 | First-run check, notice, polish | The first-run check, the notice, languages, sound, art, release notes on the app page, the settings screen and the user guide. |
-| M9 | Update-check kit | The kit is in the boilerplate with its example and tests, and one Prospero app uses it. |
+| M9 | Update-check kit | **Kit done** (in the boilerplate, validated on a console). Remaining: one Prospero app uses it. |
 | M10 | Release | A soak test, the security rules of 6.7 reviewed against the code, the first tagged release, and the catalog listing. |
 
 ---
