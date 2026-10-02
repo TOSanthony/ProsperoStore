@@ -1,0 +1,53 @@
+// ProsperoStore - Verified catalog models and trust boundary.
+// Copyright (C) 2026 BlackBearReloaded
+// SPDX-License-Identifier: GPL-3.0-or-later
+#pragma once
+
+#include <array>
+#include <cstdint>
+#include <map>
+#include <span>
+#include <string>
+#include <string_view>
+#include <vector>
+
+namespace store::catalog
+{
+constexpr std::size_t kIndexLimit = 4 * 1024 * 1024;
+constexpr std::size_t kDetailLimit = 64 * 1024;
+constexpr std::size_t kVersionsLimit = 1024 * 1024;
+constexpr std::uint64_t kArtifactLimit = 2ULL * 1024 * 1024 * 1024;
+
+bool title_id(std::string_view value);
+bool version(std::string_view value);
+bool update_available(std::string_view installed, std::string_view available);
+bool api_url(std::string_view url);
+bool artifact_url(std::string_view url, bool redirected = false);
+std::string sha256(std::string_view bytes);
+bool hex_bytes(std::string_view text, std::span<std::uint8_t> bytes);
+
+struct Entry
+{
+    std::string id, name, author, kind, status;
+    std::string version, content_version, format, icon, icon_hash, released, updated;
+    std::string description, license, source, page, artifact, digest, release_notes;
+    std::uint64_t size = 0;
+};
+
+struct Manifest
+{
+    std::uint64_t sequence = 0;
+    std::string commit;
+    std::map<std::string, std::string> files;
+    bool verifies(std::string_view path, std::string_view body) const;
+};
+
+using PublicKey = std::array<std::uint8_t, 32>;
+std::array<PublicKey, 2> public_keys();
+bool verify_manifest(std::string_view body, std::string_view signature, std::uint64_t highest,
+                     std::span<const PublicKey> keys, Manifest &out, std::string &error);
+bool parse_index(std::string_view body, std::vector<Entry> &out, std::string &error);
+bool parse_detail(std::string_view body, std::string_view expected, Entry &out, std::string &error);
+bool parse_versions(std::string_view body, std::map<std::string, std::string> &out,
+                    std::string &error);
+} // namespace store::catalog

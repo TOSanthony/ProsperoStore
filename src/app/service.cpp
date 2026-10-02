@@ -1,0 +1,119 @@
+// ProsperoStore - Catalog cache and HTTPS never run on the render thread.
+// Copyright (C) 2026 BlackBearReloaded
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+#include "app/service.hpp"
+#include "core/save_file.hpp"
+#include "platform/ps5/system.hpp"
+
+namespace store
+{
+Service::~Service()
+{
+    stop();
+}
+bool Service::start()
+{
+    if (started_)
+        return true;
+    started_ = pthread_create(&thread_, nullptr, entry, this) == 0;
+    return started_;
+}
+void Service::stop()
+{
+    control_.cancel();
+    if (started_)
+        pthread_join(thread_, nullptr);
+    started_ = false;
+}
+bool Service::take(std::vector<Update> &updates)
+{
+    std::unique_lock lock(mutex_, std::try_to_lock);
+    if (!lock.owns_lock() || updates_.empty())
+        return false;
+    updates.swap(updates_);
+    return true;
+}
+bool Service::request_detail(const std::string &id)
+{
+    std::unique_lock lock(mutex_, std::try_to_lock);
+    if (!lock.owns_lock())
+        return false;
+    detail_ = id;
+    return true;
+}
+void Service::publish(Update update)
+{
+    std::lock_guard lock(mutex_);
+    // At most the startup snapshots plus one outstanding detail are in flight.
+    if (updates_.size() >= 8)
+        updates_.erase(updates_.begin());
+    updates_.push_back(std::move(update));
+}
+void *Service::entry(void *self)
+{
+    static_cast<Service *>(self)->run();
+    return nullptr;
+}
+void Service::run()
+{
+    if (!hui::save::ensure_directory(root_))
+    {
+        Update failure;
+        failure.message = "Storage is unavailable. The catalog could not be loaded.";
+        publish(std::move(failure));
+        return;
+    }
+    catalog::Client client(root_ + "/cache");
+    catalog::Snapshot snapshot;
+    std::string error;
+    if (client.cached(snapshot, error))
+    {
+        Update cached;
+        cached.kind = Update::Kind::catalog;
+        cached.snapshot = snapshot;
+        cached.message = "Offline catalog • Checking for updates";
+        publish(std::move(cached));
+    }
+    bool refreshed = false;
+    for (unsigned attempt = 0; attempt < 4 && !control_.cancelled.load(); ++attempt)
+    {
+        if (client.refresh(snapshot, control_, error))
+        {
+            refreshed = true;
+            break;
+        }
+        if (attempt < 3)
+            for (unsigned tick = 0; tick < (10U << attempt) && !control_.cancelled.load(); ++tick)
+                hui::sys::sleep_us(100000);
+    }
+    if (!control_.cancelled.load())
+    {
+        Update result;
+        result.kind = snapshot.verified ? Update::Kind::catalog : Update::Kind::error;
+        result.snapshot = snapshot;
+        result.message = refreshed ? "Catalog verified • Up to date" : "Offline • " + error;
+        hui::sys::log("[STORE] catalog verified=%d online=%d sequence=%llu apps=%zu",
+                      snapshot.verified, refreshed,
+                      static_cast<unsigned long long>(snapshot.manifest.sequence),
+                      snapshot.entries.size());
+        publish(std::move(result));
+    }
+    while (!control_.cancelled.load())
+    {
+        std::string id;
+        {
+            std::lock_guard lock(mutex_);
+            id.swap(detail_);
+        }
+        if (!id.empty())
+        {
+            Update result;
+            if (client.detail(snapshot, id, result.entry, control_, result.message))
+                result.kind = Update::Kind::detail;
+            publish(std::move(result));
+        }
+        hui::sys::sleep_us(100000);
+    }
+}
+} // namespace store
