@@ -74,7 +74,7 @@ constexpr float kRowPitch = kGridTileH + 32.0f;
 constexpr float kViewBottom = 984.0f; // tiles end above the hint row
 constexpr float kFadeFoot = 44.0f;
 constexpr float kFadeHead = 24.0f;
-constexpr float kTabH = 44.0f;  // the sections in the top bar
+constexpr float kTabH = 44.0f; // the sections in the top bar
 
 // The product page: key art behind, words on the left, a glass panel on the right.
 constexpr Rect kPageIcon{96.0f, 146.0f, 144.0f, 144.0f};
@@ -105,8 +105,8 @@ Rect drift(float time)
 {
     const float zoom = 1.035f + 0.035f * (0.5f - 0.5f * std::cos(time * 0.2094f));
     const float size = 1.0f / zoom, room = (1.0f - size) * 0.5f;
-    return {room + room * 0.6f * std::sin(time * 0.071f), room + room * 0.5f * std::cos(time * 0.053f),
-            size, size};
+    return {room + room * 0.6f * std::sin(time * 0.071f),
+            room + room * 0.5f * std::cos(time * 0.053f), size, size};
 }
 
 std::string folded(std::string text)
@@ -559,7 +559,8 @@ void Screen::refresh_detail()
         blocks.push_back(Block::paragraph("Loading verified app details..."));
     for (const auto &installed : app.installed)
     {
-        blocks.push_back(Block::heading(installed.image ? "Installed image" : "On this console", 3));
+        blocks.push_back(
+            Block::heading(installed.image ? "Installed image" : "On this console", 3));
         blocks.push_back(Block::paragraph(installed.path));
     }
     article_.set_content(std::move(blocks));
@@ -883,10 +884,9 @@ void Screen::update_home(const InputFrame &input, ui::Feedback &feedback)
                 auto &now = shelves_[static_cast<std::size_t>(shelf_of(focus_))];
                 now.pos = focus_ - now.start;
                 // Shelves further down sound a little lower.
-                feedback.play(
-                    audio::Cue::focus,
-                    std::max(0.82f, 1.06f - 0.04f * static_cast<float>(shelf_of(focus_))),
-                    ui::pan_for_x(card_rect(focus_).cx()));
+                feedback.play(audio::Cue::focus,
+                              std::max(0.82f, 1.06f - 0.04f * static_cast<float>(shelf_of(focus_))),
+                              ui::pan_for_x(card_rect(focus_).cx()));
             }
         }
         else
@@ -927,9 +927,10 @@ void Screen::update_home(const InputFrame &input, ui::Feedback &feedback)
                 break;
             }
             if (focus_ != before) // rows further down sound a little lower
-                feedback.play(audio::Cue::focus,
-                              std::max(0.82f, 1.06f - 0.04f * static_cast<float>(focus_ / kColumns)),
-                              ui::pan_for_x(card_rect(focus_).cx()));
+                feedback.play(
+                    audio::Cue::focus,
+                    std::max(0.82f, 1.06f - 0.04f * static_cast<float>(focus_ / kColumns)),
+                    ui::pan_for_x(card_rect(focus_).cx()));
         }
     }
     else if (zone_ == Zone::banner)
@@ -1038,6 +1039,22 @@ void Screen::update_page(const InputFrame &input, ui::Feedback &feedback)
 {
     const App &shown = *focused();
     const Offer state = offer(shown);
+    // Uninstalling: Cross when it is the page's action, else Square under it.
+    const bool by_cross = state.primary == Order::Kind::uninstall && state.armed && !state.busy;
+    const bool by_square = !by_cross && state.uninstall && installer_ && guard_ && !state.busy;
+    if (by_cross || by_square)
+    {
+        hold_.style.action = by_cross ? Action::confirm : Action::west;
+        hold_.style.glyph = by_cross ? ui::Button::cross : ui::Button::square;
+        if (hold_.handle(input, feedback) == ui::Event::activated)
+        {
+            press_.trigger();
+            order(shown, Order::Kind::uninstall);
+            return;
+        }
+        if (input.is_pressed(hold_.style.action))
+            return; // the hold has begun, or a tap shows "Hold to uninstall"
+    }
     if (input.is_pressed(Action::confirm) && state.primary != Order::Kind::none)
     {
         if (!state.armed)
@@ -1047,8 +1064,6 @@ void Screen::update_page(const InputFrame &input, ui::Feedback &feedback)
             feedback.rumble(0.25f, 0.05f);
             nudge_.trigger();
         }
-        else if (state.primary == Order::Kind::uninstall)
-            ask_uninstall(shown, feedback);
         else if (state.primary == Order::Kind::adopt)
         {
             ask_ = Ask::adopt;
@@ -1068,8 +1083,6 @@ void Screen::update_page(const InputFrame &input, ui::Feedback &feedback)
             order(shown, state.primary);
         }
     }
-    else if (input.is_pressed(Action::west) && state.uninstall && installer_ && guard_)
-        ask_uninstall(shown, feedback);
     else if (input.is_pressed(Action::back))
     {
         details_ = false;
@@ -1133,8 +1146,7 @@ void Screen::update(const InputFrame &input, float dt, ui::Feedback &feedback)
             else
                 for (const auto &app : apps_)
                     if (app.title_id == ask_id_ && !app.installed.empty())
-                        order(app,
-                              ask_ == Ask::adopt ? Order::Kind::adopt : Order::Kind::uninstall);
+                        order(app, Order::Kind::adopt);
         }
     }
     else if (panel_)
@@ -1179,7 +1191,7 @@ void Screen::update(const InputFrame &input, float dt, ui::Feedback &feedback)
     stage_fade_.update(dt);
     tint_.target(stage_ >= 0 ? apps_[static_cast<std::size_t>(stage_)].accent : kMid);
     tint_.update(dt, 3.0f);
-    art_clock_ += dt;
+    art_clock_ += dt * motion(); // the field's drift stops when motion is reduced
     for (auto &shelf : shelves_)
     {
         // A shelf keeps its focused tile in its first four places.
@@ -1222,7 +1234,18 @@ void Screen::update(const InputFrame &input, float dt, ui::Feedback &feedback)
     article_.set_active(details_);
     article_.update(dt);
     dialog_.update(dt);
-    toasts_.update(dt, feedback);
+    hold_.update(dt);
+    if (chime_)
+    {
+        // The toast of a job that went well plays the completion sound.
+        const auto notify = toasts_.style.sounds.notify;
+        toasts_.style.sounds.notify = audio::Cue::complete;
+        toasts_.update(dt, feedback);
+        toasts_.style.sounds.notify = notify;
+        chime_ = false;
+    }
+    else
+        toasts_.update(dt, feedback);
 }
 
 // ---- drawing: the home page ---------------------------------------------------
@@ -1367,7 +1390,7 @@ void Screen::draw_stage(const ui::Fonts &fonts)
         if (app.background && !app.ambient)
             return;
         // The icon is the picture: large, floating a little over its own colours.
-        const float bob = 7.0f * std::sin(time_ * 0.9f);
+        const float bob = 7.0f * motion() * std::sin(time_ * 0.9f);
         const Rect cover{1252.0f, 240.0f + bob, 352.0f, 352.0f};
         list.glow(cover.inset(-10.0f), 90, 230,
                   gfx::mix(app.accent, kInk, 0.18f).with_alpha(0.4f * alpha));
@@ -1402,19 +1425,20 @@ void Screen::draw_stage(const ui::Fonts &fonts)
         const bool featured_now =
             zone_ != Zone::grid && !featured_.empty() &&
             featured_[static_cast<std::size_t>(banner_)] == static_cast<std::size_t>(index);
-        const std::string kicker = app.badge == "Update"                 ? "UPDATE AVAILABLE"
-                                   : app.badge == "Installed"            ? "ON THIS CONSOLE"
-                                   : app.catalog_badge == "Coming soon"  ? "COMING SOON"
-                                   : featured_now && banner_ == 0        ? "NEW RELEASE"
-                                   : featured_now                        ? "FEATURED"
-                                   : ui::upper(app.kind.empty() ? std::string("app") : app.kind);
+        const std::string kicker =
+            app.badge == "Update"                ? "UPDATE AVAILABLE"
+            : app.badge == "Installed"           ? "ON THIS CONSOLE"
+            : app.catalog_badge == "Coming soon" ? "COMING SOON"
+            : featured_now && banner_ == 0       ? "NEW RELEASE"
+            : featured_now                       ? "FEATURED"
+                           : ui::upper(app.kind.empty() ? std::string("app") : app.kind);
         list.push_opacity(alpha);
         list.push_transform(1.0f, 0, 0, dx, 0);
         list.rounded_rect({kMargin, kStageKickerY - 9.0f, 28.0f, 3.0f}, 1.5f, kAccent);
         ui::text(list, fonts.semibold, kicker, kMargin + 40.0f, kStageKickerY, 18, kAccent,
                  gfx::Align::left, 4.0f);
-        ui::text(list, fonts.display, fonts.display.font->fit(app.name, 92, 1180.0f), kMargin - 4.0f,
-                 kStageTitleY, 92, kInk);
+        ui::text(list, fonts.display, fonts.display.font->fit(app.name, 92, 1180.0f),
+                 kMargin - 4.0f, kStageTitleY, 92, kInk);
         std::string meta = app.author;
         const auto add = [&](const std::string &part)
         {
@@ -1439,15 +1463,15 @@ void Screen::draw_stage(const ui::Fonts &fonts)
         list.pop_opacity();
     };
     if (stage_previous_ >= 0 && fade < 1.0f)
-        words(stage_previous_, tween::clamp01(1.0f - fade * 2.2f), -26.0f * fade);
+        words(stage_previous_, tween::clamp01(1.0f - fade * 2.2f), -26.0f * motion() * fade);
     words(stage_, stage_previous_ >= 0 ? tween::smoothstep((fade - 0.25f) / 0.75f) : 1.0f,
-          24.0f * (1.0f - fade));
+          24.0f * motion() * (1.0f - fade));
 
     // The call to action lights up when the stage holds the focus; beside
     // it, what the app is on this console.
     const float lit = banner_focus_.value;
     const Rect b = kStageButton;
-    list.glow(b, b.h * 0.5f, 26, kAccent.with_alpha((0.22f + 0.08f * ui::breathe(time_)) * lit));
+    list.glow(b, b.h * 0.5f, 26, kAccent.with_alpha((0.22f + 0.08f * breath()) * lit));
     list.bordered_rect(b, b.h * 0.5f, gfx::mix(kInk.with_alpha(0.1f), kAccent, lit), 1.5f,
                        gfx::mix(kInk.with_alpha(0.34f), kAccent, lit));
     const auto glyphs = lit > 0.5f ? ui::GlyphStyle::light() : ui::GlyphStyle::dark();
@@ -1482,10 +1506,10 @@ void Screen::draw_stage(const ui::Fonts &fonts)
             if (i == banner_)
             {
                 list.rounded_rect({x, cy - 4.0f, 48.0f, 8.0f}, 4, kInk.with_alpha(0.28f));
-                list.rounded_rect(
-                    {x, cy - 4.0f, 8.0f + 40.0f * tween::clamp01(banner_clock_ / kBannerSeconds),
-                     8.0f},
-                    4, kInk);
+                list.rounded_rect({x, cy - 4.0f,
+                                   8.0f + 40.0f * tween::clamp01(banner_clock_ / kBannerSeconds),
+                                   8.0f},
+                                  4, kInk);
                 x += 60.0f;
             }
             else
@@ -1527,8 +1551,9 @@ void Screen::draw_section_header(const ui::Fonts &fonts)
         const char *sort_name = sort_ == Sort::name       ? "Name"
                                 : sort_ == Sort::released ? "Newest release"
                                                           : "Recently updated";
-        const float tw = ui::text(list, fonts.regular, std::string("Sorted by ") + sort_name, kRight,
-                                  kHeaderY - 8.0f, 22, kInk.with_alpha(0.6f), gfx::Align::right);
+        const float tw =
+            ui::text(list, fonts.regular, std::string("Sorted by ") + sort_name, kRight,
+                     kHeaderY - 8.0f, 22, kInk.with_alpha(0.6f), gfx::Align::right);
         ui::draw_button(list, fonts, ui::GlyphStyle::dark(), ui::Button::right_stick,
                         kRight - tw - 46.0f, kHeaderY - 16.0f, 30);
     }
@@ -1540,13 +1565,12 @@ void Screen::draw_tile(const ui::Fonts &fonts, int k, unsigned layers)
 {
     Rect r = card_rect(k);
     r.y -= scroll_.value;
-    if (r.y > kViewBottom || r.y + r.h < window_top() - 40.0f || r.x > kWidth ||
-        r.x + r.w < 0.0f)
+    if (r.y > kViewBottom || r.y + r.h < window_top() - 40.0f || r.x > kWidth || r.x + r.w < 0.0f)
         return;
     auto &list = scene_;
     const std::size_t index = visible_[static_cast<std::size_t>(k)];
     const App &app = apps_[index];
-    const bool picture = app.background != 0;   // key art, or the field made from the icon
+    const bool picture = app.background != 0;    // key art, or the field made from the icon
     const bool keyart = picture && !app.ambient; // a picture that speaks for itself
     // Fitting allocates: once per app, the first time it is drawn.
     if (auto &fit = fits_[index]; !fit.ready)
@@ -1556,10 +1580,10 @@ void Screen::draw_tile(const ui::Fonts &fonts, int k, unsigned layers)
     const float in = swap_.running ? tween::stagger(swap_.elapsed, k % 8, 0.035f, 0.3f) : 1.0f;
     const float shake = k == focus_ && zone_ == Zone::grid ? ui::shake(nudge_.value, time_) : 0.0f;
     list.push_transform(1.0f + kLift * lift, r.cx(), r.cy(), shake * nudge_x_,
-                        shake * nudge_y_ + 18.0f * (1.0f - in));
+                        shake * nudge_y_ + 18.0f * motion() * (1.0f - in));
     const float top = in * fade_at(r.y + 1.0f), foot = in * fade_at(r.y + r.h);
     const float middle = in * fade_at(r.y + r.h * 0.4f); // where a centred icon sits
-    const float light = 0.74f + 0.26f * lift; // resting tiles sit back a little
+    const float light = 0.74f + 0.26f * lift;            // resting tiles sit back a little
     const float shown = appear_[index].value;
     if (layers & kPlates)
     {
@@ -1605,8 +1629,7 @@ void Screen::draw_tile(const ui::Fonts &fonts, int k, unsigned layers)
         {
             const float size = r.h * 0.48f;
             list.bordered_rect({r.cx() - size * 0.5f, r.y + r.h * 0.4f - size * 0.5f, size, size},
-                               size * 0.22f, kClear, 1.0f,
-                               kInk.with_alpha(0.2f * middle * shown));
+                               size * 0.22f, kClear, 1.0f, kInk.with_alpha(0.2f * middle * shown));
         }
         if ((working || queued) && foot > 0.01f)
         {
@@ -1614,8 +1637,9 @@ void Screen::draw_tile(const ui::Fonts &fonts, int k, unsigned layers)
             const Rect track{r.x + 14.0f, r.y + r.h - 7.0f, r.w - 28.0f, 3.0f};
             list.rounded_rect(track, 1.5f, kInk.with_alpha(0.22f * foot));
             if (state.progress >= 0.0f)
-                list.rounded_rect({track.x, track.y, std::max(4.0f, track.w * state.progress), 3.0f},
-                                  1.5f, kAccent.with_alpha(foot));
+                list.rounded_rect(
+                    {track.x, track.y, std::max(4.0f, track.w * state.progress), 3.0f}, 1.5f,
+                    kAccent.with_alpha(foot));
         }
     }
     const float marks = in * fade_at(r.y + 26.0f);
@@ -1733,15 +1757,14 @@ void Screen::draw_grid(const ui::Fonts &fonts)
     ring.y += shake * nudge_y_ - scroll_.value;
     const float radius = ring_radius_.value;
     const float plate = plate_.value;
-    const Color light = focused >= 0 ? apps_[visible_[static_cast<std::size_t>(focused)]].accent
-                                     : kAccent;
+    const Color light =
+        focused >= 0 ? apps_[visible_[static_cast<std::size_t>(focused)]].accent : kAccent;
     if (plate > 0.01f)
     {
         list.shadow({ring.x, ring.y + 18.0f, ring.w, ring.h}, radius, 42,
                     kBlack.with_alpha(0.6f * plate));
         list.glow(ring, radius, 34,
-                  gfx::mix(light, kAccent, 0.35f).with_alpha((0.3f + 0.12f * ui::breathe(time_)) *
-                                                              plate));
+                  gfx::mix(light, kAccent, 0.35f).with_alpha((0.3f + 0.12f * breath()) * plate));
     }
     list.bordered_rect(ring, radius, kClear, 3.0f, kInk.with_alpha(0.95f));
     if (focused >= 0)
@@ -1892,6 +1915,7 @@ void Screen::set_installer(bool available, bool guard, std::string reason, std::
 void Screen::finish_job(bool ok, bool restart, std::string title, std::string body)
 {
     const bool cancelled = title.ends_with(": cancelled");
+    chime_ = ok && !cancelled;
     restart_needed_ = restart_needed_ || restart;
     history_.push_back({ok, title, body});
     if (history_.size() > 12)
@@ -2061,17 +2085,6 @@ Screen::Offer Screen::offer(const App &app) const
     return out;
 }
 
-void Screen::ask_uninstall(const App &app, ui::Feedback &feedback)
-{
-    ask_ = Ask::uninstall;
-    ask_id_ = app.title_id;
-    dialog_.open({ui::StatusKind::warning,
-                  "Uninstall " + app.name + "?",
-                  "The app's folder is removed from this console. Its saved data stays.",
-                  {{"Cancel"}, {"Uninstall", ui::ButtonKind::primary, true}}},
-                 feedback);
-}
-
 // A small card in the top-right corner while an app is installed and its
 // page is not open: what, how far, and how long it still takes.
 void Screen::draw_job_card(const ui::Fonts &fonts, std::uint32_t glass)
@@ -2097,8 +2110,9 @@ void Screen::draw_job_card(const ui::Fonts &fonts, std::uint32_t glass)
     else
         list.rounded_rect(icon, 16, busy->accent);
     const float x = icon.x + icon.w + 20.0f, w = card.x + card.w - 24.0f - x;
-    ui::text(list, fonts.semibold, fonts.semibold.font->fit(std::string(phase) + " " + busy->name, 24, w),
-             x, card.y + 46.0f, 24, kInk);
+    ui::text(list, fonts.semibold,
+             fonts.semibold.font->fit(std::string(phase) + " " + busy->name, 24, w), x,
+             card.y + 46.0f, 24, kInk);
     std::string line = progress >= 0.0f ? std::to_string(static_cast<int>(progress * 100.0f)) + "%"
                                         : std::string("One moment");
     if (const auto left = time_left(); !left.empty() && progress >= 0.0f)
@@ -2121,12 +2135,32 @@ void Screen::draw_job_card(const ui::Fonts &fonts, std::uint32_t glass)
     list.pop_opacity();
 }
 
+// The hold's progress as a wash filling the button from the left.
+void Screen::hold_fill(gfx::DrawList &list, const Rect &button, float radius) const
+{
+    const float k = hold_.progress();
+    if (k <= 0.004f)
+        return;
+    list.rounded_rect({button.x, button.y, std::max(radius * 2.0f, button.w * k), button.h}, radius,
+                      kInk.with_alpha(0.1f + 0.14f * k));
+}
+
+bool Screen::hold_shown() const
+{
+    return hold_.holding() || hold_.hinting() || hold_.progress() > 0.004f;
+}
+
+float Screen::breath() const
+{
+    return settings_.reduce_motion ? 0.5f : ui::breathe(time_);
+}
+
 void Screen::draw_action_box(const ui::Fonts &fonts, std::uint32_t glass, const App &app,
                              float content)
 {
     auto &list = overlay_;
     Rect box = kActionBox;
-    box.y += 30.0f * (1.0f - content);
+    box.y += 30.0f * motion() * (1.0f - content);
     list.push_opacity(content);
     list.shadow({box.x, box.y + 24.0f, box.w, box.h}, 32, 60, kBlack.with_alpha(0.5f));
     // Frosted glass over the key art: the blurred picture, a tint, a sheen
@@ -2155,19 +2189,20 @@ void Screen::draw_action_box(const ui::Fonts &fonts, std::uint32_t glass, const 
             list.glow({cx - radius, cy - radius, radius * 2.0f, radius * 2.0f}, radius, 40,
                       kAccent.with_alpha(0.12f));
             list.arc(cx, cy, radius, 10.0f, -1.5708f, 6.2832f * state.progress, kAccent);
-            ui::text(list, fonts.mono, std::to_string(static_cast<int>(state.progress * 100.0f)) + "%",
-                     cx, cy + 16.0f, 46, kInk, gfx::Align::center);
+            ui::text(list, fonts.mono,
+                     std::to_string(static_cast<int>(state.progress * 100.0f)) + "%", cx,
+                     cy + 16.0f, 46, kInk, gfx::Align::center);
         }
         else
             list.arc(cx, cy, radius, 10.0f, time_ * 3.4f, 1.7f, kAccent);
         ui::text(list, fonts.semibold, ui::upper(state.headline), cx, cy + 52.0f, 15,
                  kInk.with_alpha(0.62f), gfx::Align::center, 3.0f);
         const char *names[] = {"Download", "Verify", "Unpack", "Finish"};
-        const int step = !mine                          ? -1
-                         : phase == Phase::downloading  ? 0
-                         : phase == Phase::verifying    ? 1
-                         : phase == Phase::unpacking    ? 2
-                                                        : 3;
+        const int step = !mine                         ? -1
+                         : phase == Phase::downloading ? 0
+                         : phase == Phase::verifying   ? 1
+                         : phase == Phase::unpacking   ? 2
+                                                       : 3;
         const float y = box.y + 352.0f, gap = (w - 40.0f) / 3.0f;
         for (int i = 0; i < 4; ++i)
         {
@@ -2182,7 +2217,7 @@ void Screen::draw_action_box(const ui::Fonts &fonts, std::uint32_t glass, const 
             }
             else if (i == step)
             {
-                list.circle(px, y, 12.0f + 3.0f * ui::breathe(time_), kAccent.with_alpha(0.25f));
+                list.circle(px, y, 12.0f + 3.0f * breath(), kAccent.with_alpha(0.25f));
                 list.ring(px, y, 11.0f, 3.0f, kAccent);
                 list.circle(px, y, 4.5f, kAccent);
             }
@@ -2217,8 +2252,8 @@ void Screen::draw_action_box(const ui::Fonts &fonts, std::uint32_t glass, const 
         }
         ui::text(list, fonts.display, fonts.display.font->fit(state.headline, 46, w), cx,
                  box.y + 322.0f, 46, tone, gfx::Align::center);
-        ui::text(list, fonts.regular, fonts.regular.font->fit(state.note, 21, w), cx, box.y + 362.0f,
-                 21, kInk.with_alpha(0.66f), gfx::Align::center);
+        ui::text(list, fonts.regular, fonts.regular.font->fit(state.note, 21, w), cx,
+                 box.y + 362.0f, 21, kInk.with_alpha(0.66f), gfx::Align::center);
         // Where it goes, and the room there; or where it is.
         std::string where = "Installs to " + settings_.location;
         for (const auto &[path, free] : locations_)
@@ -2242,21 +2277,24 @@ void Screen::draw_action_box(const ui::Fonts &fonts, std::uint32_t glass, const 
         const bool destructive = state.primary == Order::Kind::uninstall;
         const bool filled = state.armed && !state.busy && !destructive;
         if (destructive)
+        {
             list.bordered_rect(button, kButtonRadius, kInk.with_alpha(0.06f), 1.5f,
                                kInk.with_alpha(state.armed ? 0.5f : 0.25f));
+            hold_fill(list, button, kButtonRadius);
+        }
         else if (filled)
         {
-            list.glow(button, kButtonRadius, 22,
-                      kAccent.with_alpha(0.22f + 0.1f * ui::breathe(time_)));
+            list.glow(button, kButtonRadius, 22, kAccent.with_alpha(0.22f + 0.1f * breath()));
             list.rounded_rect(button, kButtonRadius, kAccent);
         }
         else
             list.bordered_rect(button, kButtonRadius, kAccent.with_alpha(0.08f), 2.0f,
                                kAccent.with_alpha(state.armed ? 1.0f : 0.5f));
-        const float tw = fonts.semibold.measure(state.label, 28);
+        const std::string label = destructive && hold_shown() ? "Hold to uninstall" : state.label;
+        const float tw = fonts.semibold.measure(label, 28);
         ui::draw_button(list, fonts, filled ? ui::GlyphStyle::light() : ui::GlyphStyle::dark(),
                         ui::Button::cross, button.cx() - tw * 0.5f - 22.0f, button.cy(), 32);
-        ui::text(list, fonts.semibold, state.label, button.cx() + 22.0f, centred(button.cy(), 28), 28,
+        ui::text(list, fonts.semibold, label, button.cx() + 22.0f, centred(button.cy(), 28), 28,
                  destructive ? kInk.with_alpha(0.86f)
                  : filled    ? kOnAccent
                              : kAccent.with_alpha(state.armed ? 1.0f : 0.72f),
@@ -2267,10 +2305,12 @@ void Screen::draw_action_box(const ui::Fonts &fonts, std::uint32_t glass, const 
     {
         const Rect second{x, button.y + 82.0f, w, 50.0f};
         list.bordered_rect(second, 16, kClear, 1.5f, kInk.with_alpha(0.3f));
-        const float tw = fonts.semibold.measure("Uninstall", 22);
+        hold_fill(list, second, 16);
+        const char *label = hold_shown() ? "Hold to uninstall" : "Uninstall";
+        const float tw = fonts.semibold.measure(label, 22);
         ui::draw_button(list, fonts, ui::GlyphStyle::dark(), ui::Button::square,
                         second.cx() - tw * 0.5f - 20.0f, second.cy(), 28);
-        ui::text(list, fonts.semibold, "Uninstall", second.cx() + 18.0f, centred(second.cy(), 22), 22,
+        ui::text(list, fonts.semibold, label, second.cx() + 18.0f, centred(second.cy(), 22), 22,
                  kInk.with_alpha(0.86f), gfx::Align::center);
     }
     else
@@ -2288,7 +2328,8 @@ void Screen::draw_page(const ui::Fonts &fonts, std::uint32_t glass)
         return;
     const App &app = *shown;
     const int index = static_cast<int>(visible_[static_cast<std::size_t>(focus_)]);
-    const float open = tween::cubic_out(t);
+    // Reduced motion: no growing out of the tile, the page fades in where it is.
+    const float open = settings_.reduce_motion ? 1.0f : tween::cubic_out(t);
     // In the scene: the tile's key art opens out to fill the screen. An app
     // without key art darkens the home page and lights its own colour.
     Rect from = card_rect(focus_);
@@ -2323,7 +2364,7 @@ void Screen::draw_page(const ui::Fonts &fonts, std::uint32_t glass)
         list.glow({1180.0f, 60.0f, 700.0f, 700.0f}, 350, 320, app.accent.with_alpha(0.3f * veil));
     }
     const float content = tween::smoothstep((t - 0.35f) / 0.65f);
-    const float slide = 44.0f * (1.0f - tween::cubic_out(t));
+    const float slide = 44.0f * motion() * (1.0f - tween::cubic_out(t));
     list.push_opacity(content);
     list.push_transform(1.0f, 0, 0, slide, 0);
     if (app.background && !app.ambient)
@@ -2336,8 +2377,8 @@ void Screen::draw_page(const ui::Fonts &fonts, std::uint32_t glass)
     }
     ui::text(list, fonts.semibold, ui::upper(app.local_only ? "installed" : app.kind), kInfoX, 362,
              20, kAccent, gfx::Align::left, 4.0f);
-    ui::text(list, fonts.display, fonts.display.font->fit(app.name, 84, 1180.0f), kInfoX - 4.0f, 450,
-             84, kInk);
+    ui::text(list, fonts.display, fonts.display.font->fit(app.name, 84, 1180.0f), kInfoX - 4.0f,
+             450, 84, kInk);
     std::string line = app.author;
     if (!app.released.empty())
         line += (line.empty() ? "" : "  \xC2\xB7  ") + std::string("Released ") +
@@ -2389,7 +2430,8 @@ void Screen::draw_page(const ui::Fonts &fonts, std::uint32_t glass)
     if (!app.background || app.ambient)
     {
         const float size = from.h * 0.48f;
-        const Rect icon_from{from.cx() - size * 0.5f, from.y + from.h * 0.4f - size * 0.5f, size, size};
+        const Rect icon_from{from.cx() - size * 0.5f, from.y + from.h * 0.4f - size * 0.5f, size,
+                             size};
         const Rect to = app.ambient ? kPageHero : kPageIcon;
         const Rect cover = lerp(icon_from, to, open);
         const float radius = tween::lerp(size * 0.22f, to.w * 0.21f, open);
@@ -2441,7 +2483,8 @@ void Screen::draw(gfx::Renderer &renderer, const ui::Fonts &fonts)
     int homes = 0;
     if (!visible_.empty())
         home[homes++] = {ui::Button::cross, "Details"};
-    home[homes++] = {all ? ui::Button::square : ui::Button::triangle, all ? "Update all" : "Search"};
+    home[homes++] = {all ? ui::Button::square : ui::Button::triangle,
+                     all ? "Update all" : "Search"};
     if (!discover())
         home[homes++] = {ui::Button::right_stick, "Sort"};
     if (!all)
@@ -2504,7 +2547,8 @@ std::string format_settings(const Settings &settings)
 {
     return "location=" + settings.location + "\nupdates=" + (settings.check_updates ? "1" : "0") +
            "\nsounds=" + (settings.sounds ? "1" : "0") +
-           "\nvibration=" + (settings.vibration ? "1" : "0") + "\n";
+           "\nvibration=" + (settings.vibration ? "1" : "0") +
+           "\nmotion=" + (settings.reduce_motion ? "reduced" : "full") + "\n";
 }
 
 Settings parse_settings(std::string_view text)
@@ -2527,6 +2571,8 @@ Settings parse_settings(std::string_view text)
             settings.sounds = value != "0";
         else if (key == "vibration")
             settings.vibration = value != "0";
+        else if (key == "motion")
+            settings.reduce_motion = value == "reduced";
     }
     return settings;
 }
@@ -2647,7 +2693,7 @@ void Screen::update_panel(const InputFrame &input, ui::Feedback &feedback)
         about_.handle(input, feedback);
         return;
     }
-    constexpr int kRows = 5;
+    constexpr int kRows = 6;
     if (step)
     {
         const int next = setting_focus_ + step;
@@ -2681,6 +2727,8 @@ void Screen::update_panel(const InputFrame &input, ui::Feedback &feedback)
         settings_.sounds = !settings_.sounds;
     else if (setting_focus_ == 3)
         settings_.vibration = !settings_.vibration;
+    else if (setting_focus_ == 4)
+        settings_.reduce_motion = !settings_.reduce_motion;
     else
     {
         // The store's own page says what can be done about its version.
@@ -2734,8 +2782,8 @@ void sign(gfx::DrawList &list, int which, float cx, float cy, Color ink)
     case 5: // sound: a speaker
         list.rounded_rect({cx - 13.0f, cy - 5.0f, 7.0f, 10.0f}, 1.5f, ink);
         {
-            const float xy[] = {cx - 7.0f, cy - 5.0f, cx + 1.0f, cy - 11.0f, cx + 1.0f, cy + 11.0f,
-                                cx - 7.0f, cy + 5.0f};
+            const float xy[] = {cx - 7.0f, cy - 5.0f,  cx + 1.0f, cy - 11.0f,
+                                cx + 1.0f, cy + 11.0f, cx - 7.0f, cy + 5.0f};
             list.polygon(xy, 4, ink);
         }
         list.arc(cx + 3.0f, cy, 7.0f, 2.2f, -0.8f, 1.6f, ink);
@@ -2745,6 +2793,12 @@ void sign(gfx::DrawList &list, int which, float cx, float cy, Color ink)
         list.bordered_rect({cx - 8.0f, cy - 11.0f, 16.0f, 22.0f}, 4, kClear, 2.5f, ink);
         list.line(cx - 14.0f, cy - 5.0f, cx - 14.0f, cy + 5.0f, 2.5f, ink.with_alpha(ink.a * 0.6f));
         list.line(cx + 14.0f, cy - 5.0f, cx + 14.0f, cy + 5.0f, 2.5f, ink.with_alpha(ink.a * 0.6f));
+        break;
+    case 8: // motion: a dot that has stopped, its trail fading
+        list.circle(cx + 7.0f, cy, 6.0f, ink);
+        list.line(cx - 14.0f, cy - 6.0f, cx - 3.0f, cy - 6.0f, 2.5f, ink.with_alpha(ink.a * 0.35f));
+        list.line(cx - 16.0f, cy, cx - 4.0f, cy, 2.5f, ink.with_alpha(ink.a * 0.6f));
+        list.line(cx - 14.0f, cy + 6.0f, cx - 3.0f, cy + 6.0f, 2.5f, ink.with_alpha(ink.a * 0.35f));
         break;
     default: // the store: its diamond
         list.rotated_rect({cx - 11.0f, cy - 11.0f, 22.0f, 22.0f}, 5.0f, 0.7854f, ink);
@@ -2772,9 +2826,10 @@ void Screen::draw_panel(const ui::Fonts &fonts, std::uint32_t glass)
     auto &list = overlay_;
     const float veil = tween::clamp01(t * 1.6f);
     list.glass(glass, {0, 0, kWidth, kHeight}, 0, kWhite.with_alpha(veil));
-    list.rounded_rect({0, 0, kWidth, kHeight}, 0, gfx::mix(kCoal, kDeep, 0.5f).with_alpha(0.82f * veil));
+    list.rounded_rect({0, 0, kWidth, kHeight}, 0,
+                      gfx::mix(kCoal, kDeep, 0.5f).with_alpha(0.82f * veil));
     list.push_opacity(tween::smoothstep(t));
-    list.push_transform(1.0f, 0, 0, 0, 24.0f * (1.0f - tween::cubic_out(t)));
+    list.push_transform(1.0f, 0, 0, 0, 24.0f * motion() * (1.0f - tween::cubic_out(t)));
 
     // The left: whose room this is, the room's name, and the three rooms.
     constexpr const char *kTabs[] = {"Downloads", "Settings", "About"};
@@ -2795,7 +2850,8 @@ void Screen::draw_panel(const ui::Fonts &fonts, std::uint32_t glass)
                  kInk.with_alpha(on ? 1.0f : 0.6f));
         if (i == 0 && (!activity_.id.empty() || !activity_.waiting.empty()))
         {
-            const int jobs = (activity_.id.empty() ? 0 : 1) + static_cast<int>(activity_.waiting.size());
+            const int jobs =
+                (activity_.id.empty() ? 0 : 1) + static_cast<int>(activity_.waiting.size());
             pill(list, fonts, std::to_string(jobs), entry.x + entry.w - 52.0f, entry.cy(), 30.0f,
                  kAccent, kOnAccent, 1.0f, kAllLayers);
         }
@@ -2803,8 +2859,9 @@ void Screen::draw_panel(const ui::Fonts &fonts, std::uint32_t glass)
     ui::draw_button(list, fonts, ui::GlyphStyle::dark(), ui::Button::l1, kMargin, 560.0f, 26);
     ui::draw_button(list, fonts, ui::GlyphStyle::dark(), ui::Button::r1,
                     kMargin + ui::button_width(ui::Button::l1, 26) + 8.0f, 560.0f, 26);
-    ui::text(list, fonts.regular, "Switch rooms", kMargin + 2.0f * ui::button_width(ui::Button::l1, 26) + 24.0f,
-             centred(560.0f, 20), 20, kInk.with_alpha(0.5f));
+    ui::text(list, fonts.regular, "Switch rooms",
+             kMargin + 2.0f * ui::button_width(ui::Button::l1, 26) + 24.0f, centred(560.0f, 20), 20,
+             kInk.with_alpha(0.5f));
 
     // The right: one glass panel with the room's content.
     const Rect panel{600.0f, 144.0f, kRight - 600.0f, 800.0f};
@@ -2845,7 +2902,8 @@ void Screen::draw_panel(const ui::Fonts &fonts, std::uint32_t glass)
             // A 16:9 thumbnail: the key art, else the icon on the app's colour.
             const Rect thumb{px, row.y + 16.0f, 160.0f, 90.0f};
             const Color accent = app ? app->accent : kMid;
-            list.gradient_rect(thumb, 12, gfx::mix(accent, kMid, 0.25f), gfx::mix(accent, kDeep, 0.85f));
+            list.gradient_rect(thumb, 12, gfx::mix(accent, kMid, 0.25f),
+                               gfx::mix(accent, kDeep, 0.85f));
             if (app && app->background)
                 list.image(app->background, thumb, gfx::kFullUv, kWhite, 12);
             if (app && (!app->background || app->ambient) && art(*app))
@@ -2858,25 +2916,29 @@ void Screen::draw_panel(const ui::Fonts &fonts, std::uint32_t glass)
             if (working)
                 busy_app(progress, phase);
             const float tx = thumb.x + thumb.w + 28.0f;
-            ui::text(list, fonts.semibold, fonts.semibold.font->fit(app ? app->name : ids[i], 28, 560.0f),
-                     tx, row.y + 50.0f, 28, kInk);
-            std::string line = working ? phase : "Waiting  \xC2\xB7  " + std::to_string(i) + " ahead";
+            ui::text(list, fonts.semibold,
+                     fonts.semibold.font->fit(app ? app->name : ids[i], 28, 560.0f), tx,
+                     row.y + 50.0f, 28, kInk);
+            std::string line =
+                working ? phase : "Waiting  \xC2\xB7  " + std::to_string(i) + " ahead";
             if (working && progress >= 0.0f)
             {
-                line += "  \xC2\xB7  " + size_text(activity_.done) + " of " + size_text(activity_.total);
+                line += "  \xC2\xB7  " + size_text(activity_.done) + " of " +
+                        size_text(activity_.total);
                 if (const auto left = time_left(); !left.empty())
                     line += "  \xC2\xB7  " + left;
             }
-            ui::text(list, fonts.regular, fonts.regular.font->fit(line, 21, 620.0f), tx, row.y + 84.0f,
-                     21, kInk.with_alpha(0.66f));
+            ui::text(list, fonts.regular, fonts.regular.font->fit(line, 21, 620.0f), tx,
+                     row.y + 84.0f, 21, kInk.with_alpha(0.66f));
             const Rect track{px + pw - 300.0f, row.cy() - 3.0f, 220.0f, 6.0f};
             list.rounded_rect(track, 3, kInk.with_alpha(0.14f));
             if (progress >= 0.0f)
             {
                 list.rounded_rect({track.x, track.y, std::max(6.0f, track.w * progress), 6.0f}, 3,
                                   kAccent);
-                ui::text(list, fonts.mono, std::to_string(static_cast<int>(progress * 100.0f)) + "%",
-                         px + pw, centred(row.cy(), 22), 22, kInk, gfx::Align::right);
+                ui::text(list, fonts.mono,
+                         std::to_string(static_cast<int>(progress * 100.0f)) + "%", px + pw,
+                         centred(row.cy(), 22), 22, kInk, gfx::Align::right);
             }
             else if (working)
             {
@@ -2895,10 +2957,11 @@ void Screen::draw_panel(const ui::Fonts &fonts, std::uint32_t glass)
         if (ids.empty())
         {
             sign(list, 0, panel.cx(), panel.y + 170.0f, kInk.with_alpha(0.5f));
-            ui::text(list, fonts.semibold, "Nothing is being installed", panel.cx(), panel.y + 236.0f,
-                     30, kInk, gfx::Align::center);
-            ui::text(list, fonts.regular, "Installs, updates and removals line up here, one at a time.",
-                     panel.cx(), panel.y + 276.0f, 22, kInk.with_alpha(0.6f), gfx::Align::center);
+            ui::text(list, fonts.semibold, "Nothing is being installed", panel.cx(),
+                     panel.y + 236.0f, 30, kInk, gfx::Align::center);
+            ui::text(list, fonts.regular,
+                     "Installs, updates and removals line up here, one at a time.", panel.cx(),
+                     panel.y + 276.0f, 22, kInk.with_alpha(0.6f), gfx::Align::center);
             y = panel.y + 330.0f;
         }
         // What finished since the store was opened, newest first, as a timeline.
@@ -2910,11 +2973,12 @@ void Screen::draw_panel(const ui::Fonts &fonts, std::uint32_t glass)
             y += 88.0f;
             const float line_x = px + 14.0f;
             int n = 0;
-            for (auto done = history_.rbegin(); done != history_.rend() && y < panel.y + panel.h - 40.0f;
-                 ++done, ++n)
+            for (auto done = history_.rbegin();
+                 done != history_.rend() && y < panel.y + panel.h - 40.0f; ++done, ++n)
             {
                 if (n > 0)
-                    list.rounded_rect({line_x - 1.0f, y - 44.0f, 2.0f, 34.0f}, 1, kInk.with_alpha(0.16f));
+                    list.rounded_rect({line_x - 1.0f, y - 44.0f, 2.0f, 34.0f}, 1,
+                                      kInk.with_alpha(0.16f));
                 const Color tone = done->ok ? kOwned : Color::rgb(0xe5484d);
                 list.circle(line_x, y - 2.0f, 13.0f, tone.with_alpha(0.18f));
                 if (done->ok)
@@ -2935,7 +2999,8 @@ void Screen::draw_panel(const ui::Fonts &fonts, std::uint32_t glass)
     else if (panel_tab_ == 1)
     {
         const App *self = self_app();
-        const bool newer = self && catalog::update_available(self_version_, self->available_version);
+        const bool newer =
+            self && catalog::update_available(self_version_, self->available_version);
         std::string place = settings_.location;
         std::string room;
         for (const auto &[path, free] : locations_)
@@ -2955,6 +3020,8 @@ void Screen::draw_panel(const ui::Fonts &fonts, std::uint32_t glass)
              settings_.check_updates},
             {5, "Sounds", "The interface's own sounds.", 1, "", settings_.sounds},
             {6, "Vibration", "A light answer from the controller.", 1, "", settings_.vibration},
+            {8, "Reduce motion", "Nothing drifts, floats or slides; things fade instead.", 1, "",
+             settings_.reduce_motion},
             {7, "ProsperoStore", "Its page updates it.", 2,
              restart_needed_ ? "Restart to finish"
              : newer         ? "Version " + self->available_version + " available"
@@ -2962,9 +3029,9 @@ void Screen::draw_panel(const ui::Fonts &fonts, std::uint32_t glass)
              newer || restart_needed_},
         };
         float y = panel.y + 32.0f;
-        for (int i = 0; i < 5; ++i)
+        for (int i = 0; i < 6; ++i)
         {
-            const Rect row{px - 16.0f, y, pw + 32.0f, 112.0f};
+            const Rect row{px - 16.0f, y, pw + 32.0f, 108.0f};
             if (i == setting_focus_)
                 row_focus(row);
             else if (i > 0)
@@ -2980,23 +3047,26 @@ void Screen::draw_panel(const ui::Fonts &fonts, std::uint32_t glass)
             else if (rows[i].kind == 0)
             {
                 // The place, the room there, and arrows: left and right choose.
-                const float tw = ui::text(list, fonts.semibold, rows[i].value, right - 40.0f,
-                                          centred(row.cy() - 12.0f, 24), 24, kAccent, gfx::Align::right);
-                ui::text(list, fonts.regular, room, right - 40.0f, centred(row.cy() + 18.0f, 19), 19,
-                         kInk.with_alpha(0.6f), gfx::Align::right);
-                const Color arrows = locations_.size() > 1 ? kInk.with_alpha(0.8f) : kInk.with_alpha(0.25f);
+                const float tw =
+                    ui::text(list, fonts.semibold, rows[i].value, right - 40.0f,
+                             centred(row.cy() - 12.0f, 24), 24, kAccent, gfx::Align::right);
+                ui::text(list, fonts.regular, room, right - 40.0f, centred(row.cy() + 18.0f, 19),
+                         19, kInk.with_alpha(0.6f), gfx::Align::right);
+                const Color arrows =
+                    locations_.size() > 1 ? kInk.with_alpha(0.8f) : kInk.with_alpha(0.25f);
                 list.line(right - 14.0f, row.cy() - 8.0f, right - 6.0f, row.cy(), 2.5f, arrows);
                 list.line(right - 14.0f, row.cy() + 8.0f, right - 6.0f, row.cy(), 2.5f, arrows);
-                list.line(right - tw - 54.0f, row.cy() - 20.0f, right - tw - 62.0f, row.cy() - 12.0f, 2.5f,
-                          arrows);
-                list.line(right - tw - 54.0f, row.cy() - 4.0f, right - tw - 62.0f, row.cy() - 12.0f, 2.5f,
-                          arrows);
+                list.line(right - tw - 54.0f, row.cy() - 20.0f, right - tw - 62.0f,
+                          row.cy() - 12.0f, 2.5f, arrows);
+                list.line(right - tw - 54.0f, row.cy() - 4.0f, right - tw - 62.0f, row.cy() - 12.0f,
+                          2.5f, arrows);
             }
             else
-                pill(list, fonts, rows[i].value, right - fonts.semibold.measure(rows[i].value, 40.0f * 0.58f) -
-                         36.0f, row.cy(), 40.0f, rows[i].on ? kAccent : kInk.with_alpha(0.12f),
+                pill(list, fonts, rows[i].value,
+                     right - fonts.semibold.measure(rows[i].value, 40.0f * 0.58f) - 36.0f, row.cy(),
+                     40.0f, rows[i].on ? kAccent : kInk.with_alpha(0.12f),
                      rows[i].on ? kOnAccent : kInk, 1.0f, kAllLayers);
-            y += 128.0f;
+            y += 120.0f;
         }
         ui::text(list, fonts.regular, "Changes are saved as you make them.", kMargin, 640.0f, 20,
                  kInk.with_alpha(0.5f));
@@ -3011,9 +3081,11 @@ void Screen::draw_panel(const ui::Fonts &fonts, std::uint32_t glass)
         ui::text(list, fonts.display, "ProsperoStore", px + 150.0f, panel.y + 104.0f, 52, kInk);
         float words = ui::text(list, fonts.regular, "Apps from ", px + 152.0f, panel.y + 146.0f, 24,
                                kInk.with_alpha(0.62f));
-        ui::text(list, fonts.semibold, "homebrew.page", px + 152.0f + words, panel.y + 146.0f, 24, kAccent);
+        ui::text(list, fonts.semibold, "homebrew.page", px + 152.0f + words, panel.y + 146.0f, 24,
+                 kAccent);
         if (!self_version_.empty())
-            pill(list, fonts, "Version " + self_version_, px + pw - fonts.semibold.measure("Version " + self_version_, 21.0f) - 34.0f,
+            pill(list, fonts, "Version " + self_version_,
+                 px + pw - fonts.semibold.measure("Version " + self_version_, 21.0f) - 34.0f,
                  panel.y + 92.0f, 36.0f, kInk.with_alpha(0.12f), kInk, 1.0f, kAllLayers);
         list.rounded_rect({px, panel.y + 186.0f, pw, 1.0f}, 0, kInk.with_alpha(0.12f));
         ui::Canvas canvas{list, fonts, glass, time_};

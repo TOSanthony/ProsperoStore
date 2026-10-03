@@ -54,11 +54,14 @@ memory only and installation remains disabled. Elevated HTTPS uses PacBrew
 curl/OpenSSL with certificate checks against the console's CA list.
 
 Browse with the D-pad or left stick, switch sections with L1/R1, and open an
-app with Cross. Options opens Settings (install location, sounds, vibration,
-the check for a newer store), the Queue and About; Square opens the Queue. Triangle opens system-keyboard search by name or developer;
-press R3 to cycle name, newest release, and recently updated sorting. Clear
-the search text to show the full section again. Circle goes back or closes
-the store. Native keyboard integration still awaits console qualification.
+app with Cross. Discover shows one app big over shelves of apps; each app's
+picture is made from its own icon. Options opens Settings (install location,
+sounds, vibration, reduce motion, the check for a newer store), Square opens
+Downloads, and L1/R1 move between Downloads, Settings and About. To uninstall,
+hold the Uninstall button. Triangle opens system-keyboard search by name or
+developer; press R3 to cycle name, newest release, and recently updated
+sorting. Clear the search text to show the full section again. Circle goes
+back or closes the store.
 
 App pages show verified metadata, full-size artwork, and a scrolling article.
 Use the D-pad to scroll and Triangle to retry or refresh details. Scan the QR

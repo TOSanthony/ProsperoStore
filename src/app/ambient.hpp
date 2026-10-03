@@ -145,4 +145,24 @@ inline hui::Image make_ambient(const hui::Image &icon, std::uint32_t &vivid)
         }
     return out;
 }
+
+// A grey or black icon's colour: the average of its opaque pixels, 0xRRGGBB.
+inline std::uint32_t average_colour(const hui::Image &icon)
+{
+    double sum[3] = {0, 0, 0}, weight = 0;
+    if (icon.rgba.size() < static_cast<std::size_t>(icon.width) * icon.height * 4)
+        return 0x42358f;
+    for (std::size_t i = 0; i + 3 < icon.rgba.size(); i += 4 * 7)
+    {
+        const double a = icon.rgba[i + 3] / 255.0;
+        for (int c = 0; c < 3; ++c)
+            sum[c] += icon.rgba[i + c] * a;
+        weight += a;
+    }
+    if (weight <= 0)
+        return 0x42358f;
+    return (static_cast<std::uint32_t>(sum[0] / weight) << 16) |
+           (static_cast<std::uint32_t>(sum[1] / weight) << 8) |
+           static_cast<std::uint32_t>(sum[2] / weight);
+}
 } // namespace store

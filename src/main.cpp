@@ -183,7 +183,8 @@ int main()
     // second on the console, so nothing is deleted on the way.
     struct Art
     {
-        std::uint32_t icon = 0, large = 0, code = 0;
+        std::uint32_t icon = 0, large = 0, code = 0, ambient = 0;
+        std::uint32_t accent = 0; // 0xRRGGBB, from the icon
         int code_width = 0;
         std::string hash;
         std::uint64_t seen = 0; // the last frame it was on screen
@@ -192,7 +193,7 @@ int main()
     std::map<std::string, std::string> hashes; // the current catalog's icon hashes
     const auto release = [](Art &art)
     {
-        for (auto *texture : {&art.icon, &art.large, &art.code})
+        for (auto *texture : {&art.icon, &art.large, &art.code, &art.ambient})
             if (*texture)
                 glDeleteTextures(1, texture);
         art = {};
@@ -229,6 +230,8 @@ int main()
             screen.set_icon(*victim_id, 0);
         else if (slot == &Art::large)
             screen.set_art(*victim_id, 0);
+        else if (slot == &Art::ambient)
+            screen.set_ambient(*victim_id, 0);
         glBindTexture(GL_TEXTURE_2D, texture);
         glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, image.width, image.height, 0, GL_RGBA,
@@ -294,6 +297,7 @@ int main()
                                     entry.status == "coming_soon" ? "Coming soon" : "", 0,
                                     entry.released, entry.updated});
                     apps.back().available_version = entry.content_version;
+                    apps.back().size = entry.size;
                 }
                 screen.set_catalog(std::move(apps),
                                    elevated ? update.message
@@ -304,6 +308,9 @@ int main()
                 {
                     screen.set_icon(id, art.icon);
                     screen.set_art(id, art.large);
+                    screen.set_ambient(id, art.ambient);
+                    if (art.accent)
+                        screen.set_accent(id, hui::gfx::Color::rgb(art.accent));
                 }
             }
             else if (update.kind == store::Update::Kind::inventory)
@@ -326,6 +333,14 @@ int main()
                     art.seen = frame_number;
                     art.icon = place(&Art::icon, icon_budget, update.entry.id, update.image);
                     screen.set_icon(update.entry.id, art.icon);
+                    // The field made from the icon (20 KB) lives and goes with it.
+                    if (!update.ambient.rgba.empty() && !art.ambient)
+                        art.ambient =
+                            place(&Art::ambient, icon_budget, update.entry.id, update.ambient);
+                    screen.set_ambient(update.entry.id, art.ambient);
+                    art.accent = update.accent;
+                    if (art.accent)
+                        screen.set_accent(update.entry.id, hui::gfx::Color::rgb(art.accent));
                 }
             }
             else if (update.kind == store::Update::Kind::detail)

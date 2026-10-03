@@ -8,6 +8,7 @@
 #include "catalog/catalog.hpp"
 #include "system/inventory.hpp"
 #include "ui/components/dialog.hpp"
+#include "ui/components/hold_button.hpp"
 #include "ui/components/text_view.hpp"
 #include "ui/components/toast.hpp"
 #include "ui/motion.hpp"
@@ -68,6 +69,7 @@ struct Settings
     bool check_updates = true;               // ask the catalog for a newer store at start
     bool sounds = true;
     bool vibration = true;
+    bool reduce_motion = false; // no drifting, floating or sliding: things fade instead
 };
 std::string format_settings(const Settings &settings);
 Settings parse_settings(std::string_view text);
@@ -221,7 +223,15 @@ class Screen
         float progress = -1.0f; // 0..1 while a measurable phase runs
     };
     Offer offer(const App &app) const;
-    void ask_uninstall(const App &app, hui::ui::Feedback &feedback);
+    // Reduce motion: 0 when the setting is on, else 1.
+    float motion() const
+    {
+        return settings_.reduce_motion ? 0.0f : 1.0f;
+    }
+    // A slow breath for glows, still when motion is reduced.
+    float breath() const;
+    void hold_fill(hui::gfx::DrawList &list, const hui::gfx::Rect &button, float radius) const;
+    bool hold_shown() const;
     void order(const App &app, Order::Kind kind);
     bool in_section(const App &app, int section) const;
     void rebuild();
@@ -295,10 +305,12 @@ class Screen
     enum class Ask
     {
         none,
-        uninstall,
         adopt,
         quit
     } ask_ = Ask::none;
+    // Uninstalling is a hold, not a question: the button fills while it is held.
+    hui::ui::HoldButton hold_;
+    bool chime_ = false; // a job finished well: its toast plays the completion sound
     std::string ask_id_;
     bool fresh_catalog_ = false;
     std::vector<hui::tween::Spring> appear_;

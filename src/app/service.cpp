@@ -2,6 +2,7 @@
 // Copyright (C) 2026 BlackBearReloaded
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+#include "app/ambient.hpp"
 #include "app/service.hpp"
 #include "core/save_file.hpp"
 #include "core/qr.hpp"
@@ -785,6 +786,10 @@ void Service::load_icons()
 #endif
             if (loaded)
             {
+                // The app's picture and colour come from its icon, here on the worker.
+                std::uint32_t vivid = 0;
+                result.ambient = make_ambient(result.image, vivid);
+                result.accent = vivid ? vivid : average_colour(result.image);
                 delivered[stamp] = moment;
                 publish(std::move(result));
             }

@@ -37,23 +37,31 @@ static void check_artwork_requests()
     {
         store::App app;
         app.title_id = "PPSA" + std::to_string(99000 + i);
+        char name[16];
+        std::snprintf(name, sizeof(name), "App %03u", i);
+        app.name = name;
+        app.kind = "app";
         apps.push_back(app);
     }
     screen.set_catalog(std::move(apps), "test");
     hui::ui::Feedback feedback;
-    hui::InputFrame down;
+    // Discover: down from "New and updated" to the Apps shelf, then along it.
+    hui::InputFrame down, right;
     down.nav = hui::Direction::down;
+    right.nav = hui::Direction::right;
+    screen.update(down, 1.0f / 60.0f, feedback);
     for (unsigned i = 0; i < 20; ++i)
     {
         const auto wanted = screen.artwork();
         assert(!wanted.empty() && wanted.size() <= 16);
         assert(std::set<std::string>(wanted.begin(), wanted.end()).size() == wanted.size());
         screen.set_icon(wanted.front(), 1);
+        screen.set_ambient(wanted.front(), 2);
         assert(screen.artwork() == wanted); // Uploading artwork must never reset focus.
-        screen.update(down, 1.0f / 60.0f, feedback);
+        screen.update(right, 1.0f / 60.0f, feedback);
     }
     const auto focused = screen.artwork().front();
-    assert(focused == "PPSA99095");
+    assert(focused == "PPSA99020");
     hui::InputFrame confirm;
     confirm.pressed = hui::action_bit(hui::Action::confirm);
     screen.update(confirm, 1.0f / 60.0f, feedback);
@@ -78,7 +86,15 @@ static void check_search_and_sort()
     b.updated = "2026-09-01";
     c.title_id = "PPSA99003";
     c.name = "Coming Soon";
+    a.kind = b.kind = c.kind = "app";
     screen.set_catalog({a, b, c}, "test");
+    {
+        // Sorting and search work on a section's grid: go to Apps.
+        hui::InputFrame next;
+        next.pressed = hui::action_bit(hui::Action::page_next);
+        hui::ui::Feedback quiet;
+        screen.update(next, 1.0f / 60.0f, quiet);
+    }
     assert(screen.artwork().front() == b.title_id);
     screen.set_query("STUDIO");
     assert(screen.artwork() == std::vector<std::string>{a.title_id});
@@ -177,14 +193,74 @@ static void check_installed_sections()
     assert(screen.artwork().empty());
 }
 
+static void check_hold_to_uninstall()
+{
+    store::Screen screen;
+    store::App app;
+    app.title_id = "PPSA99010";
+    app.name = "Example";
+    app.kind = "app";
+    app.available_version = "01.000.000";
+    screen.set_catalog({app}, "verified", true);
+    store::system::Inventory inventory;
+    store::system::InstalledApp installed;
+    installed.id = app.title_id;
+    installed.name = app.name;
+    installed.version = "01.000.000";
+    installed.path = "/data/homebrew/" + app.title_id;
+    installed.managed = true;
+    inventory.apps.push_back(installed);
+    screen.set_inventory(inventory);
+    screen.set_installer(true, true, "", "/data/homebrew");
+    screen.set_running({}, true);
+    assert(screen.open_app(app.title_id));
+    store::catalog::Entry listed;
+    listed.id = app.title_id;
+    listed.version = "01.000.000";
+    listed.content_version = "01.000.000";
+    listed.format = "zip";
+    listed.digest = std::string(64, 'a');
+    screen.set_detail(listed);
+    hui::ui::Feedback feedback;
+    for (int frame = 0; frame < 30; ++frame)
+        screen.update({}, 1.0f / 60.0f, feedback);
+    // A tap does nothing but say how.
+    hui::InputFrame tap;
+    tap.pressed = hui::action_bit(hui::Action::confirm);
+    tap.held = tap.pressed;
+    screen.update(tap, 1.0f / 60.0f, feedback);
+    hui::InputFrame up;
+    up.released = hui::action_bit(hui::Action::confirm);
+    screen.update(up, 1.0f / 60.0f, feedback);
+    assert(screen.pending_order.kind == store::Order::Kind::none);
+    // Letting go halfway does nothing either.
+    hui::InputFrame hold;
+    hold.held = hui::action_bit(hui::Action::confirm);
+    screen.update(tap, 1.0f / 60.0f, feedback);
+    for (int frame = 0; frame < 30; ++frame)
+        screen.update(hold, 1.0f / 60.0f, feedback);
+    screen.update(up, 1.0f / 60.0f, feedback);
+    assert(screen.pending_order.kind == store::Order::Kind::none);
+    for (int frame = 0; frame < 120; ++frame)
+        screen.update({}, 1.0f / 60.0f, feedback);
+    // A full hold orders the uninstall.
+    screen.update(tap, 1.0f / 60.0f, feedback);
+    for (int frame = 0; frame < 90 && screen.pending_order.kind == store::Order::Kind::none; ++frame)
+        screen.update(hold, 1.0f / 60.0f, feedback);
+    assert(screen.pending_order.kind == store::Order::Kind::uninstall);
+
+    store::Settings settings;
+    settings.reduce_motion = true;
+    assert(store::parse_settings(store::format_settings(settings)).reduce_motion);
+    assert(!store::parse_settings("location=/data/homebrew\n").reduce_motion);
+}
+
 int main(int argc, char **argv)
 {
-    if (std::getenv("STORE_OLD_CHECKS"))
-    {
-        check_artwork_requests();
-        check_search_and_sort();
-        check_installed_sections();
-    }
+    check_artwork_requests();
+    check_search_and_sort();
+    check_installed_sections();
+    check_hold_to_uninstall();
     if (argc < 3 || argc > 5)
         return 2;
     const auto get_display = reinterpret_cast<PFNEGLGETPLATFORMDISPLAYEXTPROC>(
@@ -274,59 +350,7 @@ int main(int argc, char **argv)
                     textures.push_back(field);
                     screen.set_ambient(entry.id, field);
                 }
-                if (vivid)
-                {
-                    screen.set_accent(entry.id, hui::gfx::Color::rgb(vivid));
-                    continue;
-                }
-                // A grey icon: its average colour.
-                double sum[3] = {0, 0, 0}, weight = 0;
-                for (std::size_t i = 0; i + 3 < image.rgba.size(); i += 4 * 7)
-                {
-                    const double a = image.rgba[i + 3] / 255.0;
-                    for (int c = 0; c < 3; ++c)
-                        sum[c] += image.rgba[i + c] * a;
-                    weight += a;
-                }
-                if (weight > 0)
-                    screen.set_accent(entry.id, hui::gfx::Color::rgb(
-                                                    (static_cast<unsigned>(sum[0] / weight) << 16) |
-                                                    (static_cast<unsigned>(sum[1] / weight) << 8) |
-                                                    static_cast<unsigned>(sum[2] / weight)));
-            }
-            // Key art (the prototype reads what the catalog could serve) and its colour.
-            const std::string art = std::string(argv[3]) + "/../backgrounds";
-            std::map<std::string, unsigned> accents;
-            {
-                std::ifstream colours(art + "/colours.json");
-                std::stringstream text;
-                text << colours.rdbuf();
-                const std::string body = text.str();
-                for (std::size_t at = body.find("\"PPSA"); at != std::string::npos;
-                     at = body.find("\"PPSA", at + 1))
-                {
-                    const auto id = body.substr(at + 1, 9);
-                    const auto key = body.find("\"accent\": \"", at);
-                    if (key != std::string::npos)
-                        accents[id] = static_cast<unsigned>(std::stoul(body.substr(key + 11, 6), nullptr, 16));
-                }
-            }
-            // STORE_NO_ART: every app as if it shipped no key art, the icon-led look.
-            for (const auto &entry : snapshot.entries)
-            {
-                if (std::getenv("STORE_NO_ART"))
-                    break;
-                std::string encoded;
-                hui::Image image;
-                if (!hui::save::read_file(art + "/" + entry.id + ".png", &encoded, 8u << 20) ||
-                    !hui::decode_png(encoded, image))
-                    continue;
-                const auto texture =
-                    renderer.batch().create_texture(image.width, image.height, image.rgba.data());
-                textures.push_back(texture);
-                screen.set_background(entry.id, texture);
-                if (accents.count(entry.id))
-                    screen.set_accent(entry.id, hui::gfx::Color::rgb(accents[entry.id]));
+                screen.set_accent(entry.id, hui::gfx::Color::rgb(vivid ? vivid : store::average_colour(image)));
             }
             // The verified details the stage would ask for, from the cache.
             for (const auto &entry : snapshot.entries)

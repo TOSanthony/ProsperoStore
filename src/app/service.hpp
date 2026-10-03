@@ -32,6 +32,8 @@ struct Update
     catalog::Snapshot snapshot;
     catalog::Entry entry;
     hui::Image image;
+    hui::Image ambient;       // icon: the app's picture, made from it (make_ambient)
+    std::uint32_t accent = 0; // icon: the colour the screen leans toward, 0xRRGGBB
     system::Inventory installed;
     std::uint64_t generation = 0;
     std::string message;
