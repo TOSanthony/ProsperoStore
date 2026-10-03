@@ -209,8 +209,9 @@ passes every line is the goal; a larger one that misses lines is not.
   154 ms, including creating and destroying the `sceHttp` contexts.
 - GitHub's release file host (a redirect from `github.com` to
   `release-assets.githubusercontent.com`) and a large download are still
-  **[assumed]**. Fallback agreed with the owner: curl. Note for that path:
-  libcurl with PacBrew OpenSSL failed to start in a native app before.
+  **[assumed]**. Elevated catalog HTTPS is **[proven]** with PacBrew libcurl
+  8.18.0 and OpenSSL 3.5.2, the console CA list, resolver shims and SO_NBIO.
+  Sandboxed browsing retains `sceHttp`; elevated `sceSsl` rejected public roots.
 - `sceHttpReadData` returns only when the buffer it was given is full.
   **[proven]** Downloads use a large buffer; progress is reported per buffer.
 - `sceHttpAbortRequest` from another thread unblocks a read. **[proven]** This
@@ -898,6 +899,7 @@ To be confirmed and listed in `THIRD_PARTY_NOTICES.md` when each is added.
 - 2026-10-02 | M0 | fa52645 | PS5 6.02 | partial-pass: 4K, audio, controller, clean exit; catalog fails and timing spikes | results/m0-smoke-paths | worker logging, HTTPS diagnostics
 - 2026-10-02 | M0/M2 | 59a7670 | PS5 6.02 | failed: 4K steady frames and app teardown; elevated TLS rejects root CA; console services lost after exit | results/m0-preserve-pem-roots | offline analysis; owner recovery requested, no automatic rerun
 - 2026-10-02 | M0 | 6bbf1e5 | PS5 6.02 | inconclusive: two launches, shell close; services healthy | results/recovery-control-6bbf1e5 | correlate each run with a unique token
+- 2026-10-02 | M0/M2 | d783154 | PS5 6.02 | partial-pass: signed online catalog, steady 16.68ms, clean exit, healthy | results/m2-pacbrew-curl | filesystem gate and artifact downloads
 
 | Repository | Role |
 | --- | --- |
