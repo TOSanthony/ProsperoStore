@@ -5,6 +5,7 @@
 #include "install/files.hpp"
 #include "install/transaction.hpp"
 #include "system/inventory.hpp"
+#include "system/running.hpp"
 #include "third_party/miniz/miniz.h"
 #include <algorithm>
 #include <cassert>
@@ -650,6 +651,23 @@ void check_interruptions(const fs::path &base)
     }
 }
 
+// A running title has a sandbox folder named after it; nothing else counts.
+void check_running(const fs::path &root)
+{
+    const auto sandboxes = (root / "sandbox").string();
+    assert(system::title_running(kId, sandboxes) == -1); // Can't be told: treated as running.
+    fs::create_directories(root / "sandbox/NPXS40000_000");
+    fs::create_directories(root / "sandbox/PPSA99501_000");
+    assert(system::title_running(kId, sandboxes) == 0);
+    assert(system::title_running("PPSA99501", sandboxes) == 1);
+    fs::create_directories(root / "sandbox" / (kId + "_001"));
+    assert(system::title_running(kId, sandboxes) == 1);
+    assert(system::title_running("../escape", sandboxes) == -1);
+    std::vector<std::string> ids;
+    assert(system::running_titles(ids, sandboxes) && ids.size() == 2);
+    fs::remove_all(root / "sandbox");
+}
+
 void check_records()
 {
     catalog::Receipt receipt{"PPSA99500",   "/data/home\"brew",   "01.000.001",
@@ -680,6 +698,7 @@ int main()
     const fs::path root(temporary);
     check_records();
     check_archives(root);
+    check_running(root);
     check_transactions(root);
     check_interruptions(root);
     fs::remove_all(root);

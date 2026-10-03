@@ -890,9 +890,16 @@ void Screen::draw_top_bar(const ui::Fonts &fonts)
     auto &list = scene_;
     list.rotated_rect({kMargin + 2.0f, kTopY - 11.0f, 22.0f, 22.0f}, 5.0f, 0.7854f, kAccent);
     list.rotated_rect({kMargin + 8.0f, kTopY - 5.0f, 10.0f, 10.0f}, 2.0f, 0.7854f, kDeep);
-    ui::text(list, fonts.semibold, "PROSPEROSTORE", kMargin + 42.0f, centred(kTopY, 22), 22, kInk,
-             gfx::Align::left, 5.0f);
-    ui::text(list, fonts.regular, fonts.regular.font->fit(status_, 22, 1100.0f), kRight,
+    const float brand = ui::text(list, fonts.semibold, "PROSPEROSTORE", kMargin + 42.0f,
+                                 centred(kTopY, 22), 22, kInk, gfx::Align::left, 5.0f);
+    // Where the apps come from, said once and quietly beside the name.
+    const float x = kMargin + 42.0f + brand + 22.0f;
+    list.rounded_rect({x, kTopY - 11.0f, 1.5f, 22.0f}, 0, kInk.with_alpha(0.25f));
+    const float words = ui::text(list, fonts.regular, "Apps from ", x + 22.0f, centred(kTopY, 22),
+                                 22, kInk.with_alpha(0.62f));
+    ui::text(list, fonts.semibold, "homebrew.page", x + 22.0f + words, centred(kTopY, 22), 22,
+             kAccent);
+    ui::text(list, fonts.regular, fonts.regular.font->fit(status_, 22, 900.0f), kRight,
              centred(kTopY, 22), 22, kInk.with_alpha(0.62f), gfx::Align::right);
 }
 

@@ -44,7 +44,8 @@ clang++ -std=c++20 "${flags[@]}" -Wall -Wextra -Wpedantic -Werror -I"$root/src" 
     "$root/tests/store_install_test.cpp" "$root/src/install/archive.cpp" \
     "$root/src/install/files.cpp" "$root/src/install/transaction.cpp" \
     "$root/src/system/inventory.cpp" "$root/src/system/locations.cpp" \
-    "$root/src/system/storage_probe.cpp" "$root/src/catalog/catalog.cpp" \
+    "$root/src/system/storage_probe.cpp" "$root/src/system/running.cpp" \
+    "$root/src/catalog/catalog.cpp" \
     "$root/src/core/save_file.cpp" "${objects[@]}" "${miniz[@]}" -o "$build/install-test"
 ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 "$build/install-test"
 # Fuzz the ZIP and JSON readers from valid seeds. STORE_FUZZ_SECONDS=0 skips it.
@@ -120,6 +121,7 @@ clang++ -std=c++20 "${flags[@]}" -Wall -Wextra -Wpedantic -Werror -I"$root/src" 
     "$root/src/core/image.cpp" "$root/src/core/save_file.cpp" "$root/host/platform_host.cpp" \
     "$root/src/install/archive.cpp" "$root/src/install/files.cpp" \
     "$root/src/install/transaction.cpp" "$root/src/system/storage_probe.cpp" \
+    "$root/src/system/running.cpp" \
     "${objects[@]}" "${miniz[@]}" "$build/update_check.o" -pthread -o "$build/service-test"
 ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 "$build/service-test"
 clang++ -std=c++20 "${flags[@]}" -Wall -Wextra -Wpedantic -Werror -I"$root/src" \
