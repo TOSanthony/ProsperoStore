@@ -906,6 +906,7 @@ To be confirmed and listed in `THIRD_PARTY_NOTICES.md` when each is added.
 - 2026-10-02 | M0 | 6bbf1e5 | PS5 6.02 | inconclusive: two launches, shell close; services healthy | results/recovery-control-6bbf1e5 | correlate each run with a unique token
 - 2026-10-02 | M0/M2 | d783154 | PS5 6.02 | partial-pass: signed online catalog, steady 16.68ms, clean exit, healthy | results/m2-pacbrew-curl | filesystem gate and artifact downloads
 - 2026-10-02 | M1 | 59df017 | PS5 6.02 | failed: directory open EINVAL; shell closed title, services healthy | results/m1-storage-idle | isolate root open from openat
+- 2026-10-02 | M1 | 785b4d9 | PS5 6.02 | failed: _openat EINVAL; M.2 BFS readable, clean exit, healthy | results/m1-storage-root | use direct-open component checks
 
 | Repository | Role |
 | --- | --- |

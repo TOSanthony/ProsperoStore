@@ -15,9 +15,8 @@
 #include <sys/vfs.h>
 #else
 #include <sys/mount.h>
-// libkernel exports the underscored ABI; fstatfs/openat belong to libkernel_sys.
+// libkernel exports the underscored ABI; fstatfs belongs to libkernel_sys.
 extern "C" int store_fstatfs(int, struct statfs *) __asm__("_fstatfs");
-extern "C" int store_openat(int, const char *, int, ...) __asm__("_openat");
 #endif
 
 namespace store::system
@@ -41,14 +40,16 @@ int directory(const std::string &path, std::string *error = nullptr)
     {
         const auto slash = path.find('/', start);
         const auto part = path.substr(start, slash - start);
-#ifdef __linux__
+#if defined(__linux__) && !defined(STORE_NATIVE_PATH_WALK)
         const int next = openat(fd, part.c_str(), O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
 #else
-        const int next = store_openat(fd, part.c_str(), O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
+        // Native _openat returns EINVAL on 6.02. Check every path component
+        // through the qualified direct-open API, refusing symlinks throughout.
+        const int next = open(path.substr(0, slash).c_str(), O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
 #endif
         const int saved = errno;
         if (next < 0 && error)
-            *error = "openat " + part + ": " + std::strerror(saved);
+            *error = "open component " + part + ": " + std::strerror(saved);
         close(fd);
         errno = saved;
         fd = next;
