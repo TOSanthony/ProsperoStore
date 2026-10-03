@@ -408,7 +408,10 @@ int main()
             // Across a row, down, back across, down; a page opened and closed
             // now and then; back to the top when the grid ends.
             static constexpr char kPath[] = "rrrrdlllldrrrrXBdllllduuuuu";
-            const char step = kPath[tour_step++ % (sizeof(kPath) - 1)];
+            // A tour only looks: Cross on an open page would install the app.
+            char step = kPath[tour_step++ % (sizeof(kPath) - 1)];
+            if (screen.page_open())
+                step = 'B';
             frame = {};
             if (step == 'X')
                 frame.pressed = action_bit(Action::confirm);

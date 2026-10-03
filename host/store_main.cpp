@@ -237,6 +237,12 @@ int main(int argc, char **argv)
             const std::string mode = argv[4];
             if (mode == "search")
                 screen.set_query("radio");
+            else if (mode == "busy")
+            {
+                // An install in progress, seen from the grid and the top bar.
+                screen.set_installer(true, true, "", "/data/homebrew");
+                screen.set_activity({"PPSA99007", 1, 30u << 20, 58u << 20, {"PPSA99420"}});
+            }
             else if (mode == "notice")
                 screen.notify("Update available: 01.000.010",
                               "A newer ProsperoStore is listed on homebrew.page.");

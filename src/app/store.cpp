@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <map>
 
 namespace store
 {
@@ -334,11 +335,20 @@ void Screen::set_catalog(std::vector<App> apps, std::string status, bool current
         app.folded_author = folded(app.author);
     }
     fresh_catalog_ = true;
+    // With a thousand apps and a hundred installed, a search per installed
+    // app is a hundred thousand comparisons on the frame: look them up instead.
+    // (Room for the local ones first: the keys point into the apps.)
+    apps_.reserve(apps_.size() + inventory_.apps.size());
+    std::map<std::string_view, std::size_t> listed;
+    for (std::size_t i = 0; i < apps_.size(); ++i)
+        listed.emplace(apps_[i].title_id, i);
     for (const auto &installed : inventory_.apps)
     {
         const auto id = installed.id.empty() ? "local:" + installed.path : installed.id;
-        auto found = std::find_if(apps_.begin(), apps_.end(),
-                                  [&](const auto &app) { return app.title_id == id; });
+        const auto known = listed.find(id);
+        auto found = known == listed.end()
+                         ? apps_.end()
+                         : apps_.begin() + static_cast<std::ptrdiff_t>(known->second);
         if (found == apps_.end())
         {
             App local;
@@ -350,6 +360,7 @@ void Screen::set_catalog(std::vector<App> apps, std::string status, bool current
             local.folded_author = folded(local.author);
             apps_.push_back(std::move(local));
             found = apps_.end() - 1;
+            listed.emplace(found->title_id, apps_.size() - 1);
         }
         found->installed.push_back(installed);
     }

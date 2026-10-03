@@ -104,6 +104,10 @@ class Screen
     }
     // Scripted runs: what a player would do with the controller.
     bool open_app(const std::string &id);
+    bool page_open() const
+    {
+        return details_;
+    }
     void remote_install(const std::string &id);
     bool remote_uninstall(const std::string &id);
     // Fills the catalog with copies up to count apps, to measure a large one.
