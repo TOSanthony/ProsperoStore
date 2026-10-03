@@ -8,10 +8,21 @@
 
 #include <utility>
 #include <algorithm>
+#include <cctype>
 
 namespace store
 {
 using namespace hui;
+namespace
+{
+std::string folded(std::string text)
+{
+    for (auto &c : text)
+        if (static_cast<unsigned char>(c) < 128)
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return text;
+}
+} // namespace
 
 Screen::Screen() : theme_(ui::themes()[0])
 {
@@ -38,9 +49,25 @@ Screen::Screen() : theme_(ui::themes()[0])
 
 void Screen::set_catalog(std::vector<App> apps, std::string status)
 {
+    const auto previous = visible_.empty()
+                              ? std::string{}
+                              : apps_[visible_[static_cast<std::size_t>(grid_.focus())]].title_id;
     apps_ = std::move(apps);
     status_ = std::move(status);
     refresh_grid();
+    const auto found = std::find_if(visible_.begin(), visible_.end(),
+                                    [&](auto index) { return apps_[index].title_id == previous; });
+    if (found != visible_.end())
+        grid_.set_focus(static_cast<int>(found - visible_.begin()));
+    else
+        details_ = false;
+}
+
+void Screen::set_query(std::string query)
+{
+    query_ = std::move(query);
+    refresh_grid();
+    grid_.set_focus(0);
 }
 
 void Screen::refresh_grid()
@@ -48,6 +75,7 @@ void Screen::refresh_grid()
     std::vector<ui::CardItem> cards;
     visible_.clear();
     const int section = tabs_.active();
+    const auto query = folded(query_);
     for (std::size_t i = 0; i < apps_.size(); ++i)
     {
         const App &app = apps_[i];
@@ -55,6 +83,26 @@ void Screen::refresh_grid()
             (section == 3 && app.kind != "tool") || (section == 4 && app.badge != "Coming soon") ||
             (section == 5 && app.badge != "Installed") || (section == 6 && app.badge != "Update"))
             continue;
+        if (!query.empty() && folded(app.name).find(query) == std::string::npos &&
+            folded(app.author).find(query) == std::string::npos)
+            continue;
+        visible_.push_back(i);
+    }
+    std::stable_sort(visible_.begin(), visible_.end(),
+                     [&](auto first, auto second)
+                     {
+                         const auto &a = apps_[first];
+                         const auto &b = apps_[second];
+                         if (sort_ == Sort::released && a.released != b.released)
+                             return a.released > b.released;
+                         if (sort_ == Sort::updated && a.updated != b.updated)
+                             return a.updated > b.updated;
+                         const auto a_name = folded(a.name), b_name = folded(b.name);
+                         return a_name == b_name ? a.title_id < b.title_id : a_name < b_name;
+                     });
+    for (const auto index : visible_)
+    {
+        const auto &app = apps_[index];
         ui::CardItem card;
         card.title = app.name;
         card.subtitle = app.author;
@@ -62,7 +110,6 @@ void Screen::refresh_grid()
         card.texture = app.icon;
         card.accent = theme_.primary;
         cards.push_back(std::move(card));
-        visible_.push_back(i);
     }
     grid_.set_items(std::move(cards));
     grid_.enter();
@@ -115,7 +162,19 @@ std::vector<std::string> Screen::artwork() const
 void Screen::update(const InputFrame &input, float dt, ui::Feedback &feedback)
 {
     time_ += dt;
-    if (input.is_pressed(Action::back))
+    if (!details_ && input.is_pressed(Action::north))
+    {
+        pending_search = true;
+        feedback.play(audio::Cue::select);
+    }
+    else if (!details_ && input.is_pressed(Action::r3))
+    {
+        sort_ = static_cast<Sort>((static_cast<unsigned>(sort_) + 1) % 3);
+        refresh_grid();
+        grid_.set_focus(0);
+        feedback.play(audio::Cue::select);
+    }
+    else if (input.is_pressed(Action::back))
     {
         if (details_)
             details_ = false;
@@ -128,6 +187,7 @@ void Screen::update(const InputFrame &input, float dt, ui::Feedback &feedback)
     {
         tabs_.step(input.is_pressed(Action::page_next) ? 1 : -1, input, feedback);
         refresh_grid();
+        grid_.set_focus(0);
     }
     else if (!details_ && grid_.handle(input, feedback) == ui::Event::activated)
     {
@@ -166,26 +226,47 @@ void Screen::draw(gfx::Renderer &renderer, const ui::Fonts &fonts)
     else
     {
         paint.heading("Your next discovery.", 96, 236, 76, paint.page_text());
-        ui::text(scene_, fonts.regular, "Independent apps. New possibilities.", 100, 295, 30,
-                 paint.page_text_muted());
+        ui::text(scene_, fonts.regular,
+                 ui::fit_label(paint,
+                               query_.empty() ? "Independent apps. New possibilities."
+                                              : "Search: " + query_,
+                               30, 1600),
+                 100, 295, 30, paint.page_text_muted());
         tabs_.draw(canvas);
+        const char *sort_name = sort_ == Sort::name       ? "Name"
+                                : sort_ == Sort::released ? "Newest release"
+                                                          : "Recently updated";
+        ui::text(scene_, fonts.regular, std::string("Sort: ") + sort_name, 1824, 466, 24,
+                 paint.page_text_muted(), gfx::Align::right);
         if (visible_.empty())
         {
             paint.panel({112, 590, 1696, 280});
-            paint.heading(apps_.empty() ? "The catalog is on its way" : "Nothing here yet", 960,
-                          707, 36, gfx::Align::center);
+            paint.heading(!query_.empty() ? "No matches"
+                          : apps_.empty() ? "The catalog is on its way"
+                                          : "Nothing here yet",
+                          960, 707, 36, gfx::Align::center);
             ui::text(scene_, fonts.regular,
-                     apps_.empty() ? "Verified apps will appear here when the catalog is ready."
-                                   : "Explore Discover to find something new.",
+                     !query_.empty() ? "Try another app name or developer."
+                     : apps_.empty() ? "Verified apps will appear here when the catalog is ready."
+                                     : "Explore Discover to find something new.",
                      960, 764, 26, theme_.text, gfx::Align::center);
         }
         else
             grid_.draw(canvas);
     }
     const ui::Hint hints[] = {{ui::Button::cross, "Details"},
+                              {ui::Button::triangle, "Search"},
+                              {ui::Button::right_stick, "Sort"},
                               {ui::Button::l1, "Sections", ui::Button::r1},
                               {ui::Button::circle, details_ ? "Back" : "Close"}};
-    ui::draw_hints(scene_, fonts, ui::GlyphStyle::dark(), hints, 3, 96, false);
+    if (details_)
+    {
+        const ui::Hint back[] = {{ui::Button::circle, "Back"}};
+        ui::draw_hints(scene_, fonts, ui::GlyphStyle::dark(), back, 1, 96, false);
+    }
+    else
+        ui::draw_hints(scene_, fonts, ui::GlyphStyle::dark(), hints + (visible_.empty() ? 1 : 0),
+                       visible_.empty() ? 4 : 5, 96, false);
     auto backdrop = theme_.backdrop;
     backdrop.time = time_;
     renderer.begin();

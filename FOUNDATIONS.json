@@ -1,7 +1,7 @@
 [
   {
     "repository": "https://github.com/blackbearreloaded/ps5-native-app-boilerplate",
-    "commit": "c5cbe8e78c705c6d6c580231d3f23857283a2bd5",
+    "commit": "209914dc8a5ee67ff0bd044dfd40d18f877eae2c",
     "files": {
       ".clang-format": "a50f76a95278c40be80009087751cca989ab2585cb4a4fd3e6be200c12e0f6ae",
       ".clang-tidy": "ae89f6c9302fb4031e755fdce925bf0d38b3189072b90f5a3180f064ec2c0b7d",
@@ -111,7 +111,10 @@
       "examples/pacbrew-curl/netdb.c": "e0281fd49b5a65defbc504b3f303712dcdd761c1d5527210e00e6d1d44792dea",
       "tests/test_curl_dns.c": "9d4c53003b83fe5df4af8d9b4c786bdde2adb6e6833cc6bb9b0a30ff232834c3",
       "tests/test_curl_time.cpp": "e8d79d3f070e863a6af519a047713f7fb0b6b941fe450cec630ef5d7defaa274",
-      "tools/test-pacbrew-curl.sh": "29c64e5a34d6a20d6ff5fab4a29b8059d399bd288e6c22778b4ab396d37f692e"
+      "tools/test-pacbrew-curl.sh": "29c64e5a34d6a20d6ff5fab4a29b8059d399bd288e6c22778b4ab396d37f692e",
+      "examples/system-keyboard/README.md": "27453c09be963fec6d5b16e2a46ff7718f2747e9a41a9e45bfae5b7700db7920",
+      "examples/system-keyboard/build-import.sh": "5dceb261cbef61a7d9a8838126364246f8a05cdcdd865fbada1db787a1b3c419",
+      "examples/system-keyboard/common_dialog.cpp": "969fd770f68148b51796d1910932e5379045ce137c971adc92cd6846a56202a9"
     }
   },
   {
@@ -435,7 +438,10 @@
       "src/core/image.cpp": "d34bde4d2d46df23d9f40598dce61aeb6f147ecedf77e9a6457b6a5eaa6f4af4",
       "src/core/image.hpp": "ffb5586197d5bccb8b77c6d005c621c8aa7f8386d29395cae842924fc0d4bd91",
       "third_party/stb/IMAGE_SOURCE.json": "7ee4888fdf8b9ff210b595ec44f31230f4b2261c5f40dda3f7b47a9016868a5a",
-      "third_party/stb/stb_image.h": "594c2fe35d49488b4382dbfaec8f98366defca819d916ac95becf3e75f4200b3"
+      "third_party/stb/stb_image.h": "594c2fe35d49488b4382dbfaec8f98366defca819d916ac95becf3e75f4200b3",
+      "src/platform/ps5/ime.cpp": "36de323b231ab334fb6043dc483f0072c3520baadbc7d5d20b2360646c412153",
+      "src/platform/ps5/ime.hpp": "a1eb842605189a8667c2b918f794e02d76bbdc74fe3cef856caba0f50ebc70be",
+      "src/platform/ps5/ime_abi.hpp": "6f65e52e2c2822a5ea8f1077155d7f1897a39e30afbb06fbfa8778b3c4172932"
     }
   }
 ]

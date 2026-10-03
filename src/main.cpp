@@ -11,6 +11,7 @@
 #include "platform/ps5/audio_out.hpp"
 #include "platform/ps5/display_egl.hpp"
 #include "platform/ps5/pad.hpp"
+#include "platform/ps5/ime.hpp"
 #include "platform/ps5/system.hpp"
 #include "../examples/sandbox-elevation/elevation.hpp"
 
@@ -127,6 +128,8 @@ int main()
     std::vector<std::string> wanted_icons, requested_icons;
     std::uint64_t catalog_generation = 0;
     std::vector<store::Update> updates;
+    ps5::Ime keyboard;
+    bool keyboard_active = false;
     while (!quit.load() && !screen.wants_quit())
     {
         const auto now = sys::monotonic_us();
@@ -157,7 +160,8 @@ int main()
                 for (const auto &entry : update.snapshot.entries)
                     apps.push_back({entry.id, entry.name, entry.author, entry.description,
                                     entry.kind, entry.version,
-                                    entry.status == "coming_soon" ? "Coming soon" : "", 0});
+                                    entry.status == "coming_soon" ? "Coming soon" : "", 0,
+                                    entry.released, entry.updated});
                 screen.set_catalog(std::move(apps),
                                    elevated ? update.message
                                             : "Read only: install permission unavailable • " +
@@ -186,7 +190,29 @@ int main()
         }
         if (!screen.pending_detail.empty() && service.request_detail(screen.pending_detail))
             screen.pending_detail.clear();
-        screen.update(input.update(std::span(samples.data(), count), now), dt, feedback);
+        const auto frame = input.update(std::span(samples.data(), count), now);
+        const bool keyboard_owns_input = keyboard_active || screen.pending_search;
+        if (screen.pending_search && !frame.is_held(Action::north))
+        {
+            screen.pending_search = false;
+            keyboard_active =
+                keyboard.open("Search ProsperoStore", "App name or developer", screen.query());
+            if (!keyboard_active)
+            {
+                screen.set_status("The system keyboard could not open. Try Search again.");
+                feedback.play(audio::Cue::error);
+            }
+        }
+        if (keyboard_active)
+        {
+            const auto state = keyboard.poll();
+            if (state == ps5::Ime::State::accepted)
+                screen.set_query(keyboard.text());
+            else if (state == ps5::Ime::State::failed)
+                screen.set_status("The system keyboard closed unexpectedly. Try Search again.");
+            keyboard_active = state == ps5::Ime::State::open;
+        }
+        screen.update(keyboard_owns_input ? InputFrame{} : frame, dt, feedback);
         wanted_icons = screen.artwork();
         for (auto it = textures.begin(); it != textures.end();)
         {
@@ -234,6 +260,7 @@ int main()
         }
     }
     quit.store(true);
+    keyboard.close();
     service.stop();
     store::net::stop_transport();
     if (requests_started)

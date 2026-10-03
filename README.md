@@ -24,3 +24,9 @@ elevation helper. This includes settings, cache, receipts, logs, crash reports
 and development-control receipts. If elevation is unavailable, browsing uses
 memory only and installation remains disabled. Elevated HTTPS uses PacBrew
 curl/OpenSSL with certificate checks against the console's CA list.
+
+Browse with the D-pad or left stick, switch sections with L1/R1, and open an
+app with Cross. Triangle opens system-keyboard search by name or developer;
+press R3 to cycle name, newest release, and recently updated sorting. Clear
+the search text to show the full section again. Circle goes back or closes
+the store. Native keyboard integration still awaits console qualification.

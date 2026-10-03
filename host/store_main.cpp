@@ -54,10 +54,53 @@ static void check_artwork_requests()
     assert(screen.artwork().empty());
 }
 
+static void check_search_and_sort()
+{
+    store::Screen screen;
+    store::App a, b, c;
+    a.title_id = "PPSA99001";
+    a.name = "Zulu";
+    a.author = "Bear Studio";
+    a.released = "2026-01-01";
+    a.updated = "2026-10-01";
+    b.title_id = "PPSA99002";
+    b.name = "alpha";
+    b.author = "Another Developer";
+    b.released = "2026-09-01";
+    b.updated = "2026-09-01";
+    c.title_id = "PPSA99003";
+    c.name = "Coming Soon";
+    screen.set_catalog({a, b, c}, "test");
+    assert(screen.artwork().front() == b.title_id);
+    screen.set_query("STUDIO");
+    assert(screen.artwork() == std::vector<std::string>{a.title_id});
+    screen.set_query("ALpHa");
+    assert(screen.artwork() == std::vector<std::string>{b.title_id});
+    screen.set_query("no such app");
+    assert(screen.artwork().empty());
+    screen.set_query("");
+    hui::InputFrame sort;
+    sort.pressed = hui::action_bit(hui::Action::r3);
+    hui::ui::Feedback feedback;
+    screen.update(sort, 1.0f / 60.0f, feedback);
+    assert(screen.artwork().front() == b.title_id); // Newest release.
+    screen.update(sort, 1.0f / 60.0f, feedback);
+    assert(screen.artwork().front() == a.title_id); // Recently updated.
+    screen.set_catalog({c, b, a}, "refreshed");
+    assert(screen.artwork().front() == a.title_id);
+    screen.update(sort, 1.0f / 60.0f, feedback);
+    assert(screen.artwork().front() == b.title_id);
+    hui::InputFrame search;
+    search.pressed = hui::action_bit(hui::Action::north);
+    screen.update(search, 1.0f / 60.0f, feedback);
+    assert(screen.pending_search);
+}
+
 int main(int argc, char **argv)
 {
     check_artwork_requests();
-    if (argc != 3 && argc != 4)
+    check_search_and_sort();
+    if (argc < 3 || argc > 5)
         return 2;
     const auto get_display = reinterpret_cast<PFNEGLGETPLATFORMDISPLAYEXTPROC>(
         eglGetProcAddress("eglGetPlatformDisplayEXT"));
@@ -88,7 +131,7 @@ int main(int argc, char **argv)
             return 5;
         store::Screen screen;
         std::vector<GLuint> textures;
-        if (argc == 4)
+        if (argc >= 4)
         {
             store::catalog::Client catalog(argv[3]);
             store::catalog::Snapshot snapshot;
@@ -102,7 +145,7 @@ int main(int argc, char **argv)
             for (const auto &entry : snapshot.entries)
                 apps.push_back({entry.id, entry.name, entry.author, entry.description, entry.kind,
                                 entry.version, entry.status == "coming_soon" ? "Coming soon" : "",
-                                0});
+                                0, entry.released, entry.updated});
             screen.set_catalog(std::move(apps), "Verified catalog");
             store::catalog::Icons icons(std::string(argv[3]) + "/icons");
             store::net::Control control;
@@ -124,6 +167,23 @@ int main(int argc, char **argv)
             }
         }
         hui::ui::Feedback feedback;
+        if (argc == 5)
+        {
+            const std::string mode = argv[4];
+            if (mode == "search")
+                screen.set_query("radio");
+            else if (mode == "empty")
+                screen.set_query("no matching application");
+            else if (mode == "updated")
+            {
+                hui::InputFrame sort;
+                sort.pressed = hui::action_bit(hui::Action::r3);
+                screen.update(sort, 1.0f / 60.0f, feedback);
+                screen.update(sort, 1.0f / 60.0f, feedback);
+            }
+            else
+                return 9;
+        }
         for (int frame = 0; frame < 120; ++frame)
             screen.update({}, 1.0f / 60.0f, feedback);
         screen.draw(renderer, fonts.refs);

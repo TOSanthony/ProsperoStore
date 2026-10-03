@@ -31,7 +31,7 @@ for record, argument in zip(records, sys.argv[1:]):
                 record["files"].setdefault(name, "")
     else:
         for name in tracked:
-            if name.startswith("src/core/") or name in ("third_party/stb/stb_image.h", "third_party/stb/IMAGE_SOURCE.json"):
+            if name.startswith(("src/core/", "src/platform/ps5/ime")) or name in ("third_party/stb/stb_image.h", "third_party/stb/IMAGE_SOURCE.json"):
                 record["files"].setdefault(name, "")
     for name in list(record["files"]):
         destination = root / name
