@@ -141,6 +141,7 @@ class Screen
     }
     void remote_install(const std::string &id);
     bool remote_uninstall(const std::string &id);
+    bool remote_adopt(const std::string &id);
     // Sends the open page's install or update to the installer even when the
     // page would not offer it, to see the installer's own refusal.
     bool remote_order();

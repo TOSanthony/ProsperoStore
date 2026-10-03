@@ -471,6 +471,9 @@ Result apply(const Environment &environment, const Request &request, net::Contro
         // The running store still uses the files of the folder that was moved
         // aside. It stays until the next start, when recovery writes the
         // receipt, removes it and closes the journal.
+        // The console's staged copy of sce_sys is what the next start reads
+        // its version from, so it is brought up to date now.
+        refresh_registered(environment, id, paths.target);
         progress.phase = static_cast<int>(Phase::idle);
         result.ok = true;
         result.restart = true;

@@ -1451,6 +1451,21 @@ bool Screen::remote_uninstall(const std::string &id)
     return false;
 }
 
+bool Screen::remote_adopt(const std::string &id)
+{
+    for (const auto &app : apps_)
+        if (app.title_id == id)
+        {
+            const Offer state = offer(app);
+            if (state.armed && state.primary == Order::Kind::adopt)
+            {
+                order(app, Order::Kind::adopt);
+                return true;
+            }
+        }
+    return false;
+}
+
 bool Screen::remote_order()
 {
     if (!details_ || !focused() || !focused()->detail)

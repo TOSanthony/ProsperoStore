@@ -400,6 +400,9 @@ int main()
             else if (verb == "uninstall")
                 sys::log("[STORE] remote uninstall %s accepted=%d", argument.c_str(),
                          screen.remote_uninstall(argument));
+            else if (verb == "adopt")
+                sys::log("[STORE] remote adopt %s accepted=%d", argument.c_str(),
+                         screen.remote_adopt(argument));
             else if (verb == "panel")
                 screen.open_panel(std::atoi(argument.c_str()));
             else if (verb == "search")

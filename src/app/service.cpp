@@ -16,7 +16,9 @@
 #include <cstring>
 #include <set>
 #include <cerrno>
+#include <fcntl.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 namespace store
 {
@@ -273,13 +275,30 @@ void Service::run_installer()
             // no newer store is published while it is being tested.
             if (url.ends_with("/dev/PPSA99000.zip"))
             {
+                // In pieces, as a download arrives: never the whole archive in memory.
                 net::Response response;
-                std::string body;
-                if (!hui::save::read_file("/data/prosperostore/dev/self.zip", &body, 256u << 20) ||
-                    body.size() > limit || !sink(body))
-                    response.error = "The development archive could not be read";
-                else
+                const int file = open("/data/prosperostore/dev/self.zip", O_RDONLY);
+                std::vector<char> piece(256 * 1024);
+                std::uint64_t total = 0;
+                bool ok = file >= 0;
+                while (ok)
+                {
+                    const auto count = read(file, piece.data(), piece.size());
+                    if (count <= 0)
+                    {
+                        ok = count == 0;
+                        break;
+                    }
+                    total += static_cast<std::uint64_t>(count);
+                    ok = total <= limit && !control.cancelled.load() &&
+                         sink(std::string_view(piece.data(), static_cast<std::size_t>(count)));
+                }
+                if (file >= 0)
+                    close(file);
+                if (ok)
                     response.status = 200;
+                else
+                    response.error = "The development archive could not be read";
                 return response;
             }
 #endif

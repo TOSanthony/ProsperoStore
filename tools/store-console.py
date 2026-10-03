@@ -134,7 +134,9 @@ try:
     f.quit()
     check = subprocess.run(["python3", str(TOOLS / "store-deploy.py"), "verify", host, str(frozen)],
                            capture_output=True, text=True)
-    if check.returncode != 0:
+    if os.environ.get("PS5_SKIP_DEPLOY"):
+        say("using the build that is on the console")
+    elif check.returncode != 0:
         say("installing the build")
         put = subprocess.run(["python3", str(TOOLS / "store-deploy.py"), "install", host, str(frozen)],
                              capture_output=True, text=True)
