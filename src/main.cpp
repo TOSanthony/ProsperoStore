@@ -381,8 +381,27 @@ int main()
         if (store::JobView view; service.job(view))
             store::diag::hold_log(!view.id.empty());
         if (store::JobView view; service.job(view))
+        {
+#ifdef STORE_DEVELOPMENT
+            // Once a second: what the page shows for the running job.
+            static std::int64_t progress_logged = 0;
+            const bool report = !view.id.empty() && now - progress_logged >= 1000000;
+            const std::string id = view.id;
+            const auto phase = static_cast<int>(view.phase);
+            const auto done = view.done, total = view.total;
+#endif
             screen.set_activity({view.id, static_cast<int>(view.phase), view.done, view.total,
                                  std::move(view.waiting)});
+#ifdef STORE_DEVELOPMENT
+            if (report)
+            {
+                progress_logged = now;
+                sys::log("[STORE] progress id=%s phase=%d done=%llu total=%llu left=%s", id.c_str(),
+                         phase, static_cast<unsigned long long>(done),
+                         static_cast<unsigned long long>(total), screen.remote_time_left().c_str());
+            }
+#endif
+        }
         auto frame = input.update(std::span(samples.data(), count), now);
 #ifdef STORE_DEVELOPMENT
         // A scripted run: requests become what a player would do, and a tour
@@ -409,6 +428,14 @@ int main()
             else if (verb == "adopt")
                 sys::log("[STORE] remote adopt %s accepted=%d", argument.c_str(),
                          screen.remote_adopt(argument));
+            else if (verb == "updateall")
+                sys::log("[STORE] remote update all apps=%d",
+                         static_cast<int>(screen.remote_update_all()));
+            else if (verb == "dieat")
+            {
+                service.stop_at(argument);
+                sys::log("[STORE] remote die at step %s", argument.c_str());
+            }
             else if (verb == "panel")
                 screen.open_panel(std::atoi(argument.c_str()));
             else if (verb == "search")

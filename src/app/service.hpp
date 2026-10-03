@@ -82,8 +82,13 @@ class Service
     // The titles running now, refreshed every two seconds by the installer's
     // worker. known is false while the console's sandbox folder can't be listed.
     bool running(std::vector<std::string> &ids, bool &known);
+    // Development builds: the store's process ends on the spot when a
+    // transaction reaches this named step, as it would in a power cut.
+    void stop_at(std::string step);
 
   private:
+    std::mutex stop_guard_;
+    std::string stop_step_;
     struct Job
     {
         enum class Kind

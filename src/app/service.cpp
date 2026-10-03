@@ -16,6 +16,7 @@
 #include "catalog/icons.hpp"
 #include "../../examples/update-check/update_check.h"
 #include <algorithm>
+#include <cstdio>
 #include <cstring>
 #include <set>
 #include <cerrno>
@@ -230,6 +231,12 @@ bool Service::cancel_job(const std::string &id)
     return true;
 }
 
+void Service::stop_at(std::string step)
+{
+    std::lock_guard lock(stop_guard_);
+    stop_step_ = std::move(step);
+}
+
 bool Service::job(JobView &view)
 {
     std::unique_lock lock(mutex_, std::try_to_lock);
@@ -323,6 +330,17 @@ void Service::run_installer()
         environment.save = [](const std::string &path, install::Writer &writer)
         { return install::worker_store(system::launch_worker, path, writer); };
 #endif
+#ifdef STORE_DEVELOPMENT
+        environment.interrupt = [this](const char *step)
+        {
+            std::lock_guard lock(stop_guard_);
+            if (stop_step_ != step)
+                return false;
+            hui::sys::log("[STORE] stopping dead at step %s", step);
+            std::fflush(stdout);
+            _exit(0);
+        };
+#endif
     }
     std::string broken;
     if (environment.root.empty() || !hui::save::ensure_directory(environment.root) ||
@@ -370,7 +388,7 @@ void Service::run_installer()
             notice.restart = true;
             notice.message = "ProsperoStore was updated";
             notice.detail = "The console is still switching to the new version. Close "
-                            "ProsperoStore and open it again in a moment.";
+                            "ProsperoStore and open it again in a few minutes.";
             publish(std::move(notice));
         }
         else if (!recovered.operation.empty())
@@ -470,7 +488,7 @@ void Service::run_installer()
                           : result.operation == "adopt"
                               ? "ProsperoStore will offer its updates from now on."
                           : result.operation == "update"
-                              ? "The new version is in place. Give the console half a minute "
+                              ? "The new version is in place. Give the console a few minutes "
                                 "before starting it."
                               : "ShadowMountPlus will add it to your home screen in a moment.";
         }

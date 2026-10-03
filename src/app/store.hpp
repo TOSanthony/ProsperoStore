@@ -142,6 +142,13 @@ class Screen
     // Sends the open page's install or update to the installer even when the
     // page would not offer it, to see the installer's own refusal.
     bool remote_order();
+    // Every app the Updates shelf lists, as Square does there. Returns how many.
+    std::size_t remote_update_all();
+    // The time-left text of the running job, as the page shows it.
+    std::string remote_time_left() const
+    {
+        return time_left();
+    }
     // Fills the catalog with copies up to count apps, to measure a large one.
     void stress(std::size_t count);
     Order pending_order;

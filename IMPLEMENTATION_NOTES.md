@@ -172,6 +172,25 @@ the compact milestone index; those local evidence paths are not GitHub downloads
    files): unpack 24 to 26 s (54 s throttled), removal 19 to 20 s (309 s
    throttled), the same on back-to-back runs. An update through the worker is
    covered by the host tests only.
+   Console checks of 2026-10-03 with small apps (development requests
+   `updateall`, `dieat <step>`, a progress line once a second):
+   - Time left: "about 20 s left", "about 10 s left", "a few seconds left"
+     during a 30 MB download.
+   - Update all: three apps listed, two updated, the one that looked running
+     (a stand-in folder in the sandbox list; no second app can run beside the
+     store) passed over; its uninstall was not offered and the installer itself
+     answered "Close the app first".
+   - Stop dead mid-update (`dieat moved-old`: the installed version moved
+     aside, the new one not yet in place): the next start logged
+     `recovery ok=1 operation=update` and the previous version was back, with
+     its receipt and empty work folders.
+   - Self-update guard: after the store swapped its own folder, two starts
+     (at once, and 100 s later) still ran the old store; both left the journal
+     and the kept folder alone. ShadowMountPlus remounted the new folder about
+     four minutes after the swap, so the new store finishing the update was
+     not seen again in this run (it was on the morning of the same day).
+   Not checked: typing on the system keyboard (needs a hand on the
+   controller), and a USB location (no drive attached to the test console).
 7. Open, high priority: the test console stopped with a kernel panic at the
    store's normal exit after about a dozen sessions in one day (2026-10-03).
    Suspected cause, not proven: the elevation helper puts the system's root

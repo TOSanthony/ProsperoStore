@@ -1478,6 +1478,15 @@ bool Screen::remote_order()
     return true;
 }
 
+std::size_t Screen::remote_update_all()
+{
+    update_all_.clear();
+    for (const auto &app : apps_)
+        if (app.badge == "Update" && app.title_id != self_id_)
+            update_all_.push_back(app.title_id);
+    return update_all_.size();
+}
+
 void Screen::set_activity(Activity activity)
 {
     // The speed is measured over half-second steps and smoothed, so the time
