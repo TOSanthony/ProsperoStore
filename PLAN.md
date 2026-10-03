@@ -1,6 +1,6 @@
 # ProsperoStore: implementation plan
 
-Draft 4, 2026-10-02. Title ID **PPSA99000** (reserved in the catalog).
+Draft 5, 2026-10-02. Title ID **PPSA99000** (reserved in the catalog).
 
 ProsperoStore is a native PS5 app store for the homebrew catalog at
 [homebrew.page](https://homebrew.page). With the controller, from the couch,
@@ -55,6 +55,10 @@ the store detects from its own receipts, so no recall list is needed (D19).
 
 Changes since draft 3: the two foundations are linked and their rules written
 down, and the quality bar is stated as checks (D31, D32).
+
+Changes since draft 4: the network layer is libcurl, because `sceSsl` rejects
+public sites from an elevated app; the boilerplate now carries what libcurl
+needs on the console (3.2, D7).
 
 ---
 
@@ -174,7 +178,8 @@ passes every line is the goal; a larger one that misses lines is not.
 | Sandbox elevation (`docs/SANDBOX_ELEVATION.md` in the boilerplate) | Reaching `/data` and the other install locations | Used by ProsperoEden. |
 | [`ps5-opengl`](https://github.com/blackbearreloaded/ps5-opengl) SDK 1.0.0 | Rendering | Passed the OpenGL 4.6 conformance run. |
 | [`ps5-homebrew-ui`](https://github.com/blackbearreloaded/ps5-homebrew-ui) | Components, themes, sound, the `store` design, the PC host renderer, the remote test requests (see [Foundations](#foundations)) | All 21 designs validated on a console at 4K, 16.68 ms average frame. |
-| `sceHttp` / `sceSsl` / `sceNet` | HTTPS | **[proven]** in ProsperoTV, ProsperoRadio and ProsperoLichess, with certificate checks. |
+| libcurl 8.18.0 + OpenSSL 3.5.2 (PacBrew), with the boilerplate's `console_curl.c` | HTTPS, elevated | **[proven]** elevated in ProsperoRadio and sandboxed in ProsperoLichess, with certificate checks against the console's `CA_LIST.cer`. |
+| `sceHttp` / `sceSsl` / `sceNet` | HTTPS, sandboxed only | **[proven]** in a sandbox; fails on every public site once elevated (3.2), so the store can't use it. |
 | ProsperoEden's crash report and clean exit | Diagnostics, and closing without a forced kill | **[proven]** on a console. |
 | [ShadowMountPlus](https://github.com/drakmor/ShadowMountPlus) | Puts installed apps on the home screen | Its behaviour below is **[source]** (branch 1.7). |
 
@@ -204,29 +209,46 @@ passes every line is the goal; a larger one that misses lines is not.
 
 ### 3.2 Networking
 
-- HTTPS with certificate verification works through `sceHttp` with the system
-  certificate store. **[proven]** against lichess.org.
-- The same against `homebrew.page` (Cloudflare) is **[proven]**: on
-  2026-10-02 the update-check example title made five API requests from a
-  console's sandbox with certificate verification on, each answered in 71 to
-  154 ms, including creating and destroying the `sceHttp` contexts.
+- **The store's HTTPS is libcurl, not `sceHttp`.** The store runs elevated,
+  and in the elevated state the system TLS stack (`sceSsl`) rejects every
+  public site with `0x8095f00c`; loading certificates with `sceHttpsLoadCert`
+  doesn't help. **[proven]** in ProsperoRadio. The owner's fallback (D7) is
+  therefore the plan.
+- libcurl 8.18.0 with OpenSSL 3.5.2 from PacBrew v0.40.2 works in a native
+  title, elevated (ProsperoRadio) and sandboxed (ProsperoLichess), verifying
+  against the console's `CA_LIST.cer`. **[proven]** What it needs (the
+  resolver and libc shims, the `fcntl` wrap, the certificate path) is in the
+  boilerplate's `examples/update-check/console_curl.c`, with
+  `PACBREW_PACKAGES += libcurl` and `APP_WRAP_SYMBOLS += fcntl`; the store takes
+  it from there (Foundations).
+- Against `homebrew.page` (Cloudflare): `sceHttp` answered five API requests
+  from a sandbox on 2026-10-02 in 71 to 154 ms each. **[proven]** The same
+  check over libcurl is being validated on a console (boilerplate
+  `docs/UPDATE_CHECK.md` records the result).
+- Non-blocking sockets matter for speed: with curl's sockets left blocking, an
+  11.8 MB download took about 43 s instead of about 10 s. **[proven]** in
+  ProsperoRadio; the `fcntl` wrap sets the console's `SO_NBIO` option.
 - GitHub's release file host (a redirect from `github.com` to
-  `release-assets.githubusercontent.com`) and a large download are still
-  **[assumed]**. Elevated catalog HTTPS is **[proven]** with PacBrew libcurl
-  8.18.0 and OpenSSL 3.5.2, the console CA list, resolver shims and SO_NBIO.
-  Sandboxed browsing retains `sceHttp`; elevated `sceSsl` rejected public roots.
-- `sceHttpReadData` returns only when the buffer it was given is full.
-  **[proven]** Downloads use a large buffer; progress is reported per buffer.
-- `sceHttpAbortRequest` from another thread unblocks a read. **[proven]** This
-  is how Cancel works.
-- A timeout shows as `0x80431068`. **[proven]**
+  `release-assets.githubusercontent.com`) and a large release download through
+  libcurl are **[assumed]** until M2. The redirect is followed only to that
+  host (`CURLOPT_REDIR_PROTOCOLS_STR` https and a host check in the redirect
+  callback). The signed catalog over libcurl from the elevated store itself
+  is **[proven]** (`d783154`, Appendix D). Sandboxed browsing keeps `sceHttp`.
+- Cancel: curl's progress callback returning non-zero ends the transfer at the
+  next callback; progress comes from the same callback. **[source]** (libcurl
+  documentation); to be shown on a console in M2.
+- A timeout is `CURLE_OPERATION_TIMEDOUT` (28); errors are reported as
+  `-(10000 + CURLcode)`, the convention of the boilerplate's update check.
 - GitHub's redirect for a release file points at a temporary address on its
   file host; how long it stays valid is **[open]**. It is treated as expiring:
   a resumed or retried download always starts again from the app's
   `artifact_url`.
-- Whether `sceHttp` decompresses gzip, and whether `Range` requests work for
-  resuming, are **[open]**. Neither is required: the API files are small
-  uncompressed, and a failed download can restart from zero.
+- libcurl decompresses gzip itself (zlib is linked), and resumes with
+  `CURLOPT_RESUME_FROM_LARGE`; whether GitHub's file host honours `Range` for
+  release files is **[open]**. Neither is required: the API files are small,
+  and a failed download can restart from zero.
+- Linking libcurl statically means shipping the notices of libcurl, OpenSSL,
+  zlib, zstd and libpsl (the boilerplate's `THIRD_PARTY_NOTICES.md` lists them).
 - Certificate verification is never switched off to make something work.
 
 ### 3.3 ShadowMountPlus
@@ -303,7 +325,7 @@ Made by the owner on 2026-10-02 unless marked as a default.
 | D4 | The installed version is the `contentVersion` in the app's `param.json`. |
 | D5 | The store detects updates for other apps and for itself. |
 | D6 | Filesystem access uses the boilerplate's elevation mechanism. |
-| D7 | Networking is assumed to work with `sceHttp`; curl is the fallback. |
+| D7 | Networking is libcurl with OpenSSL and the console's certificate list (the boilerplate's `console_curl.c`): `sceHttp` can't reach public sites from an elevated app (3.2). |
 | D8 | After an install, the store tells the user ShadowMountPlus will add the app; it doesn't wait for or verify the registration. |
 | D9 | A running app is never updated or uninstalled. The owner supplies the system call that reports whether a title is running. |
 | D10 | After the store updates itself, it asks the user to restart it. If replacing itself can't be made safe, telling the user to update it by hand is acceptable. |
@@ -321,7 +343,7 @@ Made by the owner on 2026-10-02 unless marked as a default.
 | D22 | **Exact space check.** After the download, the unpacked size is read from the archive's own directory and checked against free space before anything is unpacked. |
 | D23 | **Proven drives first.** Internal storage and the M.2 drive in the first release; a USB location appears only once M1 has proven it on that filesystem. |
 | D24 | **ShadowMountPlus's own configuration** decides which locations are offered, not a hard-coded list. |
-| D25 | **Interruptions.** Retries with increasing waits, resume where the server and `sceHttp` allow it, and clean handling of rest mode and a lost connection. |
+| D25 | **Interruptions.** Retries with increasing waits, resume where the server allows it, and clean handling of rest mode and a lost connection. |
 | D26 | **First-run check**, also reachable from Settings. |
 | D27 | **Logs and crash reports**: a rotating log and ProsperoEden's crash-report handler. |
 | D28 | **Scripted test mode**: console runs are driven and closed by a script, never by a forced kill. |
@@ -559,7 +581,7 @@ not a security audit. The wording follows the website's disclaimer.
 ```text
 src/app/          shell, navigation, screens
 src/catalog/      API client, models, version comparison, signature check, on-disk cache
-src/net/          HTTP transport (sceHttp on console, a host implementation for tests)
+src/net/          HTTP transport (libcurl on console and on the PC host, a fake for tests)
 src/install/      queue, download, verify, unpack, transaction, journal, receipts
 src/system/       elevation, install locations, free space, running check, installed scan
 src/diag/         log, crash report, test mode
@@ -783,7 +805,7 @@ passes [The quality bar](#the-quality-bar). Hardware gates are marked.
 | --- | --- | --- |
 | M0 | Bootstrap | The repository is created from the boilerplate template and builds an empty title for PPSA99000 with the OpenGL SDK and the UI library taken as its `docs/ADOPTING.md` describes, on the console build and on the PC host; the file recording what was taken, and from which commits, exists. The log, the crash report and the test mode with a clean remote exit are in from the first build. |
 | M1 | **Gate: filesystem** | On a console, after elevation, the store creates, renames and deletes a test folder in `/data/homebrew`; reads ShadowMountPlus's configuration and lists the scanned locations; and, for each other location, reports its filesystem and whether a rename is a single step there. Read-only mode appears when elevation is refused. This decides which locations the first release offers. |
-| M2 | **Gate: network and trust** | On a console, the store fetches the signed catalog from homebrew.page with certificate checks and verifies it; refuses a tampered and an outdated copy; and downloads one real release from GitHub through the redirect with a correct SHA-256, refusing a redirect to another host. Resume is tried and recorded. If `sceHttp` can't, the curl fallback is built here. |
+| M2 | **Gate: network and trust** | On a console, the store fetches the signed catalog from homebrew.page with certificate checks and verifies it; refuses a tampered and an outdated copy; and downloads one real release from GitHub through the redirect with a correct SHA-256, refusing a redirect to another host. Resume and Cancel are tried and recorded. All of it through libcurl from the elevated store. |
 | M3 | Catalog and browse | The full catalog scrolls at 60 frames per second with icons, sections, search and sort, from live data and from the offline cache. PC host first, then console. |
 | M4 | Install | A real catalog app installs from the store and appears on the home screen. Every refusal and failure in 5.3 has a test, including the exact space check and the archive limits. The fuzz tests run in CI. |
 | M5 | Installed, update, uninstall, running guard, recall | The Installed and Updates screens are correct for managed and unmanaged apps; update and uninstall work; a running app is refused; a test app removed from a test catalog shows the "no longer listed" warning. Needs the owner's running check (D9). |
