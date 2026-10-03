@@ -36,6 +36,8 @@ void Service::stop()
         pthread_join(thread_, nullptr);
     if (icons_started_)
         pthread_join(icon_thread_, nullptr);
+    control_.connection.reset();
+    icon_control_.connection.reset();
     icons_started_ = false;
     started_ = false;
 }
@@ -250,7 +252,13 @@ void Service::load_icons()
             result.kind = Update::Kind::icon;
             result.entry.id = entry.id;
             result.generation = generation;
+#ifdef STORE_DEVELOPMENT
+            const auto started = hui::sys::monotonic_us();
+#endif
             bool loaded = artwork.cached(entry, result.image);
+#ifdef STORE_DEVELOPMENT
+            const bool cached = loaded;
+#endif
             if (!loaded && online)
             {
                 std::string encoded;
@@ -258,6 +266,11 @@ void Service::load_icons()
                     net::fetch(entry.icon, net::Purpose::catalog, 2u << 20, encoded, icon_control_);
                 loaded = response.ok() && artwork.store(entry, encoded, result.image);
             }
+#ifdef STORE_DEVELOPMENT
+            hui::sys::log("[STORE] icon id=%s cached=%d loaded=%d elapsed_ms=%llu",
+                          entry.id.c_str(), cached, loaded,
+                          static_cast<unsigned long long>((hui::sys::monotonic_us() - started) / 1000));
+#endif
             if (loaded)
                 publish(std::move(result));
             else if (online)

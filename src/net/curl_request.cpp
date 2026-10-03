@@ -15,12 +15,19 @@ Response curl_request(const std::string &url, std::uint64_t limit, const Sink &s
                       Control &control, const std::string &etag, const char *ca_path)
 {
     Response out;
-    std::unique_ptr<CURL, decltype(&curl_easy_cleanup)> handle(curl_easy_init(), curl_easy_cleanup);
-    if (!handle)
+    if (!control.connection)
+        control.connection = {curl_easy_init(), +[](void *handle) { curl_easy_cleanup(handle); }};
+    auto *curl = static_cast<CURL *>(control.connection.get());
+    if (!curl)
     {
         out.error = "The network could not start";
         return out;
     }
+    struct ResetOptions
+    {
+        CURL *handle;
+        ~ResetOptions() { curl_easy_reset(handle); }
+    } reset{curl}; // Keep connections, but never retain request-local callbacks or headers.
     struct State
     {
         CURL *handle;
@@ -31,7 +38,7 @@ Response curl_request(const std::string &url, std::uint64_t limit, const Sink &s
         std::string headers;
         std::uint64_t received = 0;
         std::size_t header_bytes = 0;
-    } state{handle.get(), out, control, sink, limit, {}};
+    } state{curl, out, control, sink, limit, {}};
     const auto write =
         +[](char *data, std::size_t size, std::size_t count, void *opaque) -> std::size_t
     {
@@ -83,7 +90,6 @@ Response curl_request(const std::string &url, std::uint64_t limit, const Sink &s
         out.error = "The request could not be created";
         return out;
     }
-    auto *curl = handle.get();
     CURLcode configured = CURLE_OK;
     const auto set = [&](CURLoption option, auto value)
     {

@@ -18,6 +18,13 @@ int main(int argc, char **argv)
     auto result = store::net::curl_request(local + "/ok", 4, sink, control, {}, argv[2]);
     assert(result.ok() && body == "okay" && result.bytes == 4);
     body.clear();
+    result = store::net::curl_request(local + "/reuse", 4, sink, control, {}, argv[2]);
+    assert(result.ok() && body == "okay" && !result.etag.empty());
+    const auto connection = result.etag;
+    body.clear();
+    result = store::net::curl_request(local + "/reuse", 4, sink, control, {}, argv[2]);
+    assert(result.ok() && body == "okay" && result.etag == connection);
+    body.clear();
     result = store::net::curl_request(local + "/ok", 3, sink, control, {}, argv[2]);
     assert(!result.ok() && body.empty());
     result = store::net::curl_request(local + "/ok", 4, sink, control, {});
@@ -38,5 +45,6 @@ int main(int argc, char **argv)
     control.cancel();
     result = store::net::curl_request(local + "/ok", 4, sink, control, {}, argv[2]);
     assert(!result.ok() && result.error == "Cancelled" && body.empty());
+    control.connection.reset();
     curl_global_cleanup();
 }

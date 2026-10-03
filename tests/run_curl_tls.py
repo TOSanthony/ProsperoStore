@@ -11,6 +11,8 @@ import threading
 
 
 class Handler(BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+
     def handle(self):
         try:
             super().handle()
@@ -25,7 +27,8 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(b"HTTP/1.1 103 Early Hints\r\nETag: stale\r\n\r\n")
         self.send_response(302 if self.path == "/redirect" else
                            500 if self.path == "/error" else 200)
-        self.send_header("ETag", '"current"')
+        self.send_header("ETag", f'"connection-{self.client_address[1]}"'
+                         if self.path == "/reuse" else '"current"')
         if self.path == "/redirect":
             self.send_header("Location", "https://example.com/forbidden")
             self.send_header("Content-Length", "0")

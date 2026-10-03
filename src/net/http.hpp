@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <functional>
 #include <mutex>
+#include <memory>
 #include <string>
 #include <string_view>
 
@@ -25,6 +26,8 @@ struct Control
     std::atomic<bool> cancelled{false};
     std::mutex guard;
     int request = -1;
+    // Owned by one worker; release after joining it, before transport shutdown.
+    std::unique_ptr<void, void (*)(void *)> connection{nullptr, nullptr};
     void cancel();
 };
 struct Response
