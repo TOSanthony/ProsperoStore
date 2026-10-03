@@ -7,5 +7,7 @@ namespace store::diag
 {
 bool start(const std::string &root);
 void stop();
+// Keeps the log in memory (true) while the disk is busy with an install.
+void hold_log(bool hold);
 bool recovered();
 } // namespace store::diag

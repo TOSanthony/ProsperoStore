@@ -544,8 +544,11 @@ Result uninstall(const Environment &environment, const std::string &id, const st
     sync_directory(location);
     sync_directory(paths.trashes);
     STORE_STEP("moved");
+    const std::time_t removing = std::time(nullptr);
     if (!remove_tree(paths.trash))
         return fail("Uninstalled, but its files are still being removed.");
+    result.note =
+        "remove_s=" + std::to_string(static_cast<long long>(std::time(nullptr) - removing));
     STORE_STEP("deleted");
     if (unlink(paths.receipt.c_str()) != 0 && errno != ENOENT)
         return fail("Uninstalled, but the receipt could not be removed.");

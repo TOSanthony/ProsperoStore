@@ -10,6 +10,7 @@
 #include <cstring>
 #include <fcntl.h>
 #include <limits>
+#include <mutex>
 #include <pthread.h>
 #include <time.h>
 #include <set>
@@ -268,8 +269,10 @@ bool list(Reader &reader, std::string_view title, std::vector<Entry> &entries, A
 }
 
 // Creates the folders of relative below base. Each must be a real directory.
+// Several workers unpack at once: the set of folders already made is shared,
+// and two workers making the same folder is harmless.
 bool make_parents(const std::string &base, std::string_view relative, bool last_is_directory,
-                  std::set<std::string> &made)
+                  std::set<std::string> &made, std::mutex &guard)
 {
     std::size_t end = 0;
     for (;;)
@@ -278,8 +281,18 @@ bool make_parents(const std::string &base, std::string_view relative, bool last_
         if (end == relative.npos && !last_is_directory)
             return true;
         const std::string part(relative.substr(0, end));
-        if (made.insert(part).second && !make_directory(base + "/" + part))
-            return false;
+        bool known = false;
+        {
+            std::lock_guard lock(guard);
+            known = made.contains(part);
+        }
+        if (!known)
+        {
+            if (!make_directory(base + "/" + part))
+                return false;
+            std::lock_guard lock(guard);
+            made.insert(part);
+        }
         if (end == relative.npos)
             return true;
         ++end;
@@ -407,79 +420,134 @@ bool inspect_archive(const std::string &path, std::string_view title, ArchiveInf
     return true;
 }
 
+namespace
+{
+// Creating a file costs about a tenth of a second on the console's storage,
+// whatever its size, so an app of thousands of small files spent minutes in a
+// single queue. Workers take the entries in turn, each with its own reader of
+// the archive, and the storage serves them side by side.
+struct ExtractWork
+{
+    const std::string &path, &destination;
+    const std::vector<Entry> &entries;
+    const std::atomic<bool> &cancelled;
+    std::atomic<std::uint64_t> &written;
+    std::atomic<std::size_t> next{0};
+    std::atomic<bool> failed{false};
+    std::atomic<std::uint64_t> write_ms{0};
+    std::mutex guard;
+    std::set<std::string> made;
+    ExtractWork(const std::string &archive, const std::string &folder,
+                const std::vector<Entry> &list, const std::atomic<bool> &stop,
+                std::atomic<std::uint64_t> &count)
+        : path(archive), destination(folder), entries(list), cancelled(stop), written(count)
+    {
+    }
+};
+void *extract_worker(void *opaque)
+{
+    auto &work = *static_cast<ExtractWork *>(opaque);
+    Reader reader;
+    std::vector<char> buffer(1u << 20);
+    if (!reader.open(work.path))
+    {
+        work.failed = true;
+        return nullptr;
+    }
+    for (;;)
+    {
+        const std::size_t index = work.next.fetch_add(1);
+        if (index >= work.entries.size() || work.failed.load() || work.cancelled.load())
+            return nullptr;
+        const Entry &entry = work.entries[index];
+        if (entry.relative.empty())
+            continue;
+        if (!make_parents(work.destination, entry.relative, entry.directory, work.made, work.guard))
+        {
+            work.failed = true;
+            return nullptr;
+        }
+        if (entry.directory)
+            continue;
+        const std::string target = work.destination + "/" + entry.relative;
+        Output output{open(target.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0644),
+                      entry.size,
+                      0,
+                      work.cancelled,
+                      work.written,
+                      buffer};
+        // The reader checks the stored CRC-32; the callback enforces the declared size.
+        bool ok = output.descriptor >= 0 &&
+                  mz_zip_reader_extract_to_callback(reader.zip(), entry.index, write_output,
+                                                    &output, 0) != 0 &&
+                  output.written == output.expected && output.flush();
+        if (output.descriptor >= 0)
+            ok = close(output.descriptor) == 0 && ok;
+        work.write_ms.fetch_add(output.write_ms);
+        if (!ok)
+        {
+            work.failed = true;
+            return nullptr;
+        }
+    }
+}
+} // namespace
+
 bool extract_archive(const std::string &path, std::string_view title,
                      const std::string &destination, const std::atomic<bool> &cancelled,
                      std::atomic<std::uint64_t> &written, std::string &error, ExtractTimes *times)
 {
     const auto started = now_ms();
-    std::vector<char> buffer(4u << 20);
-    std::vector<std::string> files;
-    std::uint64_t write_ms = 0;
-    Reader reader;
     std::vector<Entry> entries;
     ArchiveInfo info;
-    if (!reader.open(path))
     {
-        error = "The archive isn't a valid app";
-        return false;
+        Reader reader;
+        if (!reader.open(path))
+        {
+            error = "The archive isn't a valid app";
+            return false;
+        }
+        if (!list(reader, title, entries, info, error))
+            return false;
     }
-    if (!list(reader, title, entries, info, error))
-        return false;
     error = "The app could not be unpacked";
     if (mkdir(destination.c_str(), 0755) != 0)
         return false;
-    std::set<std::string> made;
+    ExtractWork work{path, destination, entries, cancelled, written};
+    pthread_t workers[8];
+    std::size_t running = 0;
+    for (auto &worker : workers)
+        if (pthread_create(&worker, nullptr, extract_worker, &work) == 0)
+            workers[running++] = worker;
+    if (running == 0)
+        extract_worker(&work);
+    for (std::size_t i = 0; i < running; ++i)
+        pthread_join(workers[i], nullptr);
+    if (cancelled.load())
+    {
+        error = "Cancelled";
+        return false;
+    }
+    if (work.failed.load())
+        return false;
+    // Files and folders alike are made durable together, before the app is put in place.
+    std::vector<std::string> paths;
     for (const auto &entry : entries)
-    {
-        if (cancelled.load())
-        {
-            error = "Cancelled";
-            return false;
-        }
-        if (entry.relative.empty())
-            continue;
-        if (!make_parents(destination, entry.relative, entry.directory, made))
-            return false;
-        if (entry.directory)
-            continue;
-        const std::string target = destination + "/" + entry.relative;
-        Output output{open(target.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0644),
-                      entry.size,
-                      0,
-                      cancelled,
-                      written,
-                      buffer};
-        if (output.descriptor < 0)
-            return false;
-        // The reader checks the stored CRC-32; the callback enforces the declared size.
-        bool ok = mz_zip_reader_extract_to_callback(reader.zip(), entry.index, write_output,
-                                                    &output, 0) != 0 &&
-                  output.written == output.expected;
-        ok = ok && output.flush();
-        ok = close(output.descriptor) == 0 && ok;
-        write_ms += output.write_ms;
-        if (!ok)
-        {
-            if (cancelled.load())
-                error = "Cancelled";
-            return false;
-        }
-        files.push_back(target);
-    }
+        if (!entry.directory && !entry.relative.empty())
+            paths.push_back(destination + "/" + entry.relative);
+    const std::size_t files = paths.size();
+    for (const auto &directory : work.made)
+        paths.push_back(destination + "/" + directory);
+    paths.push_back(destination);
     const auto syncing = now_ms();
-    if (!sync_files(files, cancelled))
+    if (!sync_files(paths, cancelled))
     {
         if (cancelled.load())
             error = "Cancelled";
         return false;
     }
-    for (const auto &directory : made)
-        if (!sync_directory(destination + "/" + directory))
-            return false;
-    if (!sync_directory(destination))
-        return false;
     if (times)
-        *times = {write_ms, now_ms() - syncing, now_ms() - started, files.size()};
+        *times = {work.write_ms.load(), now_ms() - syncing, now_ms() - started, files};
     error.clear();
     return true;
 }

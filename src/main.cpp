@@ -375,6 +375,8 @@ int main()
             service.save_settings(store::format_settings(screen.settings())))
             screen.settings_changed = false;
         if (store::JobView view; service.job(view))
+            store::diag::hold_log(!view.id.empty());
+        if (store::JobView view; service.job(view))
             screen.set_activity({view.id, static_cast<int>(view.phase), view.done, view.total,
                                  std::move(view.waiting)});
         auto frame = input.update(std::span(samples.data(), count), now);

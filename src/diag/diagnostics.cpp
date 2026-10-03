@@ -23,13 +23,20 @@ void lifecycle(bool restart)
 // every line the OpenGL runtime prints; at most a fifth of a second of log
 // is lost if the app dies.
 std::atomic<bool> flushing{false};
+std::atomic<bool> holding{false};
 pthread_t flusher{};
 void *flush_log(void *)
 {
     while (flushing.load())
     {
-        std::fflush(stdout);
-        std::fflush(stderr);
+        // While the installer keeps the disk busy a write can take most of a
+        // second, and the render thread would wait for it at its next log
+        // line: the log stays in memory until the disk is quiet again.
+        if (!holding.load())
+        {
+            std::fflush(stdout);
+            std::fflush(stderr);
+        }
         usleep(200000);
     }
     return nullptr;
@@ -56,7 +63,7 @@ bool start(const std::string &root)
         std::freopen(log.c_str(), "a", stdout) && std::freopen(log.c_str(), "a", stderr);
     if (redirected)
     {
-        std::setvbuf(stdout, nullptr, _IOFBF, 64 * 1024);
+        std::setvbuf(stdout, nullptr, _IOFBF, 1024 * 1024);
         std::setvbuf(stderr, nullptr, _IOFBF, 16 * 1024);
         flushing = true;
         if (pthread_create(&flusher, nullptr, flush_log, nullptr) != 0)
@@ -67,6 +74,10 @@ bool start(const std::string &root)
         }
     }
     return redirected && crash_report::install(directory.c_str(), "01.000.000", lifecycle);
+}
+void hold_log(bool hold)
+{
+    holding = hold;
 }
 void stop()
 {

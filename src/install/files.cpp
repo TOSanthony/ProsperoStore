@@ -7,7 +7,9 @@
 #include <cstdio>
 #include <dirent.h>
 #include <fcntl.h>
+#include <atomic>
 #include <memory>
+#include <pthread.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <vector>
@@ -16,7 +18,10 @@ namespace store::install
 {
 namespace
 {
-bool remove_level(const std::string &path, unsigned depth)
+// Lists a tree without following links: files (and links, which are removed
+// as names) and folders, each folder after everything inside it.
+bool collect(const std::string &path, unsigned depth, std::vector<std::string> &files,
+             std::vector<std::string> &folders)
 {
     struct stat info
     {
@@ -24,11 +29,12 @@ bool remove_level(const std::string &path, unsigned depth)
     if (lstat(path.c_str(), &info) != 0)
         return errno == ENOENT;
     if (!S_ISDIR(info.st_mode))
-        return unlink(path.c_str()) == 0 || errno == ENOENT;
+    {
+        files.push_back(path);
+        return true;
+    }
     if (depth > 300)
         return false;
-    // Names are collected first: removing entries while reading a directory
-    // may skip some on the console's filesystems.
     std::vector<std::string> names;
     {
         std::unique_ptr<DIR, decltype(&closedir)> directory(opendir(path.c_str()), closedir);
@@ -50,9 +56,34 @@ bool remove_level(const std::string &path, unsigned depth)
         }
     }
     for (const auto &name : names)
-        if (!remove_level(path + "/" + name, depth + 1))
+        if (!collect(path + "/" + name, depth + 1, files, folders))
             return false;
-    return rmdir(path.c_str()) == 0 || errno == ENOENT;
+    folders.push_back(path);
+    return true;
+}
+
+// Removing a file costs about as much as creating one on the console's
+// storage, so the files of a large app are removed by several workers at once.
+struct RemoveWork
+{
+    const std::vector<std::string> &files;
+    std::atomic<std::size_t> next{0};
+    std::atomic<bool> failed{false};
+    explicit RemoveWork(const std::vector<std::string> &list) : files(list)
+    {
+    }
+};
+void *remove_worker(void *opaque)
+{
+    auto &work = *static_cast<RemoveWork *>(opaque);
+    for (;;)
+    {
+        const std::size_t index = work.next.fetch_add(1);
+        if (index >= work.files.size())
+            return nullptr;
+        if (unlink(work.files[index].c_str()) != 0 && errno != ENOENT)
+            work.failed = true;
+    }
 }
 } // namespace
 
@@ -186,6 +217,25 @@ bool list_files(const std::string &folder, std::size_t limit, std::vector<std::s
 
 bool remove_tree(const std::string &path)
 {
-    return remove_level(path, 0);
+    std::vector<std::string> files, folders;
+    if (!collect(path, 0, files, folders))
+        return false;
+    RemoveWork work(files);
+    pthread_t workers[8];
+    std::size_t running = 0;
+    if (files.size() > 16)
+        for (auto &worker : workers)
+            if (pthread_create(&worker, nullptr, remove_worker, &work) == 0)
+                workers[running++] = worker;
+    if (running == 0)
+        remove_worker(&work);
+    for (std::size_t i = 0; i < running; ++i)
+        pthread_join(workers[i], nullptr);
+    if (work.failed.load())
+        return false;
+    for (const auto &folder : folders)
+        if (rmdir(folder.c_str()) != 0 && errno != ENOENT)
+            return false;
+    return true;
 }
 } // namespace store::install
