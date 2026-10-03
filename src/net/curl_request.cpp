@@ -26,7 +26,10 @@ Response curl_request(const std::string &url, std::uint64_t limit, const Sink &s
     struct ResetOptions
     {
         CURL *handle;
-        ~ResetOptions() { curl_easy_reset(handle); }
+        ~ResetOptions()
+        {
+            curl_easy_reset(handle);
+        }
     } reset{curl}; // Keep connections, but never retain request-local callbacks or headers.
     struct State
     {

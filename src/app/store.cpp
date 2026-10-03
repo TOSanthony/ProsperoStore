@@ -10,12 +10,82 @@
 #include <utility>
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 
 namespace store
 {
 using namespace hui;
 namespace
 {
+using gfx::Color;
+using gfx::Rect;
+
+// ---- the design language: Storefront's shapes in Glass Orchard's colours ----
+
+const Color kWhite = Color::rgb(0xffffff);
+const Color kBlack = Color::rgb(0x000000);
+const Color kClear = Color::rgb(0x000000, 0.0f);
+const Color kInk = Color::rgb(0xf4efe6);      // warm white: all text
+const Color kOrchard = Color::rgb(0x1c2414);  // Glass Orchard: its dark,
+const Color kLeaf = Color::rgb(0x5f8f3a);     // ... its mid tone
+const Color kAccent = Color::rgb(0xe9f28b);   // ... and its light: calls to action
+const Color kOnAccent = Color::rgb(0x1b2410); // text on the accent
+const Color kCoal = Color::rgb(0x0e0f12);
+const Color kPanel = gfx::mix(Color::rgb(0x202228), kOrchard, 0.5f);
+const Color kOwned = Color::rgb(0x8fdab2); // "this is installed"
+
+constexpr float kWidth = gfx::kVirtualWidth;
+constexpr float kHeight = gfx::kVirtualHeight;
+constexpr float kMargin = 96.0f;
+constexpr float kRight = kWidth - kMargin;
+constexpr float kTopY = 78.0f;
+
+// The home page scrolls as one sheet under the top bar.
+constexpr float kPageTop = 104.0f;
+constexpr float kBannerY = 116.0f;
+constexpr float kBannerH = 300.0f;
+constexpr float kBannerRadius = 28.0f;
+constexpr float kBannerSeconds = 6.0f;
+constexpr std::size_t kFeatured = 5;
+constexpr float kChipsY = 440.0f; // under the banner
+constexpr float kChipH = 48.0f;
+constexpr float kStickY = 116.0f; // where the chips stop when the banner scrolls away
+constexpr float kGridGap = 24.0f; // between the chips and the first row
+constexpr int kColumns = 5;
+constexpr float kCardGap = 24.0f;
+constexpr float kCardW = (kWidth - 2.0f * kMargin - (kColumns - 1) * kCardGap) / kColumns;
+constexpr float kCoverH = kCardW; // app icons are square
+constexpr float kCardH = kCoverH + 84.0f;
+constexpr float kCardRadius = 14.0f;
+constexpr float kRowPitch = kCardH + 28.0f;
+constexpr float kLift = 0.04f;        // how much the focused card grows
+constexpr float kViewBottom = 968.0f; // the grid ends above the hint row
+constexpr float kFadeFoot = 56.0f;    // ... and fades out over this distance
+constexpr float kFadeHead = 20.0f;
+
+// The product page.
+constexpr Rect kPreview{96.0f, 128.0f, 600.0f, 600.0f};
+constexpr float kPreviewRadius = 28.0f;
+constexpr float kInfoX = 768.0f;
+constexpr float kInfoW = 520.0f;
+constexpr Rect kActionBox{1336.0f, 392.0f, 488.0f, 472.0f};
+constexpr Rect kActionButton{1368.0f, 600.0f, 424.0f, 72.0f};
+constexpr float kButtonRadius = 18.0f;
+
+constexpr const char *kSectionNames[] = {"Discover",    "Apps",      "Games",  "Tools",
+                                         "Coming soon", "Installed", "Updates"};
+
+// What one pass over the cards records: all covers, then all shapes, then each
+// face, so a grid costs a few draw calls instead of several per card.
+enum Layer : unsigned
+{
+    kImages = 1,
+    kShapes = 2,
+    kSemibold = 4,
+    kRegular = 8,
+    kAllLayers = 15,
+};
+
 std::string folded(std::string text)
 {
     for (auto &c : text)
@@ -23,40 +93,194 @@ std::string folded(std::string text)
             c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     return text;
 }
+
+// Baseline that centres a line of the given size on cy.
+float centred(float cy, float size)
+{
+    return cy + size * 0.35f;
+}
+
+void draw_check(gfx::DrawList &list, float cx, float cy, float size, Color colour)
+{
+    const float stroke = std::max(2.0f, size * 0.16f);
+    list.line(cx - size * 0.42f, cy + size * 0.02f, cx - size * 0.12f, cy + size * 0.32f, stroke,
+              colour);
+    list.line(cx - size * 0.12f, cy + size * 0.32f, cx + size * 0.44f, cy - size * 0.3f, stroke,
+              colour);
+}
+
+// A pill with a word on it. Returns its width.
+float pill(gfx::DrawList &list, const ui::Fonts &fonts, std::string_view word, float x, float cy,
+           float height, Color fill, Color ink, float alpha, unsigned layers)
+{
+    const float size = height * 0.58f;
+    const float width = fonts.semibold.measure(word, size) + height * 0.9f;
+    if (layers & kShapes)
+        list.rounded_rect({x, cy - height * 0.5f, width, height}, height * 0.5f,
+                          fill.with_alpha(alpha));
+    if (layers & kSemibold)
+        ui::text(list, fonts.semibold, word, x + width * 0.5f, centred(cy, size), size,
+                 ink.with_alpha(alpha), gfx::Align::center);
+    return width;
+}
+
+// The state a card or the banner announces, and how loudly.
+struct Mark
+{
+    const char *word = nullptr;
+    bool loud = false; // on the accent
+};
+Mark mark(const App &app)
+{
+    if (app.badge == "Update")
+        return {"Update", true};
+    if (app.badge == "Duplicate")
+        return {"Duplicate", false};
+    if (app.badge == "Coming soon")
+        return {"Coming soon", false};
+    return {};
+}
+
+ui::Theme orchard_theme()
+{
+    ui::Theme theme = ui::themes()[0];
+    theme.page = kCoal;
+    theme.page_text = kInk;
+    theme.page_text_muted = kInk.with_alpha(0.62f);
+    theme.surface = kPanel;
+    theme.surface_high = gfx::mix(kPanel, kLeaf, 0.18f);
+    theme.text = kInk;
+    theme.text_muted = kInk.with_alpha(0.62f);
+    theme.primary = kAccent;
+    theme.on_primary = kOnAccent;
+    theme.accent = kAccent;
+    theme.outline = kInk.with_alpha(0.2f);
+    theme.focus = kInk;
+    theme.success = kOwned;
+    return theme;
+}
 } // namespace
 
-Screen::Screen() : theme_(ui::themes()[0])
+Screen::Screen() : theme_(orchard_theme())
 {
-    grid_.style.theme = theme_;
-    grid_.style.columns = 5;
-    grid_.style.card.art_aspect = 1.0f;
-    grid_.style.card.title_size = 26;
-    grid_.style.card.subtitle_size = 24;
-    grid_.style.card.glow = true;
-    grid_.set_bounds({96, 480, 1728, 470});
-    tabs_.style.theme = theme_;
-    tabs_.style.kind = ui::TabKind::underline;
-    tabs_.style.on_page = true;
-    tabs_.set_bounds({96, 372, 1728, 64});
-    tabs_.set_tabs({{"Discover", 0, false, 0},
-                    {"Apps", 0, false, 1},
-                    {"Games", 0, false, 2},
-                    {"Tools", 0, false, 3},
-                    {"Coming soon", 0, false, 4},
-                    {"Installed", 0, false, 5},
-                    {"Updates", 0, false, 6}});
-    tabs_.set_focused(false);
     article_.style.theme = theme_;
-    article_.style.body_size = 28;
+    article_.style.body_size = 26;
     article_.style.footer = false;
-    article_.set_bounds({684, 364, 1140, 458});
+    article_.style.panel = false;
+    article_.style.focus_ring = false;
+    article_.style.padding = 4;
+    article_.set_bounds({kInfoX - 4.0f, 392.0f, kInfoW + 8.0f, 500.0f});
+    toasts_.style.theme = theme_;
+    toasts_.style.frosted = true;
+    toasts_.style.duration = 10.0f;
+    plate_.snap(1.0f);
+}
+
+void Screen::notify(std::string title, std::string body)
+{
+    toasts_.push(ui::StatusKind::info, std::move(title), std::move(body), 10.0f);
+}
+
+// ---- data -------------------------------------------------------------------
+
+bool Screen::in_section(const App &app, int section) const
+{
+    if (app.local_only && section != 5)
+        return false;
+    switch (section)
+    {
+    case 1:
+        return app.kind == "app";
+    case 2:
+        return app.kind == "game";
+    case 3:
+        return app.kind == "tool";
+    case 4:
+        return app.catalog_badge == "Coming soon";
+    case 5:
+        return !app.installed.empty();
+    case 6:
+        return app.badge == "Update";
+    default:
+        return true;
+    }
+}
+
+void Screen::rebuild()
+{
+    visible_.clear();
+    for (int &count : counts_)
+        count = 0;
+    const auto query = folded(query_);
+    for (std::size_t i = 0; i < apps_.size(); ++i)
+    {
+        const App &app = apps_[i];
+        if (!query.empty() && folded(app.name).find(query) == std::string::npos &&
+            folded(app.author).find(query) == std::string::npos)
+            continue;
+        for (int section = 0; section < kSections; ++section)
+            counts_[section] += in_section(app, section) ? 1 : 0;
+        if (in_section(app, section_))
+            visible_.push_back(i);
+    }
+    std::stable_sort(visible_.begin(), visible_.end(),
+                     [&](auto first, auto second)
+                     {
+                         const auto &a = apps_[first];
+                         const auto &b = apps_[second];
+                         if (sort_ == Sort::released && a.released != b.released)
+                             return a.released > b.released;
+                         if (sort_ == Sort::updated && a.updated != b.updated)
+                             return a.updated > b.updated;
+                         const auto a_name = folded(a.name), b_name = folded(b.name);
+                         return a_name == b_name ? a.title_id < b.title_id : a_name < b_name;
+                     });
+    // The banner features the newest releases.
+    featured_.clear();
+    for (std::size_t i = 0; i < apps_.size(); ++i)
+        if (!apps_[i].local_only && !apps_[i].released.empty() &&
+            apps_[i].catalog_badge != "Coming soon")
+            featured_.push_back(i);
+    std::stable_sort(featured_.begin(), featured_.end(), [&](auto first, auto second)
+                     { return apps_[first].released > apps_[second].released; });
+    if (featured_.size() > kFeatured)
+        featured_.resize(kFeatured);
+    banner_ = std::min(banner_, std::max(0, static_cast<int>(featured_.size()) - 1));
+    banner_previous_ = banner_;
+    const int count = static_cast<int>(visible_.size());
+    focus_ = std::clamp(focus_, 0, std::max(0, count - 1));
+    if (count == 0 && zone_ == Zone::grid)
+        zone_ = Zone::chips;
+    if (zone_ == Zone::banner && !banner_shown())
+        zone_ = count ? Zone::grid : Zone::chips;
+    lift_.resize(apps_.size());
+    fits_stale_ = true;
+}
+
+const App *Screen::focused() const
+{
+    return visible_.empty() ? nullptr : &apps_[visible_[static_cast<std::size_t>(focus_)]];
+}
+
+const App *Screen::page_app() const
+{
+    return details_ ? focused() : nullptr;
+}
+
+bool Screen::banner_shown() const
+{
+    return section_ == 0 && query_.empty() && !featured_.empty();
+}
+
+std::uint32_t Screen::art(const App &app) const
+{
+    return app.icon ? app.icon : app.catalog_badge == "Coming soon" ? coming_soon_art_ : 0;
 }
 
 void Screen::set_catalog(std::vector<App> apps, std::string status, bool current)
 {
-    const auto previous = visible_.empty()
-                              ? std::string{}
-                              : apps_[visible_[static_cast<std::size_t>(grid_.focus())]].title_id;
+    const auto previous = focused() ? focused()->title_id : std::string{};
+    const auto shown = details_ ? previous : std::string{};
     apps_ = std::move(apps);
     catalog_current_ = current;
     for (auto &app : apps_)
@@ -92,13 +316,12 @@ void Screen::set_catalog(std::vector<App> apps, std::string status, bool current
                             : "Installed";
         }
     status_ = std::move(status);
-    refresh_grid();
+    rebuild();
     const auto found = std::find_if(visible_.begin(), visible_.end(),
                                     [&](auto index) { return apps_[index].title_id == previous; });
     if (found != visible_.end())
-        grid_.set_focus(static_cast<int>(found - visible_.begin()));
-    else
-        details_ = false;
+        focus_ = static_cast<int>(found - visible_.begin());
+    details_ = details_ && found != visible_.end() && shown == previous;
     if (details_)
     {
         refresh_detail();
@@ -120,56 +343,10 @@ void Screen::set_inventory(system::Inventory inventory)
 void Screen::set_query(std::string query)
 {
     query_ = std::move(query);
-    refresh_grid();
-    grid_.set_focus(0);
-}
-
-void Screen::refresh_grid()
-{
-    std::vector<ui::CardItem> cards;
-    visible_.clear();
-    const int section = tabs_.active();
-    const auto query = folded(query_);
-    for (std::size_t i = 0; i < apps_.size(); ++i)
-    {
-        const App &app = apps_[i];
-        if (app.local_only && section != 5)
-            continue;
-        if ((section == 1 && app.kind != "app") || (section == 2 && app.kind != "game") ||
-            (section == 3 && app.kind != "tool") ||
-            (section == 4 && app.catalog_badge != "Coming soon") ||
-            (section == 5 && app.installed.empty()) || (section == 6 && app.badge != "Update"))
-            continue;
-        if (!query.empty() && folded(app.name).find(query) == std::string::npos &&
-            folded(app.author).find(query) == std::string::npos)
-            continue;
-        visible_.push_back(i);
-    }
-    std::stable_sort(visible_.begin(), visible_.end(),
-                     [&](auto first, auto second)
-                     {
-                         const auto &a = apps_[first];
-                         const auto &b = apps_[second];
-                         if (sort_ == Sort::released && a.released != b.released)
-                             return a.released > b.released;
-                         if (sort_ == Sort::updated && a.updated != b.updated)
-                             return a.updated > b.updated;
-                         const auto a_name = folded(a.name), b_name = folded(b.name);
-                         return a_name == b_name ? a.title_id < b.title_id : a_name < b_name;
-                     });
-    for (const auto index : visible_)
-    {
-        const auto &app = apps_[index];
-        ui::CardItem card;
-        card.title = app.name;
-        card.subtitle = app.author;
-        card.badge = app.badge;
-        card.texture = app.icon;
-        card.accent = theme_.primary;
-        cards.push_back(std::move(card));
-    }
-    grid_.set_items(std::move(cards));
-    grid_.enter();
+    focus_ = 0;
+    rebuild();
+    if (!visible_.empty())
+        zone_ = Zone::grid;
 }
 
 void Screen::set_detail(const catalog::Entry &entry)
@@ -183,8 +360,7 @@ void Screen::set_detail(const catalog::Entry &entry)
             app.detail_error.clear();
             break;
         }
-    if (details_ && !visible_.empty() &&
-        apps_[visible_[static_cast<std::size_t>(grid_.focus())]].title_id == entry.id)
+    if (page_app() && page_app()->title_id == entry.id)
         refresh_detail();
 }
 
@@ -193,24 +369,15 @@ void Screen::set_detail_error(const std::string &id, std::string message)
     for (auto &app : apps_)
         if (app.title_id == id)
             app.detail_error = message;
-    if (details_ && !visible_.empty() &&
-        apps_[visible_[static_cast<std::size_t>(grid_.focus())]].title_id == id)
+    if (page_app() && page_app()->title_id == id)
         refresh_detail();
 }
 
 void Screen::refresh_detail()
 {
-    const auto &app = apps_[visible_[static_cast<std::size_t>(grid_.focus())]];
+    const auto &app = *focused();
     using Block = ui::TextBlock;
     std::vector<Block> blocks;
-    for (const auto &installed : app.installed)
-    {
-        blocks.push_back(Block::key_value("Installed version",
-                                          installed.version.empty() ? "Image" : installed.version));
-        blocks.push_back(Block::paragraph(installed.path));
-        blocks.push_back(
-            Block::paragraph(installed.managed ? "Managed by ProsperoStore" : installed.reason));
-    }
     if (app.local_only && catalog_current_ &&
         std::any_of(app.installed.begin(), app.installed.end(),
                     [](const auto &installed) { return installed.managed; }))
@@ -223,7 +390,6 @@ void Screen::refresh_detail()
         const auto &entry = *app.detail;
         blocks.push_back(Block::paragraph(entry.description.empty() ? "No description provided."
                                                                     : entry.description));
-        blocks.push_back(Block::key_value("Kind", entry.kind));
         blocks.push_back(
             Block::key_value("Release", entry.version.empty() ? "Not released" : entry.version));
         if (!entry.released.empty())
@@ -236,22 +402,24 @@ void Screen::refresh_detail()
             Block::key_value("License", entry.license.empty() ? "Not specified" : entry.license));
         if (!entry.source.empty())
         {
-            blocks.push_back(Block::heading("Source repository", 2));
+            blocks.push_back(Block::heading("Source repository", 3));
             blocks.push_back(Block::paragraph(entry.source));
-        }
-        if (!entry.page.empty())
-        {
-            blocks.push_back(Block::heading("App page", 2));
-            blocks.push_back(Block::paragraph(entry.page));
         }
         if (!entry.release_notes.empty())
         {
-            blocks.push_back(Block::heading("Release notes", 2));
+            blocks.push_back(Block::heading("Release notes", 3));
             blocks.push_back(Block::paragraph(entry.release_notes));
         }
     }
     else if (app.detail_error.empty() && !app.local_only)
         blocks.push_back(Block::paragraph("Loading verified app details..."));
+    for (const auto &installed : app.installed)
+    {
+        blocks.push_back(Block::heading(installed.image ? "Installed image" : "Installed", 3));
+        if (!installed.version.empty())
+            blocks.push_back(Block::key_value("Version", installed.version));
+        blocks.push_back(Block::paragraph(installed.path));
+    }
     article_.set_content(std::move(blocks));
     article_.scroll_to(0, true);
 }
@@ -261,9 +429,6 @@ void Screen::set_icon(const std::string &id, std::uint32_t texture)
     for (auto &app : apps_)
         if (app.title_id == id)
             app.icon = texture;
-    for (std::size_t i = 0; i < visible_.size(); ++i)
-        if (apps_[visible_[i]].title_id == id)
-            grid_.item(static_cast<int>(i)).texture = texture;
 }
 
 void Screen::set_qr(std::string id, std::uint32_t texture, int width)
@@ -276,186 +441,854 @@ void Screen::set_qr(std::string id, std::uint32_t texture, int width)
 std::vector<std::string> Screen::artwork() const
 {
     std::vector<std::string> wanted;
-    if (visible_.empty())
+    const App *first = focused();
+    if (first && !first->local_only)
+        wanted.push_back(first->title_id);
+    if (details_ || !first)
         return wanted;
     wanted.reserve(16);
-    const auto focus = grid_.focus();
-    if (!apps_[visible_[static_cast<std::size_t>(focus)]].local_only)
-        wanted.push_back(apps_[visible_[static_cast<std::size_t>(focus)]].title_id);
-    if (details_)
-        return wanted;
-    const auto view = grid_.bounds();
-    const int columns = grid_.columns();
-    const int begin = std::max(0, focus - 2 * columns);
-    const int end = std::min(static_cast<int>(visible_.size()), focus + 3 * columns);
-    for (int i = begin; i < end && wanted.size() < 16; ++i)
+    // The rows on screen and one beyond each edge, then the banner's title.
+    const float scroll = scroll_.target;
+    for (int k = 0; k < static_cast<int>(visible_.size()) && wanted.size() < 15; ++k)
     {
-        if (apps_[visible_[static_cast<std::size_t>(i)]].local_only)
-            continue;
-        const auto cell = grid_.cell_rect(i);
-        if (i != focus && cell.y + cell.h >= view.y - cell.h && cell.y <= view.y + view.h + cell.h)
-            wanted.push_back(apps_[visible_[static_cast<std::size_t>(i)]].title_id);
+        const App &app = apps_[visible_[static_cast<std::size_t>(k)]];
+        const float y = card_rect(k).y - scroll;
+        if (k != focus_ && !app.local_only && y + kCardH > -kRowPitch && y < kHeight + kRowPitch)
+            wanted.push_back(app.title_id);
+    }
+    if (banner_shown())
+    {
+        const auto &id = apps_[featured_[static_cast<std::size_t>(banner_)]].title_id;
+        if (std::find(wanted.begin(), wanted.end(), id) == wanted.end())
+            wanted.push_back(id);
     }
     return wanted;
 }
 
-void Screen::update(const InputFrame &input, float dt, ui::Feedback &feedback)
+// ---- geometry ---------------------------------------------------------------
+
+float Screen::chips_rest() const
 {
-    time_ += dt;
-    if (details_ && input.is_pressed(Action::north))
+    return banner_shown() ? kChipsY : kStickY;
+}
+float Screen::chips_y() const
+{
+    return std::max(chips_rest() - scroll_.value, kStickY);
+}
+float Screen::grid_top() const
+{
+    return chips_rest() + kChipH + kGridGap;
+}
+float Screen::window_top() const
+{
+    return chips_y() + kChipH + 4.0f;
+}
+// How visible something at screen height y is inside the grid's window.
+float Screen::fade_at(float y) const
+{
+    return std::min(tween::clamp01((y - window_top()) / kFadeHead),
+                    tween::clamp01((kViewBottom - y) / kFadeFoot));
+}
+// A card's place on the unscrolled page.
+Rect Screen::card_rect(int index) const
+{
+    return {kMargin + static_cast<float>(index % kColumns) * (kCardW + kCardGap),
+            grid_top() + static_cast<float>(index / kColumns) * kRowPitch, kCardW, kCardH};
+}
+// What the focus highlight surrounds, in page coordinates: the scroll offset
+// is taken off when it is drawn, so the highlight rides with the page.
+Rect Screen::focus_target() const
+{
+    if (zone_ == Zone::banner)
+        return Rect{kMargin, kBannerY, kWidth - 2.0f * kMargin, kBannerH}.inset(-7.0f);
+    if (zone_ == Zone::chips || visible_.empty())
     {
-        auto &app = apps_[visible_[static_cast<std::size_t>(grid_.focus())]];
+        Rect chip = chips_[section_].inset(-6.0f);
+        chip.y += scroll_.value;
+        return chip;
+    }
+    return card_rect(focus_).inset(-12.0f);
+}
+float Screen::focus_radius() const
+{
+    if (zone_ == Zone::banner)
+        return kBannerRadius + 7.0f;
+    if (zone_ == Zone::chips || visible_.empty())
+        return kChipH * 0.5f + 6.0f;
+    return 24.0f;
+}
+// Any row but the first sends the banner away and parks the chips under the
+// top bar, with the focused row right below them.
+float Screen::scroll_target() const
+{
+    if (zone_ != Zone::grid || visible_.empty() || focus_ < kColumns)
+        return 0.0f;
+    return card_rect(focus_).y - (kStickY + kChipH + kGridGap);
+}
+
+// ---- input ------------------------------------------------------------------
+
+// The edge of something: a quiet "no" (and nothing at all for a held
+// direction, which only means the player has not let go yet).
+void Screen::refuse(ui::Feedback &feedback, bool repeat, float dx, float dy)
+{
+    if (repeat)
+        return;
+    feedback.play(audio::Cue::error, 1.0f, 0.0f, 0.6f);
+    feedback.rumble(0.25f, 0.05f);
+    nudge_.trigger();
+    nudge_x_ = dx;
+    nudge_y_ = dy;
+}
+
+void Screen::step_section(int delta, bool repeat, ui::Feedback &feedback)
+{
+    const int next = section_ + delta;
+    if (next < 0 || next >= kSections)
+        return refuse(feedback, repeat, static_cast<float>(delta), 0.0f);
+    section_ = next;
+    focus_ = 0;
+    rebuild();
+    swap_.start(0.4f);
+    feedback.play(audio::Cue::tab, 0.92f + 0.04f * static_cast<float>(next),
+                  ui::pan_for_x(chips_[next].cx()));
+}
+
+void Screen::show_banner(int slot)
+{
+    if (slot == banner_)
+        return;
+    banner_previous_ = banner_;
+    banner_ = slot;
+    banner_fade_.start(0.6f);
+    banner_clock_ = 0.0f;
+}
+
+void Screen::update_home(const InputFrame &input, ui::Feedback &feedback)
+{
+    if (input.is_pressed(Action::north))
+    {
+        pending_search = true;
+        feedback.play(audio::Cue::select);
+        return;
+    }
+    if (input.is_pressed(Action::r3))
+    {
+        sort_ = static_cast<Sort>((static_cast<unsigned>(sort_) + 1) % 3);
+        focus_ = 0;
+        rebuild();
+        swap_.start(0.3f);
+        feedback.play(audio::Cue::select);
+        return;
+    }
+    if (input.is_pressed(Action::page_next) || input.is_pressed(Action::page_prev))
+        return step_section(input.is_pressed(Action::page_next) ? 1 : -1, false, feedback);
+
+    const int count = static_cast<int>(visible_.size());
+    const int featured = static_cast<int>(featured_.size());
+    if (zone_ == Zone::grid && count > 0)
+    {
+        const int column = focus_ % kColumns, row = focus_ / kColumns;
+        const int before = focus_;
+        switch (input.nav)
+        {
+        case Direction::left:
+            if (column == 0)
+                refuse(feedback, input.nav_repeat, -1.0f, 0.0f);
+            else
+                --focus_;
+            break;
+        case Direction::right:
+            if (column == kColumns - 1 || focus_ + 1 >= count)
+                refuse(feedback, input.nav_repeat, 1.0f, 0.0f);
+            else
+                ++focus_;
+            break;
+        case Direction::up:
+            if (row == 0)
+            {
+                zone_ = Zone::chips;
+                feedback.play(audio::Cue::focus, 1.1f);
+            }
+            else
+                focus_ -= kColumns;
+            break;
+        case Direction::down:
+            if (focus_ + kColumns < count)
+                focus_ += kColumns;
+            else if ((count - 1) / kColumns > row)
+                focus_ = count - 1; // a short last row: land on its last card
+            else
+                refuse(feedback, input.nav_repeat, 0.0f, 1.0f);
+            break;
+        case Direction::none:
+            break;
+        }
+        if (focus_ != before) // rows further down sound a little lower
+            feedback.play(audio::Cue::focus,
+                          std::max(0.82f, 1.06f - 0.04f * static_cast<float>(focus_ / kColumns)),
+                          ui::pan_for_x(card_rect(focus_).cx()));
+    }
+    else if (zone_ == Zone::banner)
+    {
+        if (input.nav == Direction::left || input.nav == Direction::right)
+        {
+            // The banner is a loop: it has no ends to refuse at.
+            const int step = input.nav == Direction::right ? 1 : -1;
+            show_banner((banner_ + step + featured) % featured);
+            feedback.play(audio::Cue::slider, 1.0f + 0.04f * static_cast<float>(banner_));
+        }
+        else if (input.nav == Direction::up)
+            refuse(feedback, input.nav_repeat, 0.0f, -1.0f);
+        else if (input.nav == Direction::down)
+        {
+            zone_ = Zone::chips;
+            feedback.play(audio::Cue::focus, 1.1f);
+        }
+    }
+    else if (input.nav == Direction::left || input.nav == Direction::right)
+        step_section(input.nav == Direction::right ? 1 : -1, input.nav_repeat, feedback);
+    else if (input.nav == Direction::up)
+    {
+        if (banner_shown())
+        {
+            zone_ = Zone::banner;
+            feedback.play(audio::Cue::focus, 1.16f);
+        }
+        else
+            refuse(feedback, input.nav_repeat, 0.0f, -1.0f);
+    }
+    else if (input.nav == Direction::down)
+    {
+        if (count == 0)
+            refuse(feedback, input.nav_repeat, 0.0f, 1.0f);
+        else
+        {
+            zone_ = Zone::grid;
+            feedback.play(audio::Cue::focus);
+        }
+    }
+
+    if (input.is_pressed(Action::confirm))
+    {
+        if (zone_ == Zone::banner)
+        {
+            // The banner's title opens where it stands in Discover.
+            const auto wanted = featured_[static_cast<std::size_t>(banner_)];
+            const auto found = std::find(visible_.begin(), visible_.end(), wanted);
+            if (found == visible_.end())
+                return refuse(feedback, false, 0.0f, 1.0f);
+            focus_ = static_cast<int>(found - visible_.begin());
+            zone_ = Zone::grid;
+        }
+        if (zone_ == Zone::grid && count > 0)
+        {
+            details_ = true;
+            press_.trigger();
+            pending_detail = focused()->local_only ? std::string{} : focused()->title_id;
+            refresh_detail();
+            feedback.play(audio::Cue::open);
+        }
+        else if (count > 0)
+        {
+            zone_ = Zone::grid;
+            feedback.play(audio::Cue::select);
+        }
+        else
+            refuse(feedback, false, 0.0f, 1.0f);
+    }
+    else if (input.is_pressed(Action::back))
+    {
+        // Back has one step to take first: from deep in the grid to its top.
+        if (zone_ == Zone::grid && focus_ >= kColumns)
+            focus_ %= kColumns;
+        else
+            quit_ = true;
+        feedback.play(audio::Cue::back);
+    }
+}
+
+void Screen::update_page(const InputFrame &input, ui::Feedback &feedback)
+{
+    if (input.is_pressed(Action::back))
+    {
+        details_ = false;
+        feedback.play(audio::Cue::back);
+    }
+    else if (input.is_pressed(Action::north))
+    {
+        auto &app = apps_[visible_[static_cast<std::size_t>(focus_)]];
         app.detail_error.clear();
         pending_detail = app.local_only ? std::string{} : app.title_id;
         refresh_detail();
         feedback.play(audio::Cue::select);
     }
-    else if (!details_ && input.is_pressed(Action::north))
-    {
-        pending_search = true;
-        feedback.play(audio::Cue::select);
-    }
-    else if (!details_ && input.is_pressed(Action::r3))
-    {
-        sort_ = static_cast<Sort>((static_cast<unsigned>(sort_) + 1) % 3);
-        refresh_grid();
-        grid_.set_focus(0);
-        feedback.play(audio::Cue::select);
-    }
-    else if (input.is_pressed(Action::back))
-    {
-        if (details_)
-            details_ = false;
-        else
-            quit_ = true;
-        feedback.play(audio::Cue::back);
-    }
-    else if (!details_ &&
-             (input.is_pressed(Action::page_next) || input.is_pressed(Action::page_prev)))
-    {
-        tabs_.step(input.is_pressed(Action::page_next) ? 1 : -1, input, feedback);
-        refresh_grid();
-        grid_.set_focus(0);
-    }
-    else if (!details_ && grid_.handle(input, feedback) == ui::Event::activated)
-    {
-        details_ = true;
-        const auto &app = apps_[visible_[static_cast<std::size_t>(grid_.focus())]];
-        pending_detail = app.local_only ? std::string{} : app.title_id;
-        refresh_detail();
-    }
-    else if (details_)
+    else
         article_.handle(input, feedback);
+}
+
+void Screen::update(const InputFrame &input, float dt, ui::Feedback &feedback)
+{
+    time_ += dt;
+    if (details_ && focused())
+        update_page(input, feedback);
+    else
+    {
+        details_ = false;
+        update_home(input, feedback);
+    }
+
+    // The banner moves on by itself while nothing holds it.
+    const bool home = !details_ && banner_shown();
+    if (home && zone_ != Zone::banner && featured_.size() > 1)
+    {
+        banner_clock_ += dt;
+        if (banner_clock_ >= kBannerSeconds)
+            show_banner((banner_ + 1) % static_cast<int>(featured_.size()));
+    }
+    banner_fade_.update(dt);
+    swap_.update(dt);
+    banner_focus_.target = zone_ == Zone::banner ? 1.0f : 0.0f;
+    banner_focus_.update(dt, 16.0f);
+    scroll_.target = scroll_target();
+    scroll_.update(dt, 11.0f);
+    page_.target = details_ ? 1.0f : 0.0f;
+    page_.update(dt, 13.0f);
+    plate_.target = zone_ == Zone::grid && !visible_.empty() ? 1.0f : 0.0f;
+    plate_.update(dt, 18.0f);
+    ring_.target(focus_target());
+    ring_.update(dt, 20.0f);
+    ring_radius_.target = focus_radius();
+    ring_radius_.update(dt, 20.0f);
+    chip_pill_.target(chips_[section_]);
+    chip_pill_.update(dt, 18.0f);
+    nudge_.update(dt, 9.0f);
+    press_.update(dt, 7.0f);
+    for (std::size_t i = 0; i < lift_.size(); ++i)
+    {
+        lift_[i].target = zone_ == Zone::grid && focused() == &apps_[i] ? 1.0f : 0.0f;
+        lift_[i].update(dt, 16.0f);
+    }
     article_.set_active(details_);
     article_.update(dt);
-    grid_.set_active(!details_);
-    grid_.update(dt);
-    tabs_.update(dt);
+    toasts_.update(dt, feedback);
+}
+
+// ---- drawing: the home page ---------------------------------------------------
+
+// Fitting and measuring allocate: once per catalog, not per frame.
+void Screen::layout(const ui::Fonts &fonts)
+{
+    if (fits_stale_)
+    {
+        fits_.clear();
+        for (const auto &app : apps_)
+            fits_.push_back({fonts.semibold.font->fit(app.name, 24, kCardW - 20.0f),
+                             fonts.regular.font->fit(app.author, 20, kCardW - 20.0f)});
+        fits_stale_ = false;
+    }
+    float x = kMargin + ui::button_width(ui::Button::l1, 30) + 16.0f;
+    for (int i = 0; i < kSections; ++i)
+    {
+        const auto number = std::to_string(counts_[i]);
+        const float w = 48.0f + fonts.semibold.measure(kSectionNames[i], 22) + 10.0f +
+                        fonts.mono.measure(number, 18);
+        chips_[i] = {x, chips_y(), w, kChipH};
+        x += w + 12.0f;
+    }
+    if (!placed_)
+    {
+        // The first frame: the highlights start where they belong, not at the origin.
+        chip_pill_.snap(chips_[section_]);
+        ring_.snap(focus_target());
+        ring_radius_.snap(focus_radius());
+        placed_ = true;
+    }
+}
+
+void Screen::draw_top_bar(const ui::Fonts &fonts)
+{
+    auto &list = scene_;
+    list.rotated_rect({kMargin + 2.0f, kTopY - 11.0f, 22.0f, 22.0f}, 5.0f, 0.7854f, kAccent);
+    list.rotated_rect({kMargin + 8.0f, kTopY - 5.0f, 10.0f, 10.0f}, 2.0f, 0.7854f, kOrchard);
+    ui::text(list, fonts.semibold, "PROSPEROSTORE", kMargin + 42.0f, centred(kTopY, 22), 22, kInk,
+             gfx::Align::left, 5.0f);
+    ui::text(list, fonts.regular, fonts.regular.font->fit(status_, 22, 1100.0f), kRight,
+             centred(kTopY, 22), 22, kInk.with_alpha(0.62f), gfx::Align::right);
+}
+
+void Screen::draw_banner(const ui::Fonts &fonts)
+{
+    // The banner fades as the page scrolls it under the top bar.
+    const float visible = tween::clamp01(1.0f - scroll_.value / 240.0f);
+    if (!banner_shown() || visible <= 0.004f)
+        return;
+    auto &list = scene_;
+    const Rect b{kMargin, kBannerY - scroll_.value, kWidth - 2.0f * kMargin, kBannerH};
+    const float fade = banner_fade_.running ? tween::smoothstep(banner_fade_.progress()) : 1.0f;
+    const Color tone = gfx::mix(kPanel, kOrchard, 0.5f);
+
+    list.push_opacity(visible);
+    list.shadow({b.x, b.y + 18.0f, b.w, b.h}, kBannerRadius, 44, kBlack.with_alpha(0.5f));
+    list.gradient_rect_h(b, kBannerRadius, tone, gfx::mix(tone, kLeaf, 0.45f));
+    list.bordered_rect(b, kBannerRadius, kClear, 1.5f, kInk.with_alpha(0.1f));
+
+    // One featured title at an opacity, so two of them can cross-fade.
+    const auto slot = [&](int index, float alpha)
+    {
+        if (alpha <= 0.01f)
+            return;
+        const App &app = apps_[featured_[static_cast<std::size_t>(index)]];
+        const float x = b.x + 56.0f;
+        list.push_opacity(alpha);
+        // The artwork floats on the right with a little of the accent's light.
+        const Rect cover{b.x + b.w - 56.0f - 228.0f, b.y + 36.0f, 228.0f, 228.0f};
+        list.glow(cover.inset(24.0f), 40, 110, kAccent.with_alpha(0.16f));
+        list.shadow({cover.x, cover.y + 14.0f, cover.w, cover.h}, 26, 36, kBlack.with_alpha(0.5f));
+        if (const auto texture = art(app))
+            list.image(texture, cover, gfx::kFullUv, kWhite, 26);
+        else
+            list.rounded_rect(cover, 26, kInk.with_alpha(0.06f));
+        list.bordered_rect(cover, 26, kClear, 1.5f, kInk.with_alpha(0.16f));
+
+        const char *kicker = app.badge == "Update"      ? "UPDATE AVAILABLE"
+                             : app.badge == "Installed" ? "IN YOUR LIBRARY"
+                             : index == 0               ? "NEW RELEASE"
+                                                        : "FEATURED";
+        list.rounded_rect({x, b.y + 55.0f, 28.0f, 3.0f}, 1.5f, kAccent);
+        ui::text(list, fonts.semibold, kicker, x + 40.0f, b.y + 64.0f, 18, kAccent,
+                 gfx::Align::left, 4.0f);
+        ui::text(list, fonts.display, fonts.display.font->fit(app.name, 62, 1100.0f), x - 3.0f,
+                 b.y + 142.0f, 62, kInk);
+        std::string line = app.author;
+        if (!app.version.empty())
+            line += (line.empty() ? "" : "  \xC2\xB7  ") + app.version;
+        ui::text(list, fonts.regular, fonts.regular.font->fit(line, 26, 1000.0f), x, b.y + 186.0f,
+                 26, kInk.with_alpha(0.78f));
+        list.pop_opacity();
+    };
+    if (fade < 1.0f)
+        slot(banner_previous_, 1.0f - fade);
+    slot(banner_, fade);
+
+    // The call to action lights up when the banner has the focus.
+    const float lit = banner_focus_.value;
+    const Rect action{b.x + 56.0f, b.y + 214.0f, 214.0f, 52.0f};
+    list.bordered_rect(action, 26, gfx::mix(kInk.with_alpha(0.06f), kAccent, lit), 1.5f,
+                       gfx::mix(kInk.with_alpha(0.3f), kAccent, lit));
+    ui::text(list, fonts.semibold, "View details", action.cx(), centred(action.cy(), 22), 22,
+             gfx::mix(kInk.with_alpha(0.86f), kOnAccent, lit), gfx::Align::center);
+
+    // Page dots: the current one is a small bar that fills as its seconds pass.
+    const int count = static_cast<int>(featured_.size());
+    float x = b.x + 300.0f;
+    const float cy = action.cy();
+    for (int i = 0; i < count && count > 1; ++i)
+    {
+        if (i == banner_)
+        {
+            list.rounded_rect({x, cy - 4.0f, 44.0f, 8.0f}, 4, kInk.with_alpha(0.3f));
+            list.rounded_rect(
+                {x, cy - 4.0f, 8.0f + 36.0f * tween::clamp01(banner_clock_ / kBannerSeconds), 8.0f},
+                4, kInk);
+            x += 56.0f;
+        }
+        else
+        {
+            list.circle(x + 4.0f, cy, 4.0f, kInk.with_alpha(0.42f));
+            x += 20.0f;
+        }
+    }
+    list.pop_opacity();
+}
+
+void Screen::draw_chips(const ui::Fonts &fonts)
+{
+    auto &list = scene_;
+    const auto glyphs = ui::GlyphStyle::dark();
+    const float cy = chips_y() + kChipH * 0.5f;
+    ui::draw_button(list, fonts, glyphs, ui::Button::l1, kMargin, cy, 30);
+    // The active section is one pill that glides between the chips.
+    Rect pill = chip_pill_.value();
+    pill.y = chips_y();
+    if (zone_ != Zone::grid)
+        pill.x += ui::shake(nudge_.value, time_) * nudge_x_;
+    list.rounded_rect(pill, kChipH * 0.5f, kInk);
+    // Outlines, then labels, then counts: three draw calls for the row.
+    for (int pass = 0; pass < 3; ++pass)
+        for (int i = 0; i < kSections; ++i)
+        {
+            const Rect &chip = chips_[i];
+            // How much of this chip the pill covers decides its ink.
+            const float overlap =
+                std::min(pill.x + pill.w, chip.x + chip.w) - std::max(pill.x, chip.x);
+            const float on = tween::clamp01(overlap / chip.w);
+            const Color ink = gfx::mix(kInk.with_alpha(0.78f), kCoal, on);
+            if (pass == 0)
+                list.bordered_rect(chip, kChipH * 0.5f, kClear, 1.5f,
+                                   kInk.with_alpha(0.2f * (1.0f - on)));
+            else if (pass == 1)
+                ui::text(list, fonts.semibold, kSectionNames[i], chip.x + 24.0f, centred(cy, 22),
+                         22, ink);
+            else
+                ui::text(list, fonts.mono, std::to_string(counts_[i]),
+                         chip.x + 34.0f + fonts.semibold.measure(kSectionNames[i], 22),
+                         centred(cy, 18), 18, ink.with_alpha(0.6f));
+        }
+    const Rect &last = chips_[kSections - 1];
+    ui::draw_button(list, fonts, glyphs, ui::Button::r1, last.x + last.w + 16.0f, cy, 30);
+    const char *sort_name = sort_ == Sort::name       ? "Name"
+                            : sort_ == Sort::released ? "Newest release"
+                                                      : "Recently updated";
+    ui::text(list, fonts.regular,
+             query_.empty() ? std::string("Sorted by ") + sort_name
+                            : fonts.regular.font->fit("Results for \"" + query_ + "\"", 22, 420.0f),
+             kRight, centred(cy, 22), 22, kInk.with_alpha(0.62f), gfx::Align::right);
+}
+
+// One card: cover, mark, title and a second line. The cover's tint runs from
+// the visibility at its top to the one at its bottom, which gives the grid a
+// soft edge without painting over the backdrop.
+void Screen::draw_card(const ui::Fonts &fonts, int k, unsigned layers)
+{
+    Rect r = card_rect(k);
+    r.y -= scroll_.value;
+    if (r.y > kViewBottom || r.y + r.h < kPageTop)
+        return;
+    auto &list = scene_;
+    const std::size_t index = visible_[static_cast<std::size_t>(k)];
+    const App &app = apps_[index];
+    const float lift = lift_[index].value;
+    const float in = swap_.running ? tween::stagger(swap_.elapsed, k, 0.02f, 0.25f) : 1.0f;
+    const float shake = k == focus_ && zone_ == Zone::grid ? ui::shake(nudge_.value, time_) : 0.0f;
+    list.push_transform(1.0f + kLift * lift, r.cx(), r.cy(), shake * nudge_x_,
+                        shake * nudge_y_ + 20.0f * (1.0f - in));
+    const Rect cover{r.x, r.y, r.w, kCoverH};
+    const float top = in * fade_at(cover.y + 1.0f), foot = in * fade_at(cover.y + cover.h);
+    const float light = 0.86f + 0.14f * lift; // resting covers sit back a little
+    if (const auto texture = art(app))
+    {
+        if (layers & kImages)
+            list.image_gradient(texture, cover, gfx::kFullUv, Color{light, light, light, top},
+                                Color{light, light, light, foot}, kCardRadius);
+    }
+    else if (layers & kShapes)
+    {
+        // No picture yet: a quiet plate with the orchard's diamond.
+        list.gradient_rect(cover, kCardRadius, kInk.with_alpha(0.07f * top),
+                           kLeaf.with_alpha(0.16f * foot));
+        list.rotated_rect({cover.cx() - 22.0f, cover.cy() - 22.0f, 44.0f, 44.0f}, 9.0f, 0.7854f,
+                          kInk.with_alpha(0.12f * std::min(top, foot)));
+    }
+    const float marks = in * fade_at(r.y + 26.0f);
+    // The rocket picture already says "coming soon".
+    const bool said = !app.icon && coming_soon_art_ && app.catalog_badge == "Coming soon";
+    if (const auto state = mark(app); state.word && marks > 0.01f && !(said && !state.loud))
+        pill(list, fonts, state.word, r.x + 10.0f, r.y + 28.0f, 34.0f,
+             state.loud ? kAccent : kBlack.with_alpha(0.62f), state.loud ? kOnAccent : kInk, marks,
+             layers);
+    // On the focus plate the words step in from its edge.
+    const float x = r.x + 2.0f + 8.0f * lift;
+    const float title = in * fade_at(r.y + kCoverH + 36.0f);
+    if (title > 0.01f && (layers & kSemibold))
+        ui::text(list, fonts.semibold, fits_[index].title, x, r.y + kCoverH + 36.0f, 24,
+                 kInk.with_alpha(title * (0.84f + 0.16f * lift)));
+    const float second = in * fade_at(r.y + kCoverH + 68.0f);
+    if (second > 0.01f && app.badge == "Installed")
+    {
+        if (layers & kShapes)
+            draw_check(list, x + 9.0f, r.y + kCoverH + 61.0f, 16.0f, kOwned.with_alpha(second));
+        if (layers & kSemibold)
+            ui::text(list, fonts.semibold, "Installed", x + 26.0f, r.y + kCoverH + 68.0f, 20,
+                     kOwned.with_alpha(second));
+    }
+    else if (second > 0.01f && (layers & kRegular))
+        ui::text(list, fonts.regular, fits_[index].author, x, r.y + kCoverH + 68.0f, 20,
+                 kInk.with_alpha(0.6f * second));
+    list.pop_transform();
+}
+
+void Screen::draw_grid(const ui::Fonts &fonts)
+{
+    auto &list = scene_;
+    const Rect window{0, window_top(), kWidth, kViewBottom - window_top()};
+    const int count = static_cast<int>(visible_.size());
+    const int focused = zone_ == Zone::grid && count > 0 ? focus_ : -1;
+    list.push_clip(window);
+    for (const unsigned layer : {kImages, kShapes, kSemibold, kRegular})
+        for (int k = 0; k < count; ++k)
+            if (k != focused) // that one is drawn last, on top of its neighbours
+                draw_card(fonts, k, layer);
+    if (count == 0)
+    {
+        const bool library = section_ == 5;
+        const char *title = library && !inventory_ready_      ? "Checking your library"
+                            : library && !inventory_.complete ? "Library unavailable"
+                            : !query_.empty()                 ? "No matches"
+                            : library                         ? "No installed apps found"
+                            : section_ == 6                   ? "Everything is up to date"
+                            : apps_.empty()                   ? "The catalog is on its way"
+                                                              : "Nothing on this shelf right now";
+        const char *note =
+            library && !inventory_ready_ ? "Reading installed apps and receipts."
+            : library && !inventory_.complete
+                ? "Installed apps are unavailable until their locations can be read."
+            : !query_.empty() ? "Try another app name or developer."
+            : section_ == 6   ? "Updates for apps installed by ProsperoStore appear here."
+            : apps_.empty()   ? "Verified apps will appear here when the catalog is ready."
+                              : "Try another section.";
+        const float y = window.y + (kViewBottom - window.y) * 0.45f;
+        ui::text(list, fonts.semibold, title, 960, y, 30, kInk.with_alpha(0.86f),
+                 gfx::Align::center);
+        ui::text(list, fonts.regular, note, 960, y + 42.0f, 24, kInk.with_alpha(0.6f),
+                 gfx::Align::center);
+    }
+    list.pop_clip();
+
+    // The focus highlight: one object that glides between the banner, the
+    // chips and the cards. On a card it is also the plate and the light under it.
+    Rect ring = ring_.value();
+    const float shake = ui::shake(nudge_.value, time_);
+    ring.x += shake * nudge_x_;
+    ring.y += shake * nudge_y_ - scroll_.value;
+    const float radius = ring_radius_.value;
+    const float plate = plate_.value;
+    if (plate > 0.01f)
+    {
+        list.shadow({ring.x, ring.y + 16.0f, ring.w, ring.h}, radius, 38,
+                    kBlack.with_alpha(0.55f * plate));
+        list.glow(ring, radius, 30, kAccent.with_alpha((0.2f + 0.1f * ui::breathe(time_)) * plate));
+        list.rounded_rect(ring, radius, kPanel.with_alpha(plate));
+    }
+    list.bordered_rect(ring, radius, kClear, 3.0f, kInk.with_alpha(0.94f));
+    if (focused >= 0)
+    {
+        list.push_clip(window);
+        draw_card(fonts, focused, kAllLayers);
+        list.pop_clip();
+    }
+}
+
+// ---- drawing: the product page ----------------------------------------------
+
+void Screen::draw_action_box(const ui::Fonts &fonts, std::uint32_t glass, const App &app,
+                             float content)
+{
+    auto &list = overlay_;
+    Rect box = kActionBox;
+    box.y += 30.0f * (1.0f - content);
+    list.shadow({box.x, box.y + 20.0f, box.w, box.h}, 30, 50, kBlack.with_alpha(0.45f));
+    // Frosted glass: the blurred screen, a tint, then a hairline of light.
+    list.glass(glass, box, 30, kWhite);
+    list.rounded_rect(box, 30, gfx::mix(kPanel, kLeaf, 0.12f).with_alpha(0.6f));
+    list.bordered_rect(box, 30, kClear, 1.5f, kInk.with_alpha(0.2f));
+
+    // What can be said about this app on this console, and the one thing to do next.
+    const system::InstalledApp *installed = app.installed.empty() ? nullptr : &app.installed[0];
+    const bool soon = app.catalog_badge == "Coming soon";
+    const bool image = app.detail && !app.detail->format.empty() && app.detail->format != "zip";
+    std::string headline, note, action;
+    Color tone = kInk;
+    if (installed && app.badge == "Update")
+    {
+        headline = "Update";
+        note = installed->version + "  \xE2\x86\x92  " + app.available_version;
+        action = "Update";
+        tone = kAccent;
+    }
+    else if (installed)
+    {
+        headline = "Installed";
+        note = installed->managed           ? "Version " + installed->version
+               : installed->version.empty() ? "Installed as an image"
+                                            : "Version " + installed->version;
+        action = installed->managed ? "Uninstall" : "";
+        tone = kOwned;
+    }
+    else if (soon)
+    {
+        headline = "Coming soon";
+        note = "No release has been published yet";
+    }
+    else if (image)
+    {
+        headline = "Not installable";
+        note = "Published as a disk image";
+    }
+    else
+    {
+        headline = "Ready";
+        note = app.detail && app.detail->size
+                   ? ui::format_value(static_cast<double>(app.detail->size)) + "B download"
+                   : "Verified by the signed catalog";
+        action = "Install";
+    }
+    const float x = box.x + 32.0f;
+    ui::text(list, fonts.semibold, "ON THIS CONSOLE", x, box.y + 52.0f, 16, kInk.with_alpha(0.55f),
+             gfx::Align::left, 3.5f);
+    float cursor = x;
+    if (installed && app.badge != "Update")
+    {
+        draw_check(list, x + 20.0f, box.y + 113.0f, 34.0f, tone);
+        cursor += 52.0f;
+    }
+    ui::text(list, fonts.display, headline, cursor, box.y + 130.0f, 48, tone);
+    ui::text(list, fonts.regular, fonts.regular.font->fit(note, 21, box.w - 64.0f), x,
+             box.y + 172.0f, 21, kInk.with_alpha(0.62f));
+
+    // The primary button. Until the installer is switched on in this build it
+    // rests, and the line under it says so plainly.
+    Rect button = kActionButton;
+    button.y += box.y - kActionBox.y;
+    std::string reason = installed && !installed->managed ? installed->reason
+                         : image ? "Can't be installed by this version of ProsperoStore"
+                         : soon  ? "It will appear here when it is released"
+                                 : "Installing is not switched on in this development build";
+    if (!action.empty())
+    {
+        list.bordered_rect(button, kButtonRadius, kAccent.with_alpha(0.1f), 2.0f,
+                           kAccent.with_alpha(0.55f));
+        ui::text(list, fonts.semibold, action, button.cx(), centred(button.cy(), 28), 28,
+                 kAccent.with_alpha(0.7f), gfx::Align::center);
+    }
+    ui::paragraph(list, fonts.regular, reason, x, button.y + (action.empty() ? 30.0f : 118.0f), 20,
+                  box.w - 64.0f, 28, kInk.with_alpha(0.62f), 3);
+    ui::paragraph(list, fonts.regular,
+                  "Apps are provided by their developers. Check the release notes for required "
+                  "payloads or extra setup.",
+                  x, box.y + box.h - 92.0f, 18, box.w - 64.0f, 26, kInk.with_alpha(0.45f), 3);
+}
+
+void Screen::draw_page(const ui::Fonts &fonts, std::uint32_t glass)
+{
+    const float t = page_.value;
+    const App *shown = focused();
+    if (t <= 0.004f || !shown)
+        return;
+    auto &list = overlay_;
+    const App &app = *shown;
+
+    // The whole home page, blurred and darkened, is the page's wall.
+    const Rect full{0, 0, kWidth, kHeight};
+    const float veil = tween::clamp01(t * 1.7f);
+    list.glass(glass, full, 0, kWhite.with_alpha(veil));
+    list.rounded_rect(full, 0, gfx::mix(kCoal, kOrchard, 0.4f).with_alpha(0.86f * veil));
+    list.glow(kPreview.inset(60.0f), 60, 220, kAccent.with_alpha(0.08f * veil));
+
+    // Everything but the cover fades in once the cover is well on its way.
+    const float content = tween::smoothstep((t - 0.45f) / 0.55f);
+    const float slide = 56.0f * (1.0f - tween::cubic_out(t));
+    list.push_opacity(content);
+    list.push_transform(1.0f, 0, 0, slide, 0);
+    ui::text(list, fonts.semibold, ui::upper(app.local_only ? "installed" : app.kind), kInfoX, 170,
+             20, kAccent, gfx::Align::left, 4.0f);
+    ui::text(list, fonts.display, fonts.display.font->fit(app.name, 72, kRight - kInfoX),
+             kInfoX - 4.0f, 250, 72, kInk);
+    std::string line = app.author;
+    if (!app.version.empty())
+        line += (line.empty() ? "" : "  \xC2\xB7  ") + app.version;
+    ui::text(list, fonts.regular, fonts.regular.font->fit(line, 26, kRight - kInfoX), kInfoX, 300,
+             26, kInk.with_alpha(0.72f));
+    list.rounded_rect({kInfoX, 346, kInfoW, 1.5f}, 0, kInk.with_alpha(0.12f));
+    ui::Canvas canvas{list, fonts, glass, time_};
+    article_.draw(canvas);
+    list.pop_transform();
+
+    draw_action_box(fonts, glass, app, content);
+
+    // The QR code for the app's page, under the cover.
+    if (qr_texture_ != 0 && qr_id_ == app.title_id)
+    {
+        const Rect code{kPreview.x, 760.0f, 200.0f, 200.0f};
+        list.rounded_rect(code.inset(-8.0f), 14, kWhite);
+        list.image(qr_texture_, code, gfx::kFullUv, kWhite);
+        ui::paragraph(list, fonts.regular, "Scan for the app's page, release notes and source",
+                      code.x + 240.0f, 836.0f, 24, 330, 34, kInk.with_alpha(0.86f), 2);
+        ui::text(list, fonts.mono, "homebrew.page/app/" + app.title_id, code.x + 240.0f, 920.0f, 20,
+                 kInk.with_alpha(0.6f));
+    }
+    list.pop_opacity();
+
+    // The cover grows from the card it was opened on to the preview.
+    Rect from = card_rect(focus_);
+    from.y -= scroll_.value;
+    from.h = kCoverH;
+    const Rect cover{tween::lerp(from.x, kPreview.x, t), tween::lerp(from.y, kPreview.y, t),
+                     tween::lerp(from.w, kPreview.w, t), tween::lerp(from.h, kPreview.h, t)};
+    const float radius = tween::lerp(kCardRadius, kPreviewRadius, t);
+    const float alpha = tween::clamp01(t * 14.0f);
+    list.shadow({cover.x, cover.y + 26.0f * t, cover.w, cover.h}, radius, 56,
+                kBlack.with_alpha(0.55f * veil));
+    if (const auto texture = art(app))
+        list.image(texture, cover, gfx::kFullUv, kWhite.with_alpha(alpha), radius);
+    else
+        list.gradient_rect(cover, radius, kInk.with_alpha(0.07f * alpha),
+                           kLeaf.with_alpha(0.2f * alpha));
+    list.bordered_rect(cover, radius, kClear, 1.5f, kInk.with_alpha(0.16f * alpha));
 }
 
 void Screen::draw(gfx::Renderer &renderer, const ui::Fonts &fonts)
 {
+    layout(fonts);
     scene_.clear();
-    ui::Canvas canvas{scene_, fonts, renderer.glass_texture(), time_};
-    ui::Painter paint(scene_, fonts, theme_);
-    paint.heading("ProsperoStore", 96, 106, 36, paint.page_text());
-    ui::text(scene_, fonts.regular, ui::fit_label(paint, status_, 24, 1200), 1824, 101, 24,
-             paint.page_text_muted(), gfx::Align::right);
-    if (details_ && !visible_.empty())
+    overlay_.clear();
+    const float page = page_.value;
+
+    // Anything opened over the home page pushes it back a little.
+    scene_.push_transform(1.0f - 0.03f * page, 960, 540, 0, 0);
+    draw_top_bar(fonts);
+    scene_.push_clip({0, kPageTop, kWidth, kHeight - kPageTop});
+    draw_banner(fonts);
+    draw_grid(fonts);
+    draw_chips(fonts);
+    scene_.pop_clip();
+    scene_.pop_transform();
+
+    const auto glyphs = ui::GlyphStyle::dark();
+    const ui::Hint home[] = {{ui::Button::cross, "Details"},
+                             {ui::Button::triangle, "Search"},
+                             {ui::Button::right_stick, "Sort"},
+                             {ui::Button::l1, "Sections", ui::Button::r1},
+                             {ui::Button::circle, "Close"}};
+    const ui::Hint detail[] = {{ui::Button::dpad, "Scroll"},
+                               {ui::Button::triangle, "Refresh"},
+                               {ui::Button::circle, "Back"}};
+    // A hint row leaves as the next layer arrives, so two are never legible at once.
+    scene_.push_opacity(1.0f - tween::clamp01(page * 3.0f));
+    ui::draw_hints(scene_, fonts, glyphs, home + (visible_.empty() ? 1 : 0),
+                   visible_.empty() ? 4 : 5, kRight, true);
+    scene_.pop_opacity();
+
+    const std::uint32_t glass = renderer.glass_texture();
+    draw_page(fonts, glass);
+    if (page > 0.004f)
     {
-        const App &app = apps_[visible_[static_cast<std::size_t>(grid_.focus())]];
-        paint.panel({96, 190, 540, 540});
-        if (app.icon != 0)
-            scene_.image(app.icon, {128, 222, 476, 476}, gfx::kFullUv, gfx::Color::rgb(0xffffff));
-        if (qr_texture_ != 0 && qr_id_ == app.title_id)
-        {
-            const float side = static_cast<float>(qr_width_);
-            scene_.image(qr_texture_, {112, 758, side, side}, gfx::kFullUv,
-                         gfx::Color::rgb(0xffffff));
-            ui::paragraph(scene_, fonts.regular, "Scan for release notes and source", 300, 795, 24,
-                          310, 34, paint.page_text(), 3);
-            ui::text(scene_, fonts.regular, "homebrew.page/app/" + app.title_id, 112, 950, 24,
-                     paint.page_text_muted());
-        }
-        paint.heading(ui::fit_label(paint, app.name, 64, 1080), 704, 280, 64, paint.page_text());
-        ui::text(scene_, fonts.regular, ui::fit_label(paint, app.author, 28, 1080), 704, 333, 28,
-                 paint.page_text_muted());
-        article_.draw(canvas);
-        ui::text(scene_, fonts.regular,
-                 app.badge == "Coming soon"
-                     ? "Coming soon"
-                     : "Installation is not available in this development build.",
-                 704, 868, 24, paint.page_text_muted());
-        ui::paragraph(scene_, fonts.regular,
-                      "Apps are provided by their developers. Check the release notes for required "
-                      "payloads or extra setup.",
-                      704, 912, 24, 1080, 32, paint.page_text_muted(), 2);
+        const bool local = focused() && focused()->local_only;
+        overlay_.push_opacity(tween::clamp01((page - 0.4f) / 0.6f));
+        ui::draw_hints(overlay_, fonts, glyphs, local ? detail + 2 : detail, local ? 1 : 3, kRight,
+                       true);
+        overlay_.pop_opacity();
     }
-    else
-    {
-        const bool library = tabs_.active() == 5;
-        paint.heading(library               ? "Your library."
-                      : tabs_.active() == 6 ? "Ready for an update."
-                                            : "Your next discovery.",
-                      96, 236, 76, paint.page_text());
-        ui::text(scene_, fonts.regular,
-                 ui::fit_label(paint,
-                               query_.empty()
-                                   ? (library && !inventory_.complete
-                                          ? "Some installed locations could not be inspected."
-                                          : "Independent apps. New possibilities.")
-                                   : "Search: " + query_,
-                               30, 1600),
-                 100, 295, 30, paint.page_text_muted());
-        tabs_.draw(canvas);
-        const char *sort_name = sort_ == Sort::name       ? "Name"
-                                : sort_ == Sort::released ? "Newest release"
-                                                          : "Recently updated";
-        ui::text(scene_, fonts.regular, std::string("Sort: ") + sort_name, 1824, 466, 24,
-                 paint.page_text_muted(), gfx::Align::right);
-        if (visible_.empty())
-        {
-            paint.panel({112, 590, 1696, 280});
-            paint.heading(library && !inventory_ready_      ? "Checking your library"
-                          : library && !inventory_.complete ? "Library unavailable"
-                          : !query_.empty()                 ? "No matches"
-                          : library                         ? "No installed apps found"
-                          : apps_.empty()                   ? "The catalog is on its way"
-                                                            : "Nothing here yet",
-                          960, 707, 36, gfx::Align::center);
-            ui::text(scene_, fonts.regular,
-                     library && !inventory_ready_ ? "Reading installed apps and receipts."
-                     : library && !inventory_.complete
-                         ? "Installed apps are unavailable until their locations can be read."
-                     : !query_.empty() ? "Try another app name or developer."
-                     : apps_.empty()   ? "Verified apps will appear here when the catalog is ready."
-                                       : "Explore Discover to find something new.",
-                     960, 764, 26, theme_.text, gfx::Align::center);
-        }
-        else
-            grid_.draw(canvas);
-    }
-    const ui::Hint hints[] = {{ui::Button::cross, "Details"},
-                              {ui::Button::triangle, "Search"},
-                              {ui::Button::right_stick, "Sort"},
-                              {ui::Button::l1, "Sections", ui::Button::r1},
-                              {ui::Button::circle, details_ ? "Back" : "Close"}};
-    if (details_)
-    {
-        const ui::Hint back[] = {{ui::Button::dpad, "Scroll"},
-                                 {ui::Button::circle, "Back"},
-                                 {ui::Button::triangle, "Refresh details"}};
-        const bool local = apps_[visible_[static_cast<std::size_t>(grid_.focus())]].local_only;
-        ui::draw_hints(scene_, fonts, ui::GlyphStyle::dark(), back, local ? 2 : 3, 96, false);
-    }
-    else
-        ui::draw_hints(scene_, fonts, ui::GlyphStyle::dark(), hints + (visible_.empty() ? 1 : 0),
-                       visible_.empty() ? 4 : 5, 96, false);
-    auto backdrop = theme_.backdrop;
+    ui::Canvas canvas{overlay_, fonts, glass, time_};
+    toasts_.draw(canvas);
+
+    // Glass Orchard as the Aurora Shelf paints it: the cover's dark and mid
+    // tones as slow clouds, with a little of its light in the brightest one.
+    gfx::BackdropSpec backdrop;
+    backdrop.mode = gfx::BackdropMode::aurora;
+    backdrop.colors[0] = gfx::mix(kOrchard, Color::rgb(0x05060c), 0.35f);
+    backdrop.colors[1] = gfx::mix(kOrchard, kLeaf, 0.35f);
+    backdrop.colors[2] = kLeaf;
+    backdrop.colors[3] = gfx::mix(kLeaf, kAccent, 0.55f);
     backdrop.time = time_;
     renderer.begin();
     renderer.backdrop(backdrop);
     renderer.draw(scene_);
+    if (!overlay_.empty())
+    {
+        renderer.glass();
+        renderer.draw(overlay_);
+    }
 }
 
 bool Fonts::load(gfx::Renderer &renderer, const std::string &assets)

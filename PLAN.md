@@ -357,6 +357,8 @@ Made by the owner on 2026-10-02 unless marked as a default.
 | D30 | **In-app notice**: the website's disclaimer, shown at first start and in About. |
 | D31 | **Built on our two repositories.** The store is created from `ps5-native-app-boilerplate` and its interface comes from `ps5-homebrew-ui`. Nothing they provide is reimplemented or forked; what is missing is added to them first (see Foundations). |
 | D32 | **Extremely high quality, as checks.** A milestone is done only when it passes the quality bar; scope is cut before quality is. |
+| D33 | **The look.** The screens follow the UI library's Storefront design, in the Glass Orchard colours as its Aurora Shelf design shows them. A coming-soon app without artwork shows the rocket picture (`assets/images/coming-soon.png`). This answers open question 6. |
+| D34 | **The store's own update notice.** A newer listed ProsperoStore is announced by a floating notice in the top-right corner that stays for ten seconds, decided by the boilerplate's update check. |
 
 ---
 
@@ -941,6 +943,8 @@ To be confirmed and listed in `THIRD_PARTY_NOTICES.md` when each is added.
 - 2026-10-02 | M3 performance control | 59a8868 | PS5 6.02 | inconclusive: launch rejected 0x80940033, no current-run startup; services healthy | results/m3-profile-control | diagnose registration before comparison
 - 2026-10-02 | M5 inventory | 5e7c287 | host | partial-pass: bounded scan, receipt ownership, duplicates, installed/update views; sanitized tests, lint and native build | build/inventory-tests.log | console inventory and transactions remain
 - 2026-10-02 | M3 startup | 59a8868 | PS5 6.02 | partial-pass: catalog, icons, own exit, healthy; controller rejected before a later launch, so launch attribution unresolved | results/m3-launch-context | require controller acknowledgement
+- 2026-10-02 | M4 engine | (this commit) | host | partial-pass: verified download, archive rules, space checks, install/update/uninstall, journal recovery with a cut at every step, fuzzing; sanitized tests, native build | build/store-test.log | installer worker, queue and screens; console install
+- 2026-10-02 | M8 look, notice | (this commit) | host | partial-pass: Storefront layout in Glass Orchard colours, coming-soon picture, update notice; snapshots reviewed, tests, native build | build/snapshots | console frame time with the aurora backdrop and glass
 
 | Repository | Role |
 | --- | --- |

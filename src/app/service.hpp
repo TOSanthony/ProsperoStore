@@ -20,8 +20,10 @@ struct Update
         icon,
         qr,
         inventory,
+        notice, // message is its title, detail its body
         error
     } kind = Kind::error;
+    std::string detail;
     catalog::Snapshot snapshot;
     catalog::Entry entry;
     hui::Image image;
@@ -32,7 +34,9 @@ struct Update
 class Service
 {
   public:
-    explicit Service(std::string root) : root_(std::move(root))
+    // version is the running store's contentVersion; empty skips its update check.
+    explicit Service(std::string root, std::string version = {})
+        : root_(std::move(root)), version_(std::move(version))
     {
     }
     ~Service();
@@ -49,7 +53,8 @@ class Service
     void load_icons();
     void run();
     void publish(Update update);
-    std::string root_;
+    void check_store_update();
+    std::string root_, version_;
     net::Control control_;
     net::Control icon_control_;
     pthread_t thread_{};

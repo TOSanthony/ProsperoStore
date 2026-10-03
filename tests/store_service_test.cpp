@@ -37,14 +37,22 @@ store::catalog::Snapshot fixture()
 }
 store::Update next(store::Service &service, store::Update::Kind kind)
 {
+    // The notice arrives with the catalog it follows: keep what a call didn't ask for.
+    static std::vector<store::Update> waiting;
     const auto deadline = std::chrono::steady_clock::now() + 5s;
     while (std::chrono::steady_clock::now() < deadline)
     {
-        std::vector<store::Update> updates;
-        service.take(updates);
-        for (auto &update : updates)
-            if (update.kind == kind)
-                return std::move(update);
+        for (auto update = waiting.begin(); update != waiting.end(); ++update)
+            if (update->kind == kind)
+            {
+                auto found = std::move(*update);
+                waiting.erase(waiting.begin(), update + 1);
+                return found;
+            }
+        waiting.clear();
+        service.take(waiting);
+        if (!waiting.empty())
+            continue;
         std::this_thread::sleep_for(5ms);
     }
     assert(false && "worker response timed out");
@@ -85,9 +93,19 @@ void Control::cancel()
 {
     cancelled = true;
 }
-Response fetch(const std::string &, Purpose, std::size_t, std::string &body, Control &,
+Response fetch(const std::string &url, Purpose, std::size_t, std::string &body, Control &,
                const std::string &)
 {
+    if (url == "https://homebrew.page/api/v1/apps/PPSA99000.json")
+    {
+        // The store's own listing, one release ahead of the running build.
+        body = R"({"schema":3,"titleid":"PPSA99000","status":"available",)"
+               R"("content_version":"01.000.010","version":"1.0.10",)"
+               R"("page":"https://homebrew.page/app/PPSA99000/"})";
+        Response listed;
+        listed.status = 200;
+        return listed;
+    }
     ++downloads;
     body = encoded;
     Response result;
@@ -105,7 +123,7 @@ int main()
     hui::Image image;
     assert(cache.store(fixture().entries.front(), encoded, image));
     assert(cache.cached(fixture().entries.front(), image));
-    store::Service service(root);
+    store::Service service(root, "01.000.000");
     assert(service.start());
     const auto cached = next(service, store::Update::Kind::catalog);
     assert(cached.generation == 1 && !cached.snapshot.online);
@@ -115,6 +133,9 @@ int main()
     refresh_ready = true;
     const auto online = next(service, store::Update::Kind::catalog);
     assert(online.generation == 2 && online.snapshot.online);
+    // A newer store in the catalog becomes one notice; nothing is downloaded for it.
+    const auto notice = next(service, store::Update::Kind::notice);
+    assert(notice.message == "Update available: 1.0.10" && !notice.detail.empty());
     std::vector<std::string> ids;
     for (const auto &entry : fixture().entries)
         ids.push_back(entry.id);

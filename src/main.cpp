@@ -6,6 +6,8 @@
 #include "app/service.hpp"
 #include "audio/cues.hpp"
 #include "core/frame_stats.hpp"
+#include "core/image.hpp"
+#include "core/version.hpp"
 #include "core/save_file.hpp"
 #include "diag/diagnostics.hpp"
 #include "platform/ps5/audio_out.hpp"
@@ -113,7 +115,19 @@ int main()
     const bool requests_started =
         elevated && pthread_create(&request_thread, nullptr, development_requests, nullptr) == 0;
     store::Screen screen;
-    store::Service service(elevated ? storage_root : "");
+    // The picture for coming-soon apps that have no artwork of their own.
+    std::uint32_t coming_soon_texture = 0;
+    {
+        std::string encoded;
+        Image image;
+        if (save::read_file(app_root + "/assets/images/coming-soon.png", &encoded, 2u << 20) &&
+            decode_png(encoded, image))
+            coming_soon_texture =
+                renderer.batch().create_texture(image.width, image.height, image.rgba.data());
+        screen.set_coming_soon_art(coming_soon_texture);
+    }
+    store::Service service(elevated ? storage_root : "",
+                           read_content_version(app_root + "/sce_sys/param.json"));
     if (!service.start())
         screen.set_status("The catalog service could not start");
     if (elevation_status != elevation::Status::ok)
@@ -174,6 +188,8 @@ int main()
             }
             else if (update.kind == store::Update::Kind::inventory)
                 screen.set_inventory(std::move(update.installed));
+            else if (update.kind == store::Update::Kind::notice)
+                screen.notify(std::move(update.message), std::move(update.detail));
             else if (update.kind == store::Update::Kind::icon)
             {
                 if (update.generation == catalog_generation &&
@@ -307,6 +323,8 @@ int main()
     pad.close();
     if (qr_texture)
         glDeleteTextures(1, &qr_texture);
+    if (coming_soon_texture)
+        glDeleteTextures(1, &coming_soon_texture);
     for (const auto &[id, texture] : textures)
     {
         (void)id;

@@ -9,7 +9,9 @@
 #include "system/locations.hpp"
 #include "system/storage_probe.hpp"
 #include "catalog/icons.hpp"
+#include "../../examples/update-check/update_check.h"
 #include <algorithm>
+#include <cstring>
 #include <set>
 #include <cerrno>
 #include <sys/stat.h>
@@ -206,6 +208,8 @@ void Service::run()
                       snapshot.entries.size());
         publish(std::move(result));
     }
+    if (refreshed && !control_.cancelled.load())
+        check_store_update();
     if (!control_.cancelled.load())
     {
         Update installed;
@@ -274,6 +278,51 @@ void Service::run()
         }
         hui::sys::sleep_us(100000);
     }
+}
+
+namespace
+{
+// The update check's transport has no context argument: one check at a time.
+net::Control *check_control = nullptr;
+int check_fetch(const char *url, const char *, char *body, std::size_t capacity,
+                std::size_t *length, int *http_status)
+{
+    std::string data;
+    const auto response = net::fetch(url, net::Purpose::catalog, capacity, data, *check_control);
+    *http_status = response.status;
+    *length = 0;
+    if (response.error == "The response exceeds its size limit")
+        return UPDATE_CHECK_FETCH_TOO_LARGE;
+    if (response.status == 0)
+        return -1;
+    if (data.size() > capacity)
+        return UPDATE_CHECK_FETCH_TOO_LARGE;
+    std::memcpy(body, data.data(), data.size());
+    *length = data.size();
+    return 0;
+}
+} // namespace
+
+// Once per launch, after the catalog: is a newer ProsperoStore listed? Any
+// failure means "unknown", and unknown shows nothing.
+void Service::check_store_update()
+{
+    if (version_.empty())
+        return;
+    update_check_result result{};
+    check_control = &control_;
+    update_check_run_with(check_fetch, "PPSA99000", version_.c_str(), &result);
+    check_control = nullptr;
+    hui::sys::log("[STORE] update check installed=%s state=%d reason=%s available=%s",
+                  version_.c_str(), static_cast<int>(result.state),
+                  update_check_reason_text(result.reason), result.available);
+    if (result.state != UPDATE_CHECK_AVAILABLE)
+        return;
+    Update notice;
+    notice.kind = Update::Kind::notice;
+    notice.message = std::string("Update available: ") + result.version;
+    notice.detail = "A newer ProsperoStore is listed on homebrew.page.";
+    publish(std::move(notice));
 }
 
 void *Service::icon_entry(void *self)

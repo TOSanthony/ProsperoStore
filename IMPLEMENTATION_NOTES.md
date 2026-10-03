@@ -13,7 +13,9 @@ code from features qualified on the console.
 | Area | Current behavior |
 | --- | --- |
 | Native application | PS5 build and packaging, 4K rendering, controller navigation, audio, diagnostic logging, and development-only remote exit requests. |
-| Storefront | Discover, Apps, Games, Tools, Coming soon, Installed, and Updates sections, using the shared UI library. Artwork regions are square to preserve 512x512 app icons. |
+| Storefront | Discover, Apps, Games, Tools, Coming soon, Installed, and Updates sections. The layout follows the UI library's Storefront design (featured banner, section chips, card grid, product page with a frosted action box) in the Glass Orchard colours of its Aurora Shelf design (owner's choice, 2026-10-02). Artwork regions are square to preserve 512x512 app icons; coming-soon apps without artwork show `assets/images/coming-soon.png`. |
+| Install engine | `src/install/`: verified download (size and SHA-256 from the signed catalog, three attempts), ZIP validation from the archive's directory, exact space checks, unpacking into staging, single-rename activation, update by backup swap, uninstall, receipts, a journal and start-up recovery. Host-tested only and **not switched on**: nothing in the app calls it yet. |
+| Update notice | Once per launch, after the catalog refresh, the boilerplate's update-check decision code runs over the store's own HTTPS for `PPSA99000`. A newer listed version shows a top-right notice for ten seconds. Unknown shows nothing. |
 | Catalog trust | Ed25519 verification of the catalog manifest, SHA-256 verification of catalog documents, bounded JSON parsing, schema checks, sequence rollback protection, and verified offline cache. |
 | HTTPS | Elevated PacBrew curl/OpenSSL with certificate verification using the console CA list, URL/redirect restrictions, bounded responses, cancellation, and connection reuse. |
 | Artwork | Background loading, persistent cache, bounded PNG decoding, a bounded result queue, and limited texture uploads per frame. The artificial delay between icon requests was removed. |
@@ -30,6 +32,8 @@ code from features qualified on the console.
 - `src/catalog/`: signed catalog parsing/client, cache, versions, artwork, and
   installed metadata/receipt parsing.
 - `src/net/`: HTTP policy and the shared curl request implementation.
+- `src/install/`: archive validation and unpacking, link-refusing file helpers,
+  and the journaled install/update/uninstall transactions with recovery.
 - `src/system/`: scan-location policy, filesystem probes, and installed inventory.
 - `src/main.cpp`: native application lifecycle and delivery of worker results to
   the UI; `host/store_main.cpp` supplies host previews and screen checks.
@@ -112,9 +116,14 @@ the compact milestone index; those local evidence paths are not GitHub downloads
    package differed from the earlier control and cannot establish causality.
 3. Installed scans run after catalog refresh attempts, so network failures can
    delay initial library discovery. Local-only entries currently use placeholders.
-4. There is no production download/install queue, hardened ZIP installation,
-   transaction journal, crash recovery, running-title guard, uninstall, or
-   self-update workflow. Buttons must remain disabled until these are complete.
+4. The install engine exists and passes its host tests (hostile archives, every
+   refusal, a simulated power cut at every step of install, update and
+   uninstall, and fuzzing of the ZIP and JSON readers), but it has never run on
+   a console and is not connected to the service or the screens. Still missing:
+   the queue and progress in the interface, the worker that runs transactions,
+   start-up recovery in the app, the running-title check (the owner supplies the
+   call; until then every update and uninstall is refused), location selection,
+   and self-update. The page's action button stays at rest until then.
 5. Settings/location selection, first-run notices, localization, full accessibility
    and polish review, interruption tests, and release soak testing remain open.
 
@@ -125,7 +134,7 @@ the compact milestone index; those local evidence paths are not GitHub downloads
 | M1 | Production location selection and read-only/unavailable-drive gates. |
 | M2 | Real artifact verification, bounded download streaming, retry/resume qualification. |
 | M3 | Native keyboard, latest artwork/cache behavior, offline browsing, and performance qualification. |
-| M4 | Queue, archive validation/limits, exact space checks, extraction, atomic activation, refusal tests, and fuzzing. |
+| M4 | Engine done on the host (validation/limits, space checks, extraction, atomic activation, refusal tests, fuzzing). Remaining: the queue, the installer worker and its screens, and a real install on a console. |
 | M5 | Complete inventory/image handling, safe receipt cleanup, running-title guard, update/uninstall, and recall actions. |
 | M6 | Self-update gate and workflow. |
 | M7 | Journal recovery, interruption simulation at each mutation, removed-drive and network-failure handling. |

@@ -38,6 +38,12 @@ App pages show verified metadata, full-size artwork, and a scrolling article.
 Use the D-pad to scroll and Triangle to retry or refresh details. Scan the QR
 code for the app's page, release notes, and source repository.
 
+The screens follow the UI library's Storefront design in the Glass Orchard
+colours: a featured banner, section chips, a grid of cards and a product page.
+When the catalog lists a newer ProsperoStore, a notice appears in the top-right
+corner for ten seconds. The install engine (`src/install/`) is implemented and
+tested on the host, and is not yet connected to the screens.
+
 Installed scans the configured ShadowMountPlus locations without changing them.
 Only folders with matching store receipts are managed; duplicate title IDs
 and externally installed apps stay unmanaged. Updates lists newer catalog

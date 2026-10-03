@@ -5,7 +5,9 @@
 #include "app/store.hpp"
 #include "catalog/client.hpp"
 #include "catalog/icons.hpp"
+#include "core/image.hpp"
 #include "core/qr.hpp"
+#include "core/save_file.hpp"
 #include "gfx/gl_program.hpp"
 
 #include <EGL/egl.h>
@@ -180,6 +182,17 @@ int main(int argc, char **argv)
             return 5;
         store::Screen screen;
         std::vector<GLuint> textures;
+        {
+            std::string encoded;
+            hui::Image image;
+            if (hui::save::read_file(std::string(argv[1]) + "/images/coming-soon.png", &encoded) &&
+                hui::decode_png(encoded, image))
+            {
+                textures.push_back(
+                    renderer.batch().create_texture(image.width, image.height, image.rgba.data()));
+                screen.set_coming_soon_art(textures.back());
+            }
+        }
         if (argc >= 4)
         {
             store::catalog::Client catalog(argv[3]);
@@ -224,6 +237,18 @@ int main(int argc, char **argv)
             const std::string mode = argv[4];
             if (mode == "search")
                 screen.set_query("radio");
+            else if (mode == "notice")
+                screen.notify("Update available: 01.000.010",
+                              "A newer ProsperoStore is listed on homebrew.page.");
+            else if (mode == "scrolled" || mode == "coming-soon")
+            {
+                hui::InputFrame move;
+                move.nav = hui::Direction::down;
+                move.pressed = mode == "scrolled" ? 0 : hui::action_bit(hui::Action::page_next);
+                for (int index = 0; index < (mode == "scrolled" ? 2 : 4); ++index)
+                    screen.update(move.pressed ? hui::InputFrame{.pressed = move.pressed} : move,
+                                  1.0f / 60.0f, feedback);
+            }
             else if (mode == "empty")
                 screen.set_query("no matching application");
             else if (mode == "updated")
