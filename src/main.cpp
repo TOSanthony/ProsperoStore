@@ -65,17 +65,17 @@ int main()
 #else
     const auto elevation_status = elevation::request(elevation::Capability::filesystem);
 #endif
-    const char *storage_root = elevation_status == elevation::Status::ok
-                                   ? "/data/prosperostore"
-                                   : "/download0/prosperostore";
+    constexpr const char *storage_root = "/data/prosperostore";
+    const bool elevated = elevation_status == elevation::Status::ok;
     const std::string app_root =
         elevation_status == elevation::Status::ok ? "/mnt/sandbox/PPSA99000_000/app0" : "/app0";
-    request_path = app_root + "/dev/request.txt";
+    request_path = std::string(storage_root) + "/dev/request.txt";
     handled_path = std::string(storage_root) + "/handled.txt";
-    if (!store::diag::start(storage_root))
+    if (elevated && !store::diag::start(storage_root))
         sys::log("[STORE] persistent diagnostics unavailable");
 #ifdef STORE_DEVELOPMENT
-    hui::save::read_file(app_root + "/dev/run.txt", &run_token, 64);
+    if (elevated)
+        hui::save::read_file(std::string(storage_root) + "/dev/run.txt", &run_token, 64);
     sys::log("[STORE] run start token=%s", run_token.c_str());
 #endif
     sys::log("[STORE] elevation status=%u", static_cast<unsigned>(elevation_status));
@@ -108,9 +108,9 @@ int main()
     audio.start(mixer);
     pthread_t request_thread{};
     const bool requests_started =
-        pthread_create(&request_thread, nullptr, development_requests, nullptr) == 0;
+        elevated && pthread_create(&request_thread, nullptr, development_requests, nullptr) == 0;
     store::Screen screen;
-    store::Service service(storage_root);
+    store::Service service(elevated ? storage_root : "");
     if (!service.start())
         screen.set_status("The catalog service could not start");
     if (elevation_status != elevation::Status::ok)
@@ -141,7 +141,10 @@ int main()
                         apps.push_back({entry.id, entry.name, entry.author, entry.description,
                                         entry.kind, entry.version,
                                         entry.status == "coming_soon" ? "Coming soon" : "", 0});
-                    screen.set_catalog(std::move(apps), update.message);
+                    screen.set_catalog(std::move(apps),
+                                       elevated ? update.message
+                                                : "Read only: install permission unavailable • " +
+                                                      update.message);
                 }
                 else if (update.kind == store::Update::Kind::detail)
                     screen.set_detail(update.entry);

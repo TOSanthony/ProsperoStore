@@ -198,6 +198,9 @@ passes every line is the goal; a larger one that misses lines is not.
 - Elevation can fail (no loader, unsupported firmware). The store must then
   still open, in a **read-only mode**: browse and see details, with a clear
   explanation of why nothing can be installed.
+- All persistent store state lives in `/data/prosperostore`, after elevation,
+  including settings, catalog cache, receipts, logs, crash reports and test receipts.
+  There is no sandbox/download0 fallback. Without elevation, browsing uses memory only.
 
 ### 3.2 Networking
 
@@ -228,10 +231,12 @@ passes every line is the goal; a larger one that misses lines is not.
 
 ### 3.3 ShadowMountPlus
 
-- By default it scans `/data/homebrew`, `/data/etaHEN/games`, `/mnt/ext0` and
-  `/mnt/ext1` (their `homebrew` and `etaHEN/games` folders), and `/mnt/usb0`
-  to `/mnt/usb7` (the same). Extra paths come from `manual.lst`, and options
-  such as the scan depth from `/data/shadowmount/config.ini`. **[source]**
+- Default [scan paths](https://github.com/drakmor/shadowMountPlus#scan-paths)
+  include `/data/homebrew`, `/data/etaHEN/games`, external/USB drive roots and
+  their `homebrew` and `etaHEN/games` subfolders, plus the managed image roots.
+  `scanpath` overrides and scan depth come from `/data/shadowmount/config.ini`.
+  `manual.lst` names individual app folders or images; its parents are not
+  additional scan roots. **[source]**
 - The store reads those two files to learn what this console actually scans,
   instead of assuming the defaults (D24). If they can't be read, it falls back
   to the defaults and says ShadowMountPlus wasn't found.

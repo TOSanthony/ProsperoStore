@@ -29,6 +29,10 @@ int main()
     store::catalog::Snapshot snapshot;
     store::net::Control control;
     std::string error;
+    store::catalog::Client memory("");
+    assert(!memory.cached(snapshot, error));
+    assert(!memory.refresh(snapshot, control, error) && error == "offline" && requests == 1);
+    requests = 0;
     assert(!client.refresh(snapshot, control, error) && requests == 1);
     requests = 0;
     fs::create_directory(record);

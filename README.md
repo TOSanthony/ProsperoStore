@@ -18,3 +18,9 @@ Build in Linux/WSL with `make DEVELOPMENT=1 app`. Run `make test lint` for
 host validation and `make host-snapshots` for the UI preview. Release builds
 omit development requests by default. `FOUNDATIONS.json` records immutable
 foundation sources; `third_party/STORE_SOURCES.json` records vendored libraries.
+
+All persistent store state is under `/data/prosperostore`, using the boilerplate's
+elevation helper. This includes settings, cache, receipts, logs, crash reports
+and development-control receipts. If elevation is unavailable, browsing uses
+memory only and installation remains disabled. Elevated HTTPS uses PacBrew
+curl/OpenSSL with certificate checks against the console's CA list.

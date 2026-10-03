@@ -19,6 +19,7 @@ struct Snapshot
 class Client
 {
   public:
+    // Empty cache means read-only, in-memory browsing with no filesystem access.
     explicit Client(std::string cache) : cache_(std::move(cache))
     {
     }

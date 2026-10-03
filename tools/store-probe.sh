@@ -12,3 +12,4 @@ clang++ -std=c++20 -O1 -g -fsanitize=address,undefined -Wall -Wextra -Werror -Is
     -lcurl -o build/store-tests/catalog-probe
 mkdir -p .local/cache
 build/store-tests/catalog-probe .local/cache
+build/store-tests/catalog-probe --memory

@@ -74,7 +74,8 @@ bool Client::file(const Manifest &manifest, const std::string &name, std::size_t
         return false;
     }
     const std::string path = cache_ + "/" + found->second;
-    if (hui::save::read_file(path, &body, limit) && manifest.verifies(name, body))
+    if (!cache_.empty() && hui::save::read_file(path, &body, limit) &&
+        manifest.verifies(name, body))
         return true;
     if (!control)
     {
@@ -92,7 +93,7 @@ bool Client::file(const Manifest &manifest, const std::string &name, std::size_t
         error = "The catalog file could not be verified";
         return false;
     }
-    error = hui::save::write_atomic(path, body);
+    error = cache_.empty() ? std::string{} : hui::save::write_atomic(path, body);
     return error.empty();
 }
 
@@ -123,7 +124,7 @@ bool Client::parse(const std::string &bundle, std::uint64_t highest, Snapshot &o
 bool Client::cached(Snapshot &out, std::string &error)
 {
     std::string bundle;
-    if (read_trust(cache_ + "/current", bundle) != 1)
+    if (cache_.empty() || read_trust(cache_ + "/current", bundle) != 1)
     {
         error = "No verified offline catalog";
         return false;
@@ -133,7 +134,7 @@ bool Client::cached(Snapshot &out, std::string &error)
 
 bool Client::refresh(Snapshot &out, net::Control &control, std::string &error)
 {
-    if (!hui::save::ensure_directory(cache_))
+    if (!cache_.empty() && !hui::save::ensure_directory(cache_))
     {
         error = "The catalog cache is unavailable";
         return false;
@@ -142,7 +143,7 @@ bool Client::refresh(Snapshot &out, net::Control &control, std::string &error)
     std::uint64_t highest = out.manifest.sequence;
     std::string current;
     const std::string trust_path = cache_ + "/current";
-    const int trust_state = read_trust(trust_path, current);
+    const int trust_state = cache_.empty() ? 0 : read_trust(trust_path, current);
     if (trust_state < 0)
     {
         error = "The saved catalog trust record is inaccessible or damaged";
@@ -180,6 +181,11 @@ bool Client::refresh(Snapshot &out, net::Control &control, std::string &error)
     const std::string bundle = signature + body;
     if (!parse(bundle, highest, next, &control, error))
         return false;
+    if (cache_.empty())
+    {
+        out = std::move(next);
+        return true;
+    }
     // Data files are durable before the atomic pointer to the generation changes.
     if (!flush_directory(cache_))
     {

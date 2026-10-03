@@ -52,8 +52,8 @@ parser.add_argument("--protocol", type=Path, required=True)
 parser.add_argument("--ui-tools", type=Path, required=True)
 parser.add_argument("--results", type=Path, required=True)
 parser.add_argument("--close-prior", help="Exact previously identified title to close before the case")
-parser.add_argument("--sandbox-control", action="store_true")
 parser.add_argument("--require-catalog", action="store_true")
+parser.add_argument("--require-storage", action="store_true")
 args = parser.parse_args()
 root = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("console_tour", args.ui_tools / "console-tour.py")
@@ -74,6 +74,7 @@ manifest = {str(path.relative_to(package)): hashlib.sha256(path.read_bytes()).he
     "commit": commit, "files": manifest,
     "package_sha256": hashlib.sha256((root / "dist" / (title + ".zip")).read_bytes()).hexdigest(),
     "require_catalog": args.require_catalog,
+    "require_storage": args.require_storage,
     "transport_sha256": hashlib.sha256((args.ui_tools / "console-tour.py").read_bytes()).hexdigest()
 }, indent=2))
 token = "prosperostore-" + uuid.uuid4().hex
@@ -90,8 +91,8 @@ logger = None
 console = None
 result = {"classification": "no-run", "title": title, "commit": commit}
 remote = "/data/homebrew/" + title
-log_root = (f"/mnt/sandbox/{title}_000/download0/prosperostore/logs"
-            if args.sandbox_control else "/data/prosperostore/logs")
+state_root = "/data/prosperostore"
+log_root = state_root + "/logs"
 try:
     if not all(transport.port_open(args.host, port) for port in (2121, 3232, 9021)):
         raise RuntimeError("Required console services are unavailable")
@@ -138,7 +139,7 @@ try:
         data = console.read(remote + "/" + relative)
         if data is None or hashlib.sha256(data).hexdigest() != digest:
             raise RuntimeError("Remote verification failed: " + relative)
-    console.write(remote + "/dev/run.txt", token.encode())
+    console.write(state_root + "/dev/run.txt", token.encode())
     console.close()
     console = None
     result["classification"] = "inconclusive"
@@ -168,7 +169,7 @@ try:
             result["classification"] = "failed"
             raise RuntimeError("App crash detected; do not retry")
     console = transport.Console(args.host, 2121, raw_self=True)
-    console.write(remote + "/dev/request.txt", f"quit - {token}\n".encode())
+    console.write(state_root + "/dev/request.txt", f"quit - {token}\n".encode())
     closed = False
     for _ in range(12):
         time.sleep(5)
@@ -184,18 +185,24 @@ try:
     (args.results / "shadowmount.log").write_text("\n".join(
         line for line in lifecycle.decode(errors="replace").splitlines() if title in line))
     if closed:
-        console.ftp.sendcmd("DELE " + remote + "/dev/request.txt")
-        console.ftp.sendcmd("DELE " + remote + "/dev/run.txt")
+        console.ftp.sendcmd("DELE " + state_root + "/dev/request.txt")
+        console.ftp.sendcmd("DELE " + state_root + "/dev/run.txt")
     healthy = all(transport.port_open(args.host, port) for port in (2121, 3232, 9021))
     result.update(closed=closed, healthy=healthy)
     done.set()
     logger.join(timeout=5)
     klog = (args.results / "klog.txt").read_bytes()
     passed = closed and healthy and complete_run(klog, token)
-    if passed and args.require_catalog:
+    if passed:
         current_run = klog.split(f"[STORE] run start token={token}".encode(), 1)[1]
         current_run = current_run.split(f"[STORE] run end token={token}".encode(), 1)[0]
-        passed = b"[STORE] catalog verified=1 online=1" in current_run
+        if args.require_catalog:
+            passed = b"[STORE] catalog verified=1 online=1" in current_run
+        if args.require_storage:
+            passed = passed and any(
+                line.startswith(b"[STORE] storage path=/data/homebrew ") and
+                b" rename=1 work-safe=1 error=" in line and line.endswith(b"error=")
+                for line in current_run.splitlines())
     result["classification"] = "pass" if passed else "failed"
     if not passed:
         raise RuntimeError("Startup or teardown criterion failed; inspect saved evidence")

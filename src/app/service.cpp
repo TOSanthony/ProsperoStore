@@ -5,6 +5,8 @@
 #include "app/service.hpp"
 #include "core/save_file.hpp"
 #include "platform/ps5/system.hpp"
+#include "system/locations.hpp"
+#include "system/storage_probe.hpp"
 
 namespace store
 {
@@ -71,14 +73,49 @@ void Service::run()
     hui::sys::log("[STORE] sandbox TLS control status=%d bytes=%zu error=%s", probe.status,
                   probe_body.size(), probe.error.c_str());
 #endif
-    if (!hui::save::ensure_directory(root_))
+    if (!root_.empty() && !hui::save::ensure_directory(root_))
     {
         Update failure;
         failure.message = "Storage is unavailable. The catalog could not be loaded.";
         publish(std::move(failure));
         return;
     }
-    catalog::Client client(root_ + "/cache");
+    catalog::Client client(root_.empty() ? "" : root_ + "/cache");
+#ifdef STORE_DEVELOPMENT
+    if (root_ == "/data/prosperostore")
+    {
+        std::string configuration, manual, policy_error;
+        const bool configured =
+            hui::save::read_file("/data/shadowmount/config.ini", &configuration, 256 * 1024);
+        const bool listed =
+            hui::save::read_file("/data/shadowmount/manual.lst", &manual, 256 * 1024);
+        system::ScanPolicy policy;
+        if (!system::scan_policy(configuration, manual, policy, policy_error))
+            hui::sys::log("[STORE] storage policy error=%s", policy_error.c_str());
+        else
+        {
+            hui::sys::log("[STORE] storage config=%d manual=%d roots=%zu entries=%zu depth=%u",
+                          configured, listed, policy.roots.size(), policy.manual.size(),
+                          policy.depth);
+            for (const auto &path : policy.roots)
+            {
+                if (control_.cancelled.load())
+                    break;
+                const auto drive = system::drive_root(path);
+                if (drive.empty())
+                    continue;
+                const auto probe = system::probe_storage(path);
+                const bool work_safe = system::work_path_unscanned(
+                    policy, drive + "/prosperostore/staging/transaction/PPSA99000");
+                hui::sys::log(
+                    "[STORE] storage path=%s fs=%s available=%llu rename=%d work-safe=%d error=%s",
+                    path.c_str(), probe.filesystem.c_str(),
+                    static_cast<unsigned long long>(probe.available), probe.renamed, work_safe,
+                    probe.error.c_str());
+            }
+        }
+    }
+#endif
     catalog::Snapshot snapshot;
     std::string error;
     if (client.cached(snapshot, error))

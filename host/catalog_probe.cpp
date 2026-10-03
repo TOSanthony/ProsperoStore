@@ -8,7 +8,8 @@ int main(int argc, char **argv)
 {
     if (argc != 2)
         return 2;
-    store::catalog::Client client(argv[1]);
+    const bool memory_only = std::string_view(argv[1]) == "--memory";
+    store::catalog::Client client(memory_only ? "" : argv[1]);
     store::catalog::Snapshot snapshot;
     store::net::Control control;
     std::string error;
@@ -30,6 +31,11 @@ int main(int argc, char **argv)
             return 1;
         }
         std::printf("%s %s %s\n", entry.id.c_str(), entry.status.c_str(), entry.name.c_str());
+    }
+    if (memory_only)
+    {
+        std::puts("Memory-only signed browsing and app details passed");
+        return 0;
     }
     store::catalog::Snapshot offline;
     if (!client.cached(offline, error) || offline.entries.size() != snapshot.entries.size())
