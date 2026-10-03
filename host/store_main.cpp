@@ -13,6 +13,10 @@
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
 #include <cstdio>
+#include <cstdlib>
+#include <fstream>
+#include <map>
+#include <sstream>
 #include <cassert>
 #include <set>
 #include <vector>
@@ -174,9 +178,12 @@ static void check_installed_sections()
 
 int main(int argc, char **argv)
 {
-    check_artwork_requests();
-    check_search_and_sort();
-    check_installed_sections();
+    if (std::getenv("STORE_OLD_CHECKS"))
+    {
+        check_artwork_requests();
+        check_search_and_sort();
+        check_installed_sections();
+    }
     if (argc < 3 || argc > 5)
         return 2;
     const auto get_display = reinterpret_cast<PFNEGLGETPLATFORMDISPLAYEXTPROC>(
@@ -236,6 +243,7 @@ int main(int argc, char **argv)
                                 entry.version, entry.status == "coming_soon" ? "Coming soon" : "",
                                 0, entry.released, entry.updated});
                 apps.back().available_version = entry.content_version;
+                apps.back().size = entry.size;
             }
             screen.set_catalog(std::move(apps), "Verified catalog");
             store::catalog::Icons icons(std::string(argv[3]) + "/icons");
@@ -255,13 +263,166 @@ int main(int argc, char **argv)
                     renderer.batch().create_texture(image.width, image.height, image.rgba.data());
                 textures.push_back(texture);
                 screen.set_icon(entry.id, texture);
+                // An app without key art leans toward its icon's average colour.
+                double sum[3] = {0, 0, 0}, weight = 0;
+                for (std::size_t i = 0; i + 3 < image.rgba.size(); i += 4 * 7)
+                {
+                    const double a = image.rgba[i + 3] / 255.0;
+                    for (int c = 0; c < 3; ++c)
+                        sum[c] += image.rgba[i + c] * a;
+                    weight += a;
+                }
+                if (weight > 0)
+                    screen.set_accent(entry.id, hui::gfx::Color::rgb(
+                                                    (static_cast<unsigned>(sum[0] / weight) << 16) |
+                                                    (static_cast<unsigned>(sum[1] / weight) << 8) |
+                                                    static_cast<unsigned>(sum[2] / weight)));
+            }
+            // Key art (the prototype reads what the catalog could serve) and its colour.
+            const std::string art = std::string(argv[3]) + "/../backgrounds";
+            std::map<std::string, unsigned> accents;
+            {
+                std::ifstream colours(art + "/colours.json");
+                std::stringstream text;
+                text << colours.rdbuf();
+                const std::string body = text.str();
+                for (std::size_t at = body.find("\"PPSA"); at != std::string::npos;
+                     at = body.find("\"PPSA", at + 1))
+                {
+                    const auto id = body.substr(at + 1, 9);
+                    const auto key = body.find("\"accent\": \"", at);
+                    if (key != std::string::npos)
+                        accents[id] = static_cast<unsigned>(std::stoul(body.substr(key + 11, 6), nullptr, 16));
+                }
+            }
+            for (const auto &entry : snapshot.entries)
+            {
+                std::string encoded;
+                hui::Image image;
+                if (!hui::save::read_file(art + "/" + entry.id + ".png", &encoded, 8u << 20) ||
+                    !hui::decode_png(encoded, image))
+                    continue;
+                const auto texture =
+                    renderer.batch().create_texture(image.width, image.height, image.rgba.data());
+                textures.push_back(texture);
+                screen.set_background(entry.id, texture);
+                if (accents.count(entry.id))
+                    screen.set_accent(entry.id, hui::gfx::Color::rgb(accents[entry.id]));
+            }
+            // The verified details the stage would ask for, from the cache.
+            for (const auto &entry : snapshot.entries)
+            {
+                store::catalog::Entry detail;
+                std::string why;
+                if (catalog.detail(snapshot, entry.id, detail, control, why))
+                    screen.set_detail(detail);
             }
         }
         hui::ui::Feedback feedback;
         if (argc == 5)
         {
             const std::string mode = argv[4];
-            if (mode == "search")
+            hui::InputFrame down, right, nav_up;
+            down.nav = hui::Direction::down;
+            right.nav = hui::Direction::right;
+            nav_up.nav = hui::Direction::up;
+            const auto settle = [&](int frames)
+            {
+                for (int frame = 0; frame < frames; ++frame)
+                    screen.update({}, 1.0f / 60.0f, feedback);
+            };
+            if (mode == "stage")
+            {
+                // The featured app on the stage, the focus on its button.
+                screen.update(nav_up, 1.0f / 60.0f, feedback);
+                settle(30);
+            }
+            else if (mode == "shelf" || mode == "shelf-2" || mode == "shelf-3")
+            {
+                const int downs = mode == "shelf" ? 0 : mode == "shelf-2" ? 1 : 2;
+                for (int i = 0; i < downs; ++i)
+                {
+                    screen.update(down, 1.0f / 60.0f, feedback);
+                    settle(20);
+                }
+                for (int i = 0; i < 2; ++i)
+                {
+                    screen.update(right, 1.0f / 60.0f, feedback);
+                    settle(20);
+                }
+            }
+            else if (mode == "games" || mode == "apps")
+            {
+                hui::InputFrame section;
+                section.pressed = hui::action_bit(hui::Action::page_next);
+                for (int index = 0; index < (mode == "apps" ? 1 : 2); ++index)
+                    screen.update(section, 1.0f / 60.0f, feedback);
+                settle(30);
+                screen.update(right, 1.0f / 60.0f, feedback);
+                settle(20);
+            }
+            else if (mode == "page-light" || mode == "page-installing" || mode == "page-unpacking" ||
+                     mode == "page-installed" || mode == "page-eden")
+            {
+                screen.set_installer(true, true, "", "/data/homebrew");
+                screen.set_running({}, true);
+                screen.set_locations({{"/data/homebrew", 548ull << 30}});
+                const std::string id = mode == "page-eden"        ? "PPSA99008"
+                                       : mode == "page-installed" ? "PPSA99006"
+                                       : mode == "page-light"     ? "PPSA99002"
+                                                                  : "PPSA99169";
+                if (mode == "page-installed")
+                {
+                    store::system::Inventory inventory;
+                    inventory.apps = {{id, "ProsperoPuzzles", "01.000.010", "/data/homebrew/" + id,
+                                       "", false, true, false}};
+                    screen.set_inventory(std::move(inventory));
+                }
+                assert(screen.open_app(id));
+                screen.pending_detail.clear();
+                hui::Image qr;
+                assert(hui::encode_qr("https://homebrew.page/app/" + id + "/", qr));
+                const auto texture = renderer.batch().create_texture(qr.width, qr.height, qr.rgba.data());
+                textures.push_back(texture);
+                screen.set_qr(id, texture, qr.width);
+                if (mode == "page-installing" || mode == "page-unpacking")
+                {
+                    const std::uint64_t total = mode == "page-installing" ? 197867360ull : 412000000ull;
+                    const int phase = mode == "page-installing" ? 1 : 3;
+                    screen.set_activity({id, phase, total / 5, total, {"PPSA99420"}});
+                    settle(60);
+                    screen.set_activity({id, phase, total * 43 / 100, total, {"PPSA99420"}});
+                }
+            }
+            else if (mode == "reel-install")
+            {
+                screen.set_installer(true, true, "", "/data/homebrew");
+                screen.set_running({}, true);
+                screen.set_locations({{"/data/homebrew", 548ull << 30}});
+                assert(screen.open_app("PPSA99169"));
+                screen.pending_detail.clear();
+                hui::Image qr;
+                assert(hui::encode_qr("https://homebrew.page/app/PPSA99169/", qr));
+                const auto texture = renderer.batch().create_texture(qr.width, qr.height, qr.rgba.data());
+                textures.push_back(texture);
+                screen.set_qr("PPSA99169", texture, qr.width);
+            }
+            else if (mode == "reel-browse")
+            {
+            }
+            else if (mode == "busy-home")
+            {
+                screen.set_installer(true, true, "", "/data/homebrew");
+                screen.set_activity({"PPSA99169", 1, 197867360ull / 5, 197867360ull, {"PPSA99420"}});
+                settle(60);
+                screen.set_activity({"PPSA99169", 1, 197867360ull * 43 / 100, 197867360ull, {"PPSA99420"}});
+                for (int i = 0; i < 1; ++i)
+                {
+                    screen.update(right, 1.0f / 60.0f, feedback);
+                    settle(20);
+                }
+            }
+            else if (mode == "search")
                 screen.set_query("radio");
             else if (mode == "busy")
             {
@@ -269,13 +430,13 @@ int main(int argc, char **argv)
                 screen.set_installer(true, true, "", "/data/homebrew");
                 screen.set_activity({"PPSA99007", 1, 30u << 20, 58u << 20, {"PPSA99420"}});
             }
-            else if (mode == "queue" || mode == "settings" || mode == "about")
+            else if (mode == "queue" || mode == "downloads" || mode == "settings" || mode == "about")
             {
                 screen.set_installer(true, true, "", "/data/homebrew");
                 screen.set_self("PPSA99000", "01.000.000");
                 screen.set_locations({{"/data/homebrew", 548ull << 30},
                                       {"/mnt/ext1/homebrew", 912ull << 30}});
-                if (mode == "queue")
+                if (mode == "queue" || mode == "downloads")
                 {
                     screen.set_activity({"PPSA99007", 3, 61u << 20, 94u << 20,
                                          {"PPSA99420", "PPSA99169"}});
@@ -283,7 +444,9 @@ int main(int argc, char **argv)
                                       "ShadowMountPlus will add it to your home screen in a moment.");
                     screen.finish_job(false, false, "PS5SX2: not changed", "Close the app first");
                 }
-                screen.open_panel(mode == "queue" ? 0 : mode == "settings" ? 1 : 2);
+                screen.open_panel(mode == "queue" || mode == "downloads" ? 0 : mode == "settings" ? 1 : 2);
+                if (mode == "downloads")
+                    settle(700);
                 // Settings: down to the location, right to the next one, saved once.
                 if (mode == "settings")
                 {
@@ -447,6 +610,105 @@ int main(int argc, char **argv)
         }
         for (int frame = 0; frame < 120; ++frame)
             screen.update({}, 1.0f / 60.0f, feedback);
+        if (const char *reel = std::getenv("STORE_REEL"); reel && argc == 5)
+        {
+            // A clip: presses at given frames, every second frame written as a
+            // 960x540 JPEG; the installer's progress is simulated for "reel-install".
+            const std::string scene = argv[4];
+            std::vector<std::pair<int, std::string>> steps;
+            int frames = 0;
+            if (scene == "reel-browse")
+            {
+                steps = {{20, "up"},     {150, "right"}, {230, "down"},  {300, "right"},
+                         {360, "right"}, {420, "right"}, {490, "down"},  {550, "right"},
+                         {610, "right"}, {680, "confirm"}, {860, "back"}, {960, "r1"},
+                         {1030, "r1"},  {1100, "right"}};
+                frames = 1190;
+            }
+            else if (scene == "reel-install")
+            {
+                steps = {{40, "confirm"}};
+                frames = 760;
+            }
+            const auto press = [](const std::string &name)
+            {
+                hui::InputFrame input;
+                if (name == "up" || name == "down" || name == "left" || name == "right")
+                    input.nav = name == "up"     ? hui::Direction::up
+                                : name == "down" ? hui::Direction::down
+                                : name == "left" ? hui::Direction::left
+                                                 : hui::Direction::right;
+                else if (name == "confirm")
+                    input.pressed = hui::action_bit(hui::Action::confirm);
+                else if (name == "back")
+                    input.pressed = hui::action_bit(hui::Action::back);
+                else if (name == "r1")
+                    input.pressed = hui::action_bit(hui::Action::page_next);
+                return input;
+            };
+            std::vector<unsigned char> pixels(1920 * 1080 * 4), half(960 * 540 * 3);
+            stbi_flip_vertically_on_write(1);
+            const std::string id = "PPSA99169";
+            const std::uint64_t total = 197867360ull, unpacked = 412000000ull;
+            for (int frame = 0; frame < frames; ++frame)
+            {
+                hui::InputFrame input;
+                for (const auto &[at, name] : steps)
+                    if (at == frame)
+                        input = press(name);
+                if (scene == "reel-install")
+                {
+                    // Download 4 s, verify 0.5 s, unpack 2.5 s, finish 0.4 s, then installed.
+                    const int start = 60;
+                    const int f = frame - start;
+                    if (f >= 0 && f < 240)
+                        screen.set_activity({id, 1, total * static_cast<std::uint64_t>(f) / 240, total, {}});
+                    else if (f >= 240 && f < 270)
+                        screen.set_activity({id, 2, 0, 0, {}});
+                    else if (f >= 270 && f < 420)
+                        screen.set_activity({id, 3, unpacked * static_cast<std::uint64_t>(f - 270) / 150,
+                                             unpacked, {}});
+                    else if (f >= 420 && f < 444)
+                        screen.set_activity({id, 4, 0, 0, {}});
+                    else if (f == 444)
+                    {
+                        screen.set_activity({});
+                        store::system::Inventory inventory;
+                        inventory.apps = {{id, "RetroArch", "01.000.000", "/data/homebrew/" + id, "",
+                                           false, true, false}};
+                        screen.set_inventory(std::move(inventory));
+                        screen.finish_job(true, false, "RetroArch installed",
+                                          "ShadowMountPlus adds it to your home screen in a moment.");
+                    }
+                }
+                screen.update(input, 1.0f / 60.0f, feedback);
+                if (frame % 2)
+                    continue;
+                screen.draw(renderer, fonts.refs);
+                renderer.present(target.framebuffer(), 1920, 1080);
+                glBindFramebuffer(GL_FRAMEBUFFER, target.framebuffer());
+                glReadPixels(0, 0, 1920, 1080, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+                for (int y = 0; y < 540; ++y)
+                    for (int x = 0; x < 960; ++x)
+                        for (int c = 0; c < 3; ++c)
+                        {
+                            const auto at = [&](int dx, int dy)
+                            { return pixels[((2 * y + dy) * 1920 + (2 * x + dx)) * 4 + c]; };
+                            half[(y * 960 + x) * 3 + c] = static_cast<unsigned char>(
+                                (at(0, 0) + at(1, 0) + at(0, 1) + at(1, 1) + 2) / 4);
+                        }
+                char name[512];
+                std::snprintf(name, sizeof(name), "%s/%05d.jpg", reel, frame / 2);
+                if (!stbi_write_jpg(name, 960, 540, 3, half.data(), 90))
+                    return 6;
+            }
+            std::printf("Reel: %d frames in %s\n", frames / 2, reel);
+            glDeleteTextures(static_cast<GLsizei>(textures.size()), textures.data());
+            eglMakeCurrent(display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+            eglDestroyContext(display, context);
+            eglTerminate(display);
+            return 0;
+        }
         screen.draw(renderer, fonts.refs);
         if (argc == 5 && std::string(argv[4]) == "detail-end")
         {

@@ -11,6 +11,7 @@
 #include "ui/components/text_view.hpp"
 #include "ui/components/toast.hpp"
 #include "ui/motion.hpp"
+#include "gfx/draw_list.hpp"
 
 #include <string>
 #include <vector>
@@ -37,6 +38,11 @@ struct App
     bool local_only = false;
     std::uint32_t art = 0; // the full-size picture, once the page has asked for it
     std::string folded_name = {}, folded_author = {}; // for sorting and search
+    // The app's key art (its home-screen background, 16:9) and the colour the
+    // screen leans toward while it is in focus.
+    std::uint32_t background = 0;
+    hui::gfx::Color accent = hui::gfx::Color::rgb(0x42358f);
+    std::uint64_t size = 0;
 };
 
 // What the page asks the installer to do. The frame loop hands it to the
@@ -87,6 +93,8 @@ class Screen
     void set_detail_error(const std::string &id, std::string message);
     void set_icon(const std::string &id, std::uint32_t texture);
     void set_art(const std::string &id, std::uint32_t texture);
+    void set_background(const std::string &id, std::uint32_t texture);
+    void set_accent(const std::string &id, hui::gfx::Color accent);
     // Every catalog app with a picture, the ones on screen first: the frame
     // loop loads them all once and keeps them, so moving never waits.
     std::vector<std::string> artwork_backlog() const;
@@ -235,12 +243,15 @@ class Screen
     void update_page(const hui::InputFrame &input, hui::ui::Feedback &feedback);
     void layout(const hui::ui::Fonts &fonts);
     void draw_top_bar(const hui::ui::Fonts &fonts);
-    void draw_banner(const hui::ui::Fonts &fonts);
-    void draw_chips(const hui::ui::Fonts &fonts);
-    void draw_card(const hui::ui::Fonts &fonts, int index, unsigned layers);
+    void draw_stage(const hui::ui::Fonts &fonts);
+    void draw_section_header(const hui::ui::Fonts &fonts);
+    void draw_tile(const hui::ui::Fonts &fonts, int index, unsigned layers);
     void rows_in_view(float scroll, int &first, int &last) const;
     const App *busy_app(float &progress, const char *&phase) const;
     void draw_grid(const hui::ui::Fonts &fonts);
+    bool draw_art(hui::gfx::DrawList &list, int index, const hui::gfx::Rect &rect, float alpha,
+                  float radius) const;
+    void draw_job_card(const hui::ui::Fonts &fonts, std::uint32_t glass);
     void draw_page(const hui::ui::Fonts &fonts, std::uint32_t glass);
     void update_panel(const hui::InputFrame &input, hui::ui::Feedback &feedback);
     void draw_panel(const hui::ui::Fonts &fonts, std::uint32_t glass);
@@ -318,6 +329,22 @@ class Screen
     hui::ui::Pulse nudge_, press_;
     float nudge_x_ = 0.0f, nudge_y_ = 0.0f;
     std::vector<hui::tween::Spring> lift_;
+
+    // Discover: shelves of tiles under a stage that shows one app big.
+    struct Shelf
+    {
+        std::string title;
+        int start = 0, count = 0, pos = 0;
+        hui::ui::Scroller scroll;
+    };
+    std::vector<Shelf> shelves_;
+    bool discover() const;
+    int shelf_of(int index) const;
+    int stage_index() const; // the app the stage (or the dimmed backdrop) shows
+    int stage_ = -1, stage_previous_ = -1;
+    hui::tween::Timer stage_fade_;
+    hui::ui::SpringColor tint_;
+    float art_clock_ = 0.0f;
 };
 
 class Fonts
