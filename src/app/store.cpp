@@ -7,6 +7,7 @@
 #include "ui/glyphs.hpp"
 
 #include <utility>
+#include <algorithm>
 
 namespace store
 {
@@ -86,6 +87,29 @@ void Screen::set_icon(const std::string &id, std::uint32_t texture)
     for (std::size_t i = 0; i < visible_.size(); ++i)
         if (apps_[visible_[i]].title_id == id)
             grid_.item(static_cast<int>(i)).texture = texture;
+}
+
+std::vector<std::string> Screen::artwork() const
+{
+    std::vector<std::string> wanted;
+    if (visible_.empty())
+        return wanted;
+    wanted.reserve(16);
+    const auto focus = grid_.focus();
+    wanted.push_back(apps_[visible_[static_cast<std::size_t>(focus)]].title_id);
+    if (details_)
+        return wanted;
+    const auto view = grid_.bounds();
+    const int columns = grid_.columns();
+    const int begin = std::max(0, focus - 2 * columns);
+    const int end = std::min(static_cast<int>(visible_.size()), focus + 3 * columns);
+    for (int i = begin; i < end && wanted.size() < 16; ++i)
+    {
+        const auto cell = grid_.cell_rect(i);
+        if (i != focus && cell.y + cell.h >= view.y - cell.h && cell.y <= view.y + view.h + cell.h)
+            wanted.push_back(apps_[visible_[static_cast<std::size_t>(i)]].title_id);
+    }
+    return wanted;
 }
 
 void Screen::update(const InputFrame &input, float dt, ui::Feedback &feedback)

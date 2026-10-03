@@ -10,6 +10,8 @@
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
 #include <cstdio>
+#include <cassert>
+#include <set>
 #include <vector>
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
@@ -18,8 +20,43 @@
 #include "../third_party/stb/stb_image_write.h"
 #pragma clang diagnostic pop
 
+static void check_artwork_requests()
+{
+    store::Screen screen;
+    assert(screen.artwork().empty());
+    std::vector<store::App> apps;
+    for (unsigned i = 0; i < 100; ++i)
+    {
+        store::App app;
+        app.title_id = "PPSA" + std::to_string(99000 + i);
+        apps.push_back(app);
+    }
+    screen.set_catalog(std::move(apps), "test");
+    hui::ui::Feedback feedback;
+    hui::InputFrame down;
+    down.nav = hui::Direction::down;
+    for (unsigned i = 0; i < 20; ++i)
+    {
+        const auto wanted = screen.artwork();
+        assert(!wanted.empty() && wanted.size() <= 16);
+        assert(std::set<std::string>(wanted.begin(), wanted.end()).size() == wanted.size());
+        screen.set_icon(wanted.front(), 1);
+        assert(screen.artwork() == wanted); // Uploading artwork must never reset focus.
+        screen.update(down, 1.0f / 60.0f, feedback);
+    }
+    const auto focused = screen.artwork().front();
+    assert(focused == "PPSA99095");
+    hui::InputFrame confirm;
+    confirm.pressed = hui::action_bit(hui::Action::confirm);
+    screen.update(confirm, 1.0f / 60.0f, feedback);
+    assert(screen.artwork() == std::vector<std::string>{focused});
+    screen.set_catalog({}, "empty");
+    assert(screen.artwork().empty());
+}
+
 int main(int argc, char **argv)
 {
+    check_artwork_requests();
     if (argc != 3 && argc != 4)
         return 2;
     const auto get_display = reinterpret_cast<PFNEGLGETPLATFORMDISPLAYEXTPROC>(

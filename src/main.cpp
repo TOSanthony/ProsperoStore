@@ -20,6 +20,8 @@
 #include <cstdio>
 #include <cstring>
 #include <pthread.h>
+#include <map>
+#include <GL/glcorearb.h>
 
 namespace
 {
@@ -121,6 +123,10 @@ int main()
     sys::hide_splash_screen();
     sys::log("[STORE] interactive width=%d height=%d", display.width(), display.height());
     bool first_swap = true;
+    std::map<std::string, std::uint32_t> textures;
+    std::vector<std::string> wanted_icons, requested_icons;
+    std::uint64_t catalog_generation = 0;
+    std::vector<store::Update> updates;
     while (!quit.load() && !screen.wants_quit())
     {
         const auto now = sys::monotonic_us();
@@ -130,30 +136,76 @@ int main()
         std::array<PadSample, 64> samples{};
         const auto count = pad.read(samples);
         ui::Feedback feedback;
-        std::vector<store::Update> updates;
-        if (service.take(updates))
-            for (const auto &update : updates)
+        if (updates.empty())
+            service.take(updates);
+        // At most one texture upload per frame, including after a render stall.
+        if (!updates.empty())
+        {
+            auto update = std::move(updates.front());
+            updates.erase(updates.begin());
+            if (update.kind == store::Update::Kind::catalog)
             {
-                if (update.kind == store::Update::Kind::catalog)
+                for (const auto &[id, texture] : textures)
                 {
-                    std::vector<store::App> apps;
-                    for (const auto &entry : update.snapshot.entries)
-                        apps.push_back({entry.id, entry.name, entry.author, entry.description,
-                                        entry.kind, entry.version,
-                                        entry.status == "coming_soon" ? "Coming soon" : "", 0});
-                    screen.set_catalog(std::move(apps),
-                                       elevated ? update.message
-                                                : "Read only: install permission unavailable • " +
-                                                      update.message);
+                    (void)id;
+                    glDeleteTextures(1, &texture);
                 }
-                else if (update.kind == store::Update::Kind::detail)
-                    screen.set_detail(update.entry);
-                else
-                    screen.set_status(update.message);
+                textures.clear();
+                requested_icons.clear();
+                catalog_generation = update.generation;
+                std::vector<store::App> apps;
+                for (const auto &entry : update.snapshot.entries)
+                    apps.push_back({entry.id, entry.name, entry.author, entry.description,
+                                    entry.kind, entry.version,
+                                    entry.status == "coming_soon" ? "Coming soon" : "", 0});
+                screen.set_catalog(std::move(apps),
+                                   elevated ? update.message
+                                            : "Read only: install permission unavailable • " +
+                                                  update.message);
             }
+            else if (update.kind == store::Update::Kind::icon)
+            {
+                if (update.generation == catalog_generation &&
+                    std::find(wanted_icons.begin(), wanted_icons.end(), update.entry.id) !=
+                        wanted_icons.end() &&
+                    !textures.contains(update.entry.id))
+                {
+                    const auto texture = renderer.batch().create_texture(
+                        update.image.width, update.image.height, update.image.rgba.data());
+                    if (texture)
+                    {
+                        textures.emplace(update.entry.id, texture);
+                        screen.set_icon(update.entry.id, texture);
+                    }
+                }
+            }
+            else if (update.kind == store::Update::Kind::detail)
+                screen.set_detail(update.entry);
+            else
+                screen.set_status(update.message);
+        }
         if (!screen.pending_detail.empty() && service.request_detail(screen.pending_detail))
             screen.pending_detail.clear();
         screen.update(input.update(std::span(samples.data(), count), now), dt, feedback);
+        wanted_icons = screen.artwork();
+        for (auto it = textures.begin(); it != textures.end();)
+        {
+            if (std::find(wanted_icons.begin(), wanted_icons.end(), it->first) ==
+                wanted_icons.end())
+            {
+                screen.set_icon(it->first, 0);
+                glDeleteTextures(1, &it->second);
+                it = textures.erase(it);
+            }
+            else
+                ++it;
+        }
+        std::vector<std::string> missing;
+        for (const auto &id : wanted_icons)
+            if (!textures.contains(id))
+                missing.push_back(id);
+        if (missing != requested_icons && service.request_icons(missing))
+            requested_icons = std::move(missing);
         for (const auto &cue : feedback.cues)
             sounds.play(mixer, audio::SoundSet::glass, cue);
         if (feedback.rumble_strength > 0)
@@ -176,7 +228,8 @@ int main()
         {
             char report[256]{};
             stats.format(report, sizeof(report));
-            service.report_frames(report);
+            service.report_frames(std::string(report) +
+                                  " icons=" + std::to_string(textures.size()));
             stats.reset();
         }
     }
@@ -187,6 +240,11 @@ int main()
         pthread_join(request_thread, nullptr);
     audio.stop();
     pad.close();
+    for (const auto &[id, texture] : textures)
+    {
+        (void)id;
+        glDeleteTextures(1, &texture);
+    }
     renderer.release();
     display.close();
     sys::log("[STORE] teardown complete");

@@ -34,6 +34,7 @@ class Screen
     void set_catalog(std::vector<App> apps, std::string status);
     void set_detail(const catalog::Entry &entry);
     void set_icon(const std::string &id, std::uint32_t texture);
+    std::vector<std::string> artwork() const;
     void set_status(std::string status)
     {
         status_ = std::move(status);

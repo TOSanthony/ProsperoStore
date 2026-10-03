@@ -44,6 +44,12 @@ clang++ -std=c++20 "${flags[@]}" -Wall -Wextra -Wpedantic -Werror -I"$root/src" 
     "${objects[@]}" -o "$build/icons-test"
 ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 "$build/icons-test"
 clang++ -std=c++20 "${flags[@]}" -Wall -Wextra -Wpedantic -Werror -I"$root/src" \
+    "$root/tests/store_service_test.cpp" "$root/src/app/service.cpp" \
+    "$root/src/catalog/icons.cpp" "$root/src/catalog/catalog.cpp" \
+    "$root/src/core/image.cpp" "$root/src/core/save_file.cpp" "$root/host/platform_host.cpp" \
+    "${objects[@]}" -pthread -o "$build/service-test"
+ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 "$build/service-test"
+clang++ -std=c++20 "${flags[@]}" -Wall -Wextra -Wpedantic -Werror -I"$root/src" \
     "$root/tests/store_curl_test.cpp" "$root/host/http.cpp" "$root/src/net/curl_request.cpp" \
     "$root/src/net/http.cpp" "$root/src/catalog/catalog.cpp" "${objects[@]}" \
     -lcurl -o "$build/curl-test"

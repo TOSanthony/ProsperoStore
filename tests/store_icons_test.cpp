@@ -29,6 +29,10 @@ int main()
     assert(!cache.cached(entry, image));
     assert(cache.store(entry, encoded, image) && image.width == 1 && image.rgba.size() == 4);
     assert(cache.cached(entry, image));
+    store::catalog::Icons memory("");
+    assert(!memory.cached(entry, image));
+    assert(memory.store(entry, encoded, image) && image.width == 1);
+    assert(!memory.cached(entry, image));
     assert(!cache.store(entry, "invalid PNG", image));
     assert(cache.cached(entry, image));
     entry.icon_hash = "revision-two";

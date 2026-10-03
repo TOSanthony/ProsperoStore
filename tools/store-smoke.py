@@ -7,6 +7,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import threading
@@ -31,6 +32,11 @@ def complete_run(receipt, token):
     return True
 
 
+def artwork_ready(receipt):
+    return any(int(count) >= 5 for count in re.findall(
+        rb"\[STORE\] frames=600 [^\r\n]* icons=(\d+)(?:\r?\n|$)", receipt))
+
+
 if sys.argv[1:] == ["--self-test"]:
     valid = (b"[STORE] run start token=test\n"
              b"[STORE] interactive width=3840 height=2160\n[STORE] first-swap ok\n"
@@ -43,6 +49,9 @@ if sys.argv[1:] == ["--self-test"]:
     assert not complete_run(valid.replace(b"teardown complete", b"interrupted"), "test")
     assert not complete_run(b"[STORE] teardown complete\n" + valid.replace(
         b"[STORE] teardown complete\n", b""), "test")
+    assert artwork_ready(b"[STORE] frames=600 mean=16.68ms icons=10\n")
+    assert not artwork_ready(b"[STORE] frames=600 mean=16.68ms icons=0\n")
+    assert not artwork_ready(b"icons=10\n")
     raise SystemExit(0)
 
 parser = argparse.ArgumentParser(__doc__)
@@ -54,6 +63,7 @@ parser.add_argument("--results", type=Path, required=True)
 parser.add_argument("--close-prior", help="Exact previously identified title to close before the case")
 parser.add_argument("--require-catalog", action="store_true")
 parser.add_argument("--require-storage", action="store_true")
+parser.add_argument("--require-icons", action="store_true")
 args = parser.parse_args()
 root = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("console_tour", args.ui_tools / "console-tour.py")
@@ -75,6 +85,7 @@ manifest = {str(path.relative_to(package)): hashlib.sha256(path.read_bytes()).he
     "package_sha256": hashlib.sha256((root / "dist" / (title + ".zip")).read_bytes()).hexdigest(),
     "require_catalog": args.require_catalog,
     "require_storage": args.require_storage,
+    "require_icons": args.require_icons,
     "transport_sha256": hashlib.sha256((args.ui_tools / "console-tour.py").read_bytes()).hexdigest()
 }, indent=2))
 token = "prosperostore-" + uuid.uuid4().hex
@@ -203,6 +214,8 @@ try:
                 line.startswith(b"[STORE] storage path=/data/homebrew ") and
                 b" rename=1 work-safe=1 error=" in line and line.endswith(b"error=")
                 for line in current_run.splitlines())
+        if args.require_icons:
+            passed = passed and artwork_ready(current_run)
     result["classification"] = "pass" if passed else "failed"
     if not passed:
         raise RuntimeError("Startup or teardown criterion failed; inspect saved evidence")

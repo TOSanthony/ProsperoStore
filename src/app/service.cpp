@@ -7,6 +7,9 @@
 #include "platform/ps5/system.hpp"
 #include "system/locations.hpp"
 #include "system/storage_probe.hpp"
+#include "catalog/icons.hpp"
+#include <algorithm>
+#include <set>
 
 namespace store
 {
@@ -19,13 +22,21 @@ bool Service::start()
     if (started_)
         return true;
     started_ = pthread_create(&thread_, nullptr, entry, this) == 0;
+    if (started_)
+        icons_started_ = pthread_create(&icon_thread_, nullptr, icon_entry, this) == 0;
+    if (started_ && !icons_started_)
+        stop();
     return started_;
 }
 void Service::stop()
 {
     control_.cancel();
+    icon_control_.cancel();
     if (started_)
         pthread_join(thread_, nullptr);
+    if (icons_started_)
+        pthread_join(icon_thread_, nullptr);
+    icons_started_ = false;
     started_ = false;
 }
 bool Service::take(std::vector<Update> &updates)
@@ -44,13 +55,37 @@ bool Service::request_detail(const std::string &id)
     detail_ = id;
     return true;
 }
+bool Service::request_icons(const std::vector<std::string> &ids)
+{
+    if (ids.size() > 16)
+        return false;
+    std::unique_lock lock(mutex_, std::try_to_lock);
+    if (!lock.owns_lock())
+        return false;
+    icons_ = ids;
+    return true;
+}
 void Service::publish(Update update)
 {
-    std::lock_guard lock(mutex_);
-    // At most the startup snapshots plus one outstanding detail are in flight.
-    if (updates_.size() >= 8)
-        updates_.erase(updates_.begin());
-    updates_.push_back(std::move(update));
+    // Backpressure stays on workers; never drop an image the screen is waiting for.
+    while (!control_.cancelled.load())
+    {
+        {
+            std::lock_guard lock(mutex_);
+            if (updates_.size() < 8)
+            {
+                if (update.kind == Update::Kind::catalog)
+                {
+                    entries_ = update.snapshot.entries;
+                    update.generation = ++generation_;
+                    online_ = update.snapshot.online;
+                }
+                updates_.push_back(std::move(update));
+                return;
+            }
+        }
+        hui::sys::sleep_us(10000);
+    }
 }
 void Service::report_frames(std::string report)
 {
@@ -168,6 +203,65 @@ void Service::run()
             if (client.detail(snapshot, id, result.entry, control_, result.message))
                 result.kind = Update::Kind::detail;
             publish(std::move(result));
+        }
+        hui::sys::sleep_us(100000);
+    }
+}
+
+void *Service::icon_entry(void *self)
+{
+    static_cast<Service *>(self)->load_icons();
+    return nullptr;
+}
+
+void Service::load_icons()
+{
+    catalog::Icons artwork(root_.empty() ? "" : root_ + "/cache/icons");
+    std::set<std::string> failed_icons;
+    std::uint64_t failure_generation = 0;
+    while (!icon_control_.cancelled.load())
+    {
+        catalog::Entry entry;
+        std::uint64_t generation = 0;
+        bool online = false;
+        {
+            std::lock_guard lock(mutex_);
+            generation = generation_;
+            if (!icons_.empty())
+            {
+                const auto found =
+                    std::find_if(entries_.begin(), entries_.end(),
+                                 [&](const auto &item) { return item.id == icons_.front(); });
+                if (found != entries_.end())
+                    entry = *found;
+                icons_.erase(icons_.begin());
+                online = online_;
+            }
+        }
+        if (generation != failure_generation)
+        {
+            failed_icons.clear();
+            failure_generation = generation;
+        }
+        const auto key = catalog::Icons::key(entry);
+        if (!key.empty() && !failed_icons.contains(key))
+        {
+            Update result;
+            result.kind = Update::Kind::icon;
+            result.entry.id = entry.id;
+            result.generation = generation;
+            bool loaded = artwork.cached(entry, result.image);
+            if (!loaded && online)
+            {
+                std::string encoded;
+                const auto response =
+                    net::fetch(entry.icon, net::Purpose::catalog, 2u << 20, encoded, icon_control_);
+                loaded = response.ok() && artwork.store(entry, encoded, result.image);
+            }
+            if (loaded)
+                publish(std::move(result));
+            else if (online)
+                failed_icons.insert(key);
         }
         hui::sys::sleep_us(100000);
     }
