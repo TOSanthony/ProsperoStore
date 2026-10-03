@@ -1,10 +1,11 @@
 # ProsperoStore implementation notes
 
-Status: 2026-10-02. Implementation baseline: `6934406`. Title ID: `PPSA99000`.
+Status: 2026-10-03. Title ID: `PPSA99000`.
 
-This is a development snapshot, not a finished store or release. Browsing,
-verified catalog access, artwork, app details, search, and installed-library
-discovery are implemented. **Install, update, and uninstall are not enabled.**
+This is a development snapshot, not a release. Browsing, verified catalog
+access, artwork, app details, search, the installed library, and **install,
+update and uninstall** are implemented and have run on two consoles (firmware
+6.02) on 2026-10-03.
 `PLAN.md` remains the specification; the distinctions below separate implemented
 code from features qualified on the console.
 
@@ -14,16 +15,19 @@ code from features qualified on the console.
 | --- | --- |
 | Native application | PS5 build and packaging, 4K rendering, controller navigation, audio, diagnostic logging, and development-only remote exit requests. |
 | Storefront | Discover, Apps, Games, Tools, Coming soon, Installed, and Updates sections. The layout follows the UI library's Storefront design (featured banner, section chips, card grid, product page with a frosted action box) in the Farlight colours of its Aurora Shelf design (owner's choice; Glass Orchard until 2026-10-03). While the catalog or the library loads, an arc draws itself into a full circle. Artwork regions are square to preserve 512x512 app icons; coming-soon apps without artwork show `assets/images/coming-soon.png`. |
-| Install engine | `src/install/`: verified download (size and SHA-256 from the signed catalog, three attempts), ZIP validation from the archive's directory, exact space checks, unpacking into staging, single-rename activation, update by backup swap, uninstall, receipts, a journal and start-up recovery. Host-tested only; it has never run on a console. |
-| Installer worker | Development builds only (`STORE_INSTALLER`, set by `DEVELOPMENT=1`), and only when elevated. One transaction at a time on its own worker, a queue of up to 16, journal recovery before the first job, an inventory rescan after each, and a result notice. The product page's button installs into `/data/homebrew`, shows the phase and a progress bar, and cancels. Updates and uninstalls are refused until the running-app check exists; uninstall asks first. Release builds leave the button at rest and say why. |
+| Install engine | `src/install/`: verified download (size and SHA-256 from the signed catalog, three attempts), ZIP validation from the archive's directory, exact space checks, unpacking into staging, single-rename activation, update by backup swap, uninstall, receipts, a journal and start-up recovery. After an update the console's own copies of the app's `sce_sys` (`/user/appmeta/<TITLEID>`, `/user/app/<TITLEID>/sce_sys`) are refreshed, so a new icon or background reaches the home screen. |
+| Archive layouts | The app is the one folder in the ZIP that holds `sce_sys/param.json` and `eboot.bin`: at the top, in a folder named after the title, or up to three folders deep. What lies outside it is never unpacked. All fifteen ZIP releases in the catalog on 2026-10-03 fit (three different layouts). |
+| Running titles | A running title has a folder `<TITLEID>_<n>` in `/mnt/sandbox`; the store lists that folder every two seconds. A running app's update and uninstall are refused with "Close it first", checked again right before its folder is touched. If the folder can't be listed, nothing installed is changed. |
+| Installer worker | Only when elevated. One transaction at a time on its own worker, a queue of up to 16, journal recovery before the first job, an inventory rescan after each, and a result notice. The product page's button installs into `/data/homebrew`, shows the phase and a progress bar, and cancels. Uninstall asks first; closing the store during a job asks too. A job shows on the app's card and in the top bar. |
 | Update notice | Once per launch, after the catalog refresh, the boilerplate's update-check decision code runs over the store's own HTTPS for `PPSA99000`. A newer listed version shows a top-right notice for ten seconds. Unknown shows nothing. |
 | Catalog trust | Ed25519 verification of the catalog manifest, SHA-256 verification of catalog documents, bounded JSON parsing, schema checks, sequence rollback protection, and verified offline cache. |
 | HTTPS | Elevated PacBrew curl/OpenSSL with certificate verification using the console CA list, URL/redirect restrictions, bounded responses, cancellation, and connection reuse. |
-| Artwork | Background loading, persistent cache, bounded PNG decoding, a bounded result queue, and limited texture uploads per frame. The artificial delay between icon requests was removed. |
+| Artwork | Background loading, persistent cache, bounded PNG decoding, a bounded result queue, one texture upload per frame. Pictures are kept: 160 icons, 12 full-size pictures and 12 QR codes; past that the one longest off screen gives its texture to the new one (about 1 ms on the console). A picture fades in over its placeholder. |
+| Scale | Built for up to a thousand apps: only the rows in view are drawn and asked for, card text is fitted when first drawn, names are folded once for sorting and search. |
 | Search and sorting | Triangle opens the native keyboard; name/developer filtering and R3 sorting by name, newest release, or recently updated. Native keyboard interaction still needs console qualification. |
 | App details | Scrollable verified metadata and release notes, full-size artwork, retry behavior, and a QR code linking to the app's canonical homebrew.page page. |
 | Installed inventory | Read-only bounded scans using ShadowMountPlus locations/depth, folder metadata parsing, image-file listing, duplicate-title detection, and receipt-based ownership. |
-| Updates view | Newer catalog versions are shown for managed installations. This is discovery/display only; it does not perform updates. |
+| Updates view | Newer catalog versions are shown for managed installations, and the app page updates them. |
 | State storage | Persistent store state uses `/data/prosperostore` after elevation: cache, logs, receipts, and development controls. Browsing falls back to memory when elevation is unavailable. Pre-elevation sandbox logging is disabled. |
 | Filesystem probes | Development checks inspect configured locations and test create/rename/cleanup behavior. These are not yet the production location-selection workflow. |
 
@@ -41,6 +45,9 @@ code from features qualified on the console.
 - `tests/store_*` and `tools/store-test.sh`: store-specific host checks.
 - `tools/store-smoke.py`: locked, bounded console validation with exact title,
   artifact verification, run tokens, exit checks, and service-health checks.
+- `tools/store-deploy.py` and `tools/store-console.py`: FTP-only install of a
+  frozen build verified by hash, and one scripted session (launch, requests such
+  as `install`, `uninstall`, `tour`, `stress`, clean quit, log collection).
 
 The background service currently uses separate catalog/detail and icon workers.
 The render thread consumes a bounded result queue. Curl handles retain reusable
@@ -96,9 +103,25 @@ local SDK cache are included in this source snapshot.
   and 12 icons, exited on its own development request, and left services healthy.
   After an initial loading spike, observed frame batches averaged 16.68 ms.
 
-These are cumulative development results, **not a claim that the latest complete
-source has passed every check on hardware**. The installed-inventory UI, native
-keyboard, and newest curl/artwork changes still need their full console scenarios.
+- 2026-10-03, two consoles, six scripted sessions, each ended by the app's own
+  quit with the console healthy afterwards:
+  - **Install**: Prospero Vibrate (2.7 MB, through GitHub's redirect) installed
+    from the app page; ShadowMountPlus registered it half a minute later.
+    Prospero Explorer (app files at the top of the ZIP) installed too.
+  - **Update**: the same app, set one version back on the console, was found as
+    an update and replaced; receipt and the console's staged `param.json` followed.
+  - **Uninstall**: folder and receipt gone, nothing left in the work folders.
+  - **Running check**: the store lists `/mnt/sandbox` and finds itself there.
+  - **Frames at 4K**: after the first second, every 600-frame window had all
+    600 frames in the 60 Hz bucket (worst 17.6 ms) while a tour moved the focus
+    and opened pages, during an install, with the icon budget cut to six
+    textures, and with the catalog multiplied to 1000 apps (one 30 ms frame
+    when the 1000 were set).
+  - Texture cost on the frame: create about 1.0 ms, new pixels 0.9 ms, delete 0.02 ms.
+
+The native keyboard, an update refused because the app is running, and a power
+cut during a transaction have not been exercised on a console (the last two are
+covered by host tests).
 
 Raw build logs, screenshots, console captures, and generated packages remain
 local in ignored `build/`, `results/`, and `dist/` directories. `PLAN.md` contains
@@ -106,32 +129,20 @@ the compact milestone index; those local evidence paths are not GitHub downloads
 
 ## Known limitations and unresolved investigations
 
-1. Automated launch remains unresolved. The protocol controller now initializes
-   its context size and reports the native result (separate protocol commit
-   `09eebf4`). The latest case reported `0x80940010` before a later app launch;
-   it proves the observed lifecycle, not that the controller fix succeeded.
-   Manual app launches work according to the owner. The current smoke runner
-   requires an explicit successful native launch acknowledgement.
-2. Steady 60 fps across all required scenarios is not qualified. Logs from a
-   console session on 2026-10-03 showed two to four frames over 100 ms in every
-   600 (up to 1.9 s) while the focus moved, and the same icons loaded up to
-   nine times: pictures were deleted when they left the screen and made again
-   when they came back. Since then every picture is uploaded once and kept
-   (icons, full-size artwork and QR codes), the rest of the catalog loads in
-   the background, the log is buffered and written by its own thread, and the
-   splash picture stays until the first frame. These changes are not yet
-   measured on a console.
+1. Automated launch works with the protocol's launch controller once the title
+   is registered (six of six sessions on 2026-10-03); the controller's reply can
+   still read `0x80940010` while the app starts, so the runner waits for the
+   app's own first-frame line instead of trusting the reply.
+2. The stalls seen on 2026-10-03 (frames over 100 ms while moving, icons loaded
+   up to nine times) are gone on the console: see the frame results above. The
+   cause was work on the frame around pictures and an unbuffered log on `/data`.
 3. Installed scans run after catalog refresh attempts, so network failures can
    delay initial library discovery. Local-only entries currently use placeholders.
-4. The install engine exists and passes its host tests (hostile archives, every
-   refusal, a simulated power cut at every step of install, update and
-   uninstall, and fuzzing of the ZIP and JSON readers), but it has never run on
-   a console. Development builds connect it to the product page; release builds
-   do not. Still missing: the running-title check (the owner supplies the call;
-   until then every update and uninstall is refused), a queue screen, location
-   selection (new installs go to `/data/homebrew`), a confirmation when the
-   store is closed during a job (closing cancels it cleanly), a scripted
-   install request for console runs, and self-update.
+4. Still missing around installs: a queue screen (the queue itself works and
+   shows on cards and in the top bar), location selection (new installs go to
+   `/data/homebrew`), and self-update (the store refuses to change its own
+   folder; a newer listed store is announced by the notice). The home screen's
+   title name comes from the console's database and is not changed by an update.
 5. Settings/location selection, first-run notices, localization, full accessibility
    and polish review, interruption tests, and release soak testing remain open.
 
@@ -142,8 +153,8 @@ the compact milestone index; those local evidence paths are not GitHub downloads
 | M1 | Production location selection and read-only/unavailable-drive gates. |
 | M2 | Real artifact verification, bounded download streaming, retry/resume qualification. |
 | M3 | Native keyboard, latest artwork/cache behavior, offline browsing, and performance qualification. |
-| M4 | Engine done on the host (validation/limits, space checks, extraction, atomic activation, refusal tests, fuzzing). The installer worker and the page's install, progress and cancel are in development builds. Remaining: a queue screen and a real install on a console. |
-| M5 | Complete inventory/image handling, safe receipt cleanup, running-title guard, update/uninstall, and recall actions. |
+| M4 | Done on a console except a queue screen. |
+| M5 | Update, uninstall and the running-title guard are done. Remaining: image handling, stale-receipt cleanup, recall actions. |
 | M6 | Self-update gate and workflow. |
 | M7 | Journal recovery, interruption simulation at each mutation, removed-drive and network-failure handling. |
 | M8 | Settings, languages, notices, and final interface polish. |

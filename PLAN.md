@@ -333,7 +333,7 @@ Made by the owner on 2026-10-02 unless marked as a default.
 | D6 | Filesystem access uses the boilerplate's elevation mechanism. |
 | D7 | Networking is libcurl with OpenSSL and the console's certificate list (the boilerplate's `console_curl.c`): `sceHttp` can't reach public sites from an elevated app (3.2). |
 | D8 | After an install, the store tells the user ShadowMountPlus will add the app; it doesn't wait for or verify the registration. |
-| D9 | A running app is never updated or uninstalled. The owner supplies the system call that reports whether a title is running. |
+| D9 | A running app is never updated or uninstalled. The check is the title's sandbox folder (`/mnt/sandbox/<TITLEID>_<n>`), which the elevated store can list (owner, 2026-10-03: the store finds this out itself). |
 | D10 | After the store updates itself, it asks the user to restart it. If replacing itself can't be made safe, telling the user to update it by hand is acceptable. |
 | D11 | The store does not launch apps. |
 | D12 | Apps installed outside the store are listed with a note that the store doesn't manage them. No actions on them. |
@@ -946,6 +946,7 @@ To be confirmed and listed in `THIRD_PARTY_NOTICES.md` when each is added.
 - 2026-10-02 | M4 engine | (this commit) | host | partial-pass: verified download, archive rules, space checks, install/update/uninstall, journal recovery with a cut at every step, fuzzing; sanitized tests, native build | build/store-test.log | installer worker, queue and screens; console install
 - 2026-10-02 | M8 look, notice | (this commit) | host | partial-pass: Storefront layout in Glass Orchard colours, coming-soon picture, update notice; snapshots reviewed, tests, native build | build/snapshots | console frame time with the aurora backdrop and glass
 - 2026-10-02 | M4 installer | (this commit) | host | partial-pass: installer worker, queue, progress, cancel, recovery at start, page actions and uninstall confirmation in development builds; service test, snapshots, native build | build/store-test.log | first install on a console with a test title; running check (D9)
+- 2026-10-03 | M4/M5 | 7c7ee17 | PS5 6.02, two consoles | passed: install (two archive layouts), update with staged metadata refreshed, uninstall, running titles listed; 600/600 frames at 60 Hz in every window after start, during a tour, an install, a six-texture budget and 1000 apps; six sessions, each ended by the app's quit, consoles healthy | session logs kept locally | queue screen, location setting, self-update
 - 2026-10-03 | M3 performance | (this commit) | PS5 log + host | finding: frames over 100 ms (max 1.9 s) and repeated icon loads while moving, from texture create/delete on the frame; fix: pictures kept for the session, buffered log, splash to first frame, UI library at 456cf57; tests, lint on changed files, native build | results of the owner's session on the second console | measure on a console
 
 | Repository | Role |

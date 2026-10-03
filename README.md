@@ -4,9 +4,8 @@ A native PS5 app store for the homebrew catalog at
 [homebrew.page](https://homebrew.page): browse, install, uninstall and update
 apps with the controller. Title ID `PPSA99000`.
 
-Development is in progress; this is not a release. The native storefront,
-verified catalog cache, and diagnostic foundation are implemented. Installing,
-updating, and uninstalling are not enabled yet. **[PLAN.md](PLAN.md)** is the implementation plan: scope,
+Development is in progress; this is not a release. Browsing, installing,
+updating and uninstalling work and have run on a console. **[PLAN.md](PLAN.md)** is the implementation plan: scope,
 what is known about the console and how well, the owner's decisions, the
 design, the milestones and the open questions.
 
@@ -41,10 +40,11 @@ code for the app's page, release notes, and source repository.
 The screens follow the UI library's Storefront design in the Farlight
 colours: a featured banner, section chips, a grid of cards and a product page.
 When the catalog lists a newer ProsperoStore, a notice appears in the top-right
-corner for ten seconds. The install engine (`src/install/`) is implemented and
-tested on the host. Development builds connect it to the app page (Install,
-progress, Cancel); it has not run on a console yet, so release builds keep it
-off. Updates and uninstalls stay refused until the running-app check exists.
+corner for ten seconds. On an app's page Cross installs, updates or uninstalls it (Square uninstalls
+when an update is offered); progress shows on the page, on the app's card and in
+the top bar, and Cross cancels. An app that is running can't be updated or
+uninstalled until it is closed. Nothing is changed in an app's folder until the
+download has been checked against the signed catalog and unpacked.
 
 Installed scans the configured ShadowMountPlus locations without changing them.
 Only folders with matching store receipts are managed; duplicate title IDs

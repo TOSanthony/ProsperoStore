@@ -142,7 +142,6 @@ int main()
     store::Service service(elevated ? storage_root : "",
                            read_content_version(app_root + "/sce_sys/param.json"));
 #ifdef STORE_INSTALLER
-    // The installer has not been qualified on a console yet: development builds only.
     service.installer = elevated;
     const char *installer_reason = "This console didn't grant permission to write, so nothing "
                                    "can be installed.";
