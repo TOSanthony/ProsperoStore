@@ -15,4 +15,6 @@ struct StorageProbe
 // Creates only an exclusive, hidden empty test directory and removes that directory.
 // No existing title or folder is renamed or deleted. Run on a worker.
 StorageProbe probe_storage(const std::string &root);
+// Free bytes on the filesystem holding an existing directory. Changes nothing.
+bool available_space(const std::string &directory, std::uint64_t &bytes);
 } // namespace store::system

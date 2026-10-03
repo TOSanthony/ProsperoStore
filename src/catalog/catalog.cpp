@@ -362,6 +362,96 @@ bool parse_receipt(std::string_view body, Receipt &out, std::string &error)
     return true;
 }
 
+namespace
+{
+void member(std::string &out, const char *key, std::string_view value)
+{
+    constexpr char digits[] = "0123456789abcdef";
+    out += out.size() > 1 ? ",\"" : "\"";
+    out += key;
+    out += "\":\"";
+    for (const unsigned char c : value)
+    {
+        if (c == '"' || c == '\\')
+        {
+            out += '\\';
+            out += static_cast<char>(c);
+        }
+        else if (c < 32 || c == 127)
+        {
+            out += "\\u00";
+            out += digits[c >> 4];
+            out += digits[c & 15];
+        }
+        else
+            out += static_cast<char>(c);
+    }
+    out += '"';
+}
+} // namespace
+
+std::string format_receipt(const Receipt &receipt)
+{
+    std::string out = "{";
+    out += "\"schema\":1";
+    member(out, "titleId", receipt.id);
+    member(out, "location", receipt.location);
+    member(out, "contentVersion", receipt.content_version);
+    member(out, "releaseTag", receipt.release_tag);
+    member(out, "sha256", receipt.digest);
+    member(out, "installedAt", receipt.installed_at);
+    return out + "}\n";
+}
+
+bool parse_journal(std::string_view body, Journal &out, std::string &error)
+{
+    error = "The transaction journal is invalid";
+    Json json;
+    auto *root = json.read(body, 16 * 1024, 1);
+    Journal candidate;
+    std::array<std::uint8_t, 32> digest{};
+    if (!root || !field(root, "operation", candidate.operation, 16, true) ||
+        !field(root, "state", candidate.state, 16, true) ||
+        !field(root, "titleId", candidate.id, 9, true) || !title_id(candidate.id) ||
+        !field(root, "location", candidate.location, 1023, true) ||
+        !field(root, "contentVersion", candidate.content_version, 10) ||
+        (!candidate.content_version.empty() && !version(candidate.content_version)) ||
+        !field(root, "releaseTag", candidate.release_tag, 128) ||
+        !field(root, "sha256", candidate.digest, 64) ||
+        (!candidate.digest.empty() && !hex_bytes(candidate.digest, digest)))
+        return false;
+    const auto &operation = candidate.operation;
+    const auto &state = candidate.state;
+    const bool placing = operation == "install" || operation == "update";
+    if (!(placing && state == "staging") && !(operation == "install" && state == "activate") &&
+        !(operation == "update" && state == "swap") &&
+        !(operation == "uninstall" && state == "remove"))
+        return false;
+    if ((state == "activate" || state == "swap") &&
+        (candidate.content_version.empty() || candidate.digest.empty()))
+        return false;
+    out = std::move(candidate);
+    error.clear();
+    return true;
+}
+
+std::string format_journal(const Journal &journal)
+{
+    std::string out = "{";
+    out += "\"schema\":1";
+    member(out, "operation", journal.operation);
+    member(out, "state", journal.state);
+    member(out, "titleId", journal.id);
+    member(out, "location", journal.location);
+    if (!journal.content_version.empty())
+        member(out, "contentVersion", journal.content_version);
+    if (!journal.release_tag.empty())
+        member(out, "releaseTag", journal.release_tag);
+    if (!journal.digest.empty())
+        member(out, "sha256", journal.digest);
+    return out + "}\n";
+}
+
 bool parse_versions(std::string_view body, std::map<std::string, std::string> &out,
                     std::string &error)
 {

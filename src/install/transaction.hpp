@@ -1,0 +1,73 @@
+// ProsperoStore - Install, update and uninstall as journaled transactions.
+// Copyright (C) 2026 BlackBearReloaded
+// SPDX-License-Identifier: GPL-3.0-or-later
+#pragma once
+#include "catalog/catalog.hpp"
+#include "net/http.hpp"
+#include "system/locations.hpp"
+#include <atomic>
+#include <cstdint>
+#include <functional>
+#include <string>
+
+namespace store::install
+{
+enum class Phase : int
+{
+    idle,
+    downloading,
+    verifying,
+    unpacking,
+    activating,
+    removing
+};
+struct Progress
+{
+    std::atomic<int> phase{static_cast<int>(Phase::idle)};
+    std::atomic<std::uint64_t> done{0}, total{0};
+};
+using Fetch = std::function<net::Response(const std::string &url, std::uint64_t limit,
+                                          const net::Sink &sink, net::Control &control)>;
+struct Environment
+{
+    std::string root; // The store's own state: receipts and the journal.
+    std::string self; // The store's title: never changed through these paths.
+    system::ScanPolicy policy;
+    Fetch fetch;
+    // 0: not running, 1: running, anything else: unknown. Unset means unknown,
+    // and unknown refuses every update and uninstall.
+    std::function<int(const std::string &id)> running;
+    // Defaults: the filesystem's free space, the clock, a cancellable sleep.
+    std::function<bool(const std::string &directory, std::uint64_t &bytes)> space;
+    std::function<std::string()> now;
+    std::function<void(unsigned seconds, const std::atomic<bool> &cancelled)> wait;
+    // Tests only. Work folder instead of <drive>/prosperostore, and a hook
+    // that returns true to stop dead at a named step, as a power cut would.
+    std::string work;
+    std::function<bool(const char *step)> interrupt;
+};
+struct Request
+{
+    catalog::Entry entry;        // The app's verified detail record.
+    std::string location;        // A folder ShadowMountPlus scans; used for a new install.
+    std::string minimum_version; // From the signed versions.json; empty when unknown.
+};
+struct Result
+{
+    bool ok = false;
+    bool interrupted = false;
+    std::string operation; // "install", "update", "uninstall", or what recovery found.
+    std::string version;   // The contentVersion now on disk.
+    std::string error;
+};
+// At every instant <location>/<TITLEID> is the complete old version, the
+// complete new version, or absent. Installs when the folder is absent, updates
+// when a matching receipt manages it, refuses anything else.
+Result apply(const Environment &environment, const Request &request, net::Control &control,
+             Progress &progress);
+Result uninstall(const Environment &environment, const std::string &id, const std::string &location,
+                 Progress &progress);
+// Run once at start, before any transaction: finishes or undoes what the
+// journal says was in progress.
+Result recover(const Environment &environment);
+} // namespace store::install

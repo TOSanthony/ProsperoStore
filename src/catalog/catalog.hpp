@@ -47,8 +47,18 @@ struct Receipt
     std::string id, location, content_version, release_tag, digest, installed_at;
 };
 
+// The one transaction in progress. content_version is the version being put in
+// place (empty until it has been read from the unpacked app).
+struct Journal
+{
+    std::string operation, state, id, location, content_version, release_tag, digest;
+};
+
 bool parse_installed(std::string_view body, Entry &out, std::string &error);
 bool parse_receipt(std::string_view body, Receipt &out, std::string &error);
+std::string format_receipt(const Receipt &receipt);
+bool parse_journal(std::string_view body, Journal &out, std::string &error);
+std::string format_journal(const Journal &journal);
 
 using PublicKey = std::array<std::uint8_t, 32>;
 std::array<PublicKey, 2> public_keys();

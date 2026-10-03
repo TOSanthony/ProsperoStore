@@ -61,6 +61,29 @@ int directory(const std::string &path, std::string *error = nullptr)
 }
 } // namespace
 
+bool available_space(const std::string &path, std::uint64_t &bytes)
+{
+    const int fd = open(path.c_str(), O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
+    if (fd < 0)
+        return false;
+    struct statfs filesystem
+    {
+    };
+#ifdef __linux__
+    const int measured = fstatfs(fd, &filesystem);
+#else
+    const int measured = store_fstatfs(fd, &filesystem);
+#endif
+    close(fd);
+    const auto blocks = static_cast<std::uint64_t>(filesystem.f_bavail);
+    const auto block_size = static_cast<std::uint64_t>(filesystem.f_bsize);
+    if (measured != 0 || block_size == 0 ||
+        blocks > std::numeric_limits<std::uint64_t>::max() / block_size)
+        return false;
+    bytes = blocks * block_size;
+    return true;
+}
+
 StorageProbe probe_storage(const std::string &root)
 {
     StorageProbe result;
