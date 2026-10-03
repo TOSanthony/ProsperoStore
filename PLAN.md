@@ -946,6 +946,7 @@ To be confirmed and listed in `THIRD_PARTY_NOTICES.md` when each is added.
 - 2026-10-02 | M4 engine | (this commit) | host | partial-pass: verified download, archive rules, space checks, install/update/uninstall, journal recovery with a cut at every step, fuzzing; sanitized tests, native build | build/store-test.log | installer worker, queue and screens; console install
 - 2026-10-02 | M8 look, notice | (this commit) | host | partial-pass: Storefront layout in Glass Orchard colours, coming-soon picture, update notice; snapshots reviewed, tests, native build | build/snapshots | console frame time with the aurora backdrop and glass
 - 2026-10-02 | M4 installer | (this commit) | host | partial-pass: installer worker, queue, progress, cancel, recovery at start, page actions and uninstall confirmation in development builds; service test, snapshots, native build | build/store-test.log | first install on a console with a test title; running check (D9)
+- 2026-10-03 | M3 performance | (this commit) | PS5 log + host | finding: frames over 100 ms (max 1.9 s) and repeated icon loads while moving, from texture create/delete on the frame; fix: pictures kept for the session, buffered log, splash to first frame, UI library at 456cf57; tests, lint on changed files, native build | results of the owner's session on the second console | measure on a console
 
 | Repository | Role |
 | --- | --- |

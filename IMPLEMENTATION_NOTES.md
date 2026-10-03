@@ -61,7 +61,9 @@ full image discovery parity, and stale-receipt cleanup remain incomplete.
 `FOUNDATIONS.json` records the complete adopted file sets and hashes:
 
 - Native boilerplate: `209914dc8a5ee67ff0bd044dfd40d18f877eae2c`.
-- Homebrew UI: `3cb6db940035614f86cabd87ebf6e21b14ff694e`.
+- Homebrew UI: the commit in `FOUNDATIONS.json` (the store's eight local UI commits
+  rebased on the library's `456cf57`: grid over a count, held-step, program build
+  times, `mkstemp` for the shader cache, splash held to the first frame).
 - Rendering uses the pinned ps5-opengl SDK 1.0.0 tooling configuration.
 
 Foundation files are imported as whole pinned sets. Generic fixes belong in the
@@ -110,11 +112,15 @@ the compact milestone index; those local evidence paths are not GitHub downloads
    it proves the observed lifecycle, not that the controller fix succeeded.
    Manual app launches work according to the owner. The current smoke runner
    requires an explicit successful native launch acknowledgement.
-2. Steady 60 fps across all required scenarios is not qualified. Earlier builds
-   had periodic stalls near one second. Synchronous driver profiling output is
-   a hypothesis; a profiling-disabled SDK experiment exists locally, but a
-   matched controlled comparison has not been completed. The latest frozen
-   package differed from the earlier control and cannot establish causality.
+2. Steady 60 fps across all required scenarios is not qualified. Logs from a
+   console session on 2026-10-03 showed two to four frames over 100 ms in every
+   600 (up to 1.9 s) while the focus moved, and the same icons loaded up to
+   nine times: pictures were deleted when they left the screen and made again
+   when they came back. Since then every picture is uploaded once and kept
+   (icons, full-size artwork and QR codes), the rest of the catalog loads in
+   the background, the log is buffered and written by its own thread, and the
+   splash picture stays until the first frame. These changes are not yet
+   measured on a console.
 3. Installed scans run after catalog refresh attempts, so network failures can
    delay initial library discovery. Local-only entries currently use placeholders.
 4. The install engine exists and passes its host tests (hostile archives, every

@@ -274,9 +274,13 @@ bool Screen::banner_shown() const
     return section_ == 0 && query_.empty() && !featured_.empty();
 }
 
-std::uint32_t Screen::art(const App &app) const
+std::uint32_t Screen::art(const App &app, bool large) const
 {
-    return app.icon ? app.icon : app.catalog_badge == "Coming soon" ? coming_soon_art_ : 0;
+    return large && app.art                     ? app.art
+           : app.icon                           ? app.icon
+           : app.art                            ? app.art
+           : app.catalog_badge == "Coming soon" ? coming_soon_art_
+                                                : 0;
 }
 
 void Screen::set_catalog(std::vector<App> apps, std::string status, bool current)
@@ -432,6 +436,23 @@ void Screen::set_icon(const std::string &id, std::uint32_t texture)
     for (auto &app : apps_)
         if (app.title_id == id)
             app.icon = texture;
+}
+
+void Screen::set_art(const std::string &id, std::uint32_t texture)
+{
+    for (auto &app : apps_)
+        if (app.title_id == id)
+            app.art = texture;
+}
+
+std::vector<std::string> Screen::artwork_backlog() const
+{
+    auto wanted = artwork();
+    for (const auto &app : apps_)
+        if (!app.local_only && !app.icon &&
+            std::find(wanted.begin(), wanted.end(), app.title_id) == wanted.end())
+            wanted.push_back(app.title_id);
+    return wanted;
 }
 
 void Screen::set_qr(std::string id, std::uint32_t texture, int width)
@@ -893,7 +914,7 @@ void Screen::draw_banner(const ui::Fonts &fonts)
         const Rect cover{b.x + b.w - 56.0f - 228.0f, b.y + 36.0f, 228.0f, 228.0f};
         list.glow(cover.inset(24.0f), 40, 110, kAccent.with_alpha(0.16f));
         list.shadow({cover.x, cover.y + 14.0f, cover.w, cover.h}, 26, 36, kBlack.with_alpha(0.5f));
-        if (const auto texture = art(app))
+        if (const auto texture = art(app, true))
             list.image(texture, cover, gfx::kFullUv, kWhite, 26);
         else
             list.rounded_rect(cover, 26, kInk.with_alpha(0.06f));
@@ -1399,7 +1420,7 @@ void Screen::draw_page(const ui::Fonts &fonts, std::uint32_t glass)
     const float alpha = tween::clamp01(t * 14.0f);
     list.shadow({cover.x, cover.y + 26.0f * t, cover.w, cover.h}, radius, 56,
                 kBlack.with_alpha(0.55f * veil));
-    if (const auto texture = art(app))
+    if (const auto texture = art(app, true))
         list.image(texture, cover, gfx::kFullUv, kWhite.with_alpha(alpha), radius);
     else
         list.gradient_rect(cover, radius, kInk.with_alpha(0.07f * alpha),

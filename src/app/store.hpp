@@ -35,6 +35,7 @@ struct App
     std::string catalog_badge = {}, available_version = {};
     std::vector<system::InstalledApp> installed = {};
     bool local_only = false;
+    std::uint32_t art = 0; // the full-size picture, once the page has asked for it
 };
 
 // What the page asks the installer to do. The frame loop hands it to the
@@ -72,6 +73,10 @@ class Screen
     void set_detail(const catalog::Entry &entry);
     void set_detail_error(const std::string &id, std::string message);
     void set_icon(const std::string &id, std::uint32_t texture);
+    void set_art(const std::string &id, std::uint32_t texture);
+    // Every catalog app with a picture, the ones on screen first: the frame
+    // loop loads them all once and keeps them, so moving never waits.
+    std::vector<std::string> artwork_backlog() const;
     void set_qr(std::string id, std::uint32_t texture, int width);
     // The picture shown for a coming-soon app that has no artwork of its own.
     void set_coming_soon_art(std::uint32_t texture)
@@ -154,7 +159,7 @@ class Screen
     const App *focused() const;
     const App *page_app() const;
     bool banner_shown() const;
-    std::uint32_t art(const App &app) const;
+    std::uint32_t art(const App &app, bool large = false) const;
     float chips_rest() const;
     float chips_y() const;
     float grid_top() const;

@@ -145,12 +145,27 @@ int main()
     InputTracker input;
     FrameStats stats;
     std::int64_t previous = sys::monotonic_us();
-    sys::hide_splash_screen();
     sys::log("[STORE] interactive width=%d height=%d", display.width(), display.height());
     bool first_swap = true;
-    std::map<std::string, std::uint32_t> textures;
-    std::uint32_t qr_texture = 0;
-    std::vector<std::string> wanted_icons, requested_icons;
+    // Pictures are uploaded once and kept for the session. Creating and
+    // deleting textures while the focus moves stalled frames for over a
+    // second on the console, so nothing is deleted on the way.
+    struct Art
+    {
+        std::uint32_t icon = 0, large = 0, code = 0;
+        int code_width = 0;
+        std::string hash;
+    };
+    std::map<std::string, Art> textures;
+    std::map<std::string, std::string> hashes; // the current catalog's icon hashes
+    const auto release = [](Art &art)
+    {
+        for (auto *texture : {&art.icon, &art.large, &art.code})
+            if (*texture)
+                glDeleteTextures(1, texture);
+        art = {};
+    };
+    std::vector<std::string> requested_icons;
     std::uint64_t catalog_generation = 0;
     std::vector<store::Update> updates;
     ps5::Ime keyboard;
@@ -173,14 +188,24 @@ int main()
             updates.erase(updates.begin());
             if (update.kind == store::Update::Kind::catalog)
             {
-                for (const auto &[id, texture] : textures)
-                {
-                    (void)id;
-                    glDeleteTextures(1, &texture);
-                }
-                textures.clear();
                 requested_icons.clear();
                 catalog_generation = update.generation;
+                hashes.clear();
+                for (const auto &entry : update.snapshot.entries)
+                    if (!entry.icon.empty())
+                        hashes[entry.id] = entry.icon_hash;
+                // Only a picture that changed, or whose app left the catalog, goes.
+                for (auto it = textures.begin(); it != textures.end();)
+                {
+                    const auto listed = hashes.find(it->first);
+                    if (listed == hashes.end() || listed->second != it->second.hash)
+                    {
+                        release(it->second);
+                        it = textures.erase(it);
+                    }
+                    else
+                        ++it;
+                }
                 std::vector<store::App> apps;
                 for (const auto &entry : update.snapshot.entries)
                 {
@@ -195,6 +220,11 @@ int main()
                                             : "Read only: install permission unavailable • " +
                                                   update.message,
                                    update.snapshot.online);
+                for (const auto &[id, art] : textures)
+                {
+                    screen.set_icon(id, art.icon);
+                    screen.set_art(id, art.large);
+                }
             }
             else if (update.kind == store::Update::Kind::inventory)
                 screen.set_inventory(std::move(update.installed));
@@ -204,50 +234,44 @@ int main()
                 screen.finish_job(update.ok, std::move(update.message), std::move(update.detail));
             else if (update.kind == store::Update::Kind::icon)
             {
-                if (update.generation == catalog_generation &&
-                    std::find(wanted_icons.begin(), wanted_icons.end(), update.entry.id) !=
-                        wanted_icons.end() &&
-                    !textures.contains(update.entry.id))
+                const auto listed = hashes.find(update.entry.id);
+                if (update.generation == catalog_generation && listed != hashes.end() &&
+                    !textures[update.entry.id].icon)
                 {
-                    const auto texture = renderer.batch().create_texture(
+                    auto &art = textures[update.entry.id];
+                    art.hash = listed->second;
+                    art.icon = renderer.batch().create_texture(
                         update.image.width, update.image.height, update.image.rgba.data());
-                    if (texture)
-                    {
-                        textures.emplace(update.entry.id, texture);
-                        screen.set_icon(update.entry.id, texture);
-                    }
+                    screen.set_icon(update.entry.id, art.icon);
                 }
             }
             else if (update.kind == store::Update::Kind::detail)
             {
                 screen.set_detail(update.entry);
-                if (!update.image.rgba.empty() &&
-                    std::find(wanted_icons.begin(), wanted_icons.end(), update.entry.id) !=
-                        wanted_icons.end())
+                const auto listed = hashes.find(update.entry.id);
+                if (!update.image.rgba.empty() && listed != hashes.end() &&
+                    !textures[update.entry.id].large)
                 {
-                    const auto texture = renderer.batch().create_texture(
+                    auto &art = textures[update.entry.id];
+                    art.hash = listed->second;
+                    art.large = renderer.batch().create_texture(
                         update.image.width, update.image.height, update.image.rgba.data());
-                    if (texture)
-                    {
-                        auto &previous = textures[update.entry.id];
-                        if (previous)
-                            glDeleteTextures(1, &previous);
-                        previous = texture;
-                        screen.set_icon(update.entry.id, texture);
-                    }
+                    screen.set_art(update.entry.id, art.large);
                 }
             }
             else if (update.kind == store::Update::Kind::qr)
             {
-                const auto texture = renderer.batch().create_texture(
-                    update.image.width, update.image.height, update.image.rgba.data());
-                if (texture)
+                // An app's code never changes: made the first time its page opens.
+                auto &art = textures[update.entry.id];
+                if (!art.code)
                 {
-                    if (qr_texture)
-                        glDeleteTextures(1, &qr_texture);
-                    qr_texture = texture;
-                    screen.set_qr(update.entry.id, texture, update.image.width);
+                    art.code = renderer.batch().create_texture(
+                        update.image.width, update.image.height, update.image.rgba.data());
+                    art.code_width = update.image.width;
+                    if (const auto listed = hashes.find(update.entry.id); listed != hashes.end())
+                        art.hash = listed->second;
                 }
+                screen.set_qr(update.entry.id, art.code, art.code_width);
             }
             else if (!update.entry.id.empty())
                 screen.set_detail_error(update.entry.id, update.message);
@@ -293,23 +317,15 @@ int main()
             keyboard_active = state == ps5::Ime::State::open;
         }
         screen.update(keyboard_owns_input ? InputFrame{} : frame, dt, feedback);
-        wanted_icons = screen.artwork();
-        for (auto it = textures.begin(); it != textures.end();)
-        {
-            if (std::find(wanted_icons.begin(), wanted_icons.end(), it->first) ==
-                wanted_icons.end())
-            {
-                screen.set_icon(it->first, 0);
-                glDeleteTextures(1, &it->second);
-                it = textures.erase(it);
-            }
-            else
-                ++it;
-        }
+        // What is on screen first, then the rest of the catalog, sixteen at a time.
         std::vector<std::string> missing;
-        for (const auto &id : wanted_icons)
-            if (!textures.contains(id))
+        for (const auto &id : screen.artwork_backlog())
+        {
+            const auto found = textures.find(id);
+            if (missing.size() < 16 && hashes.contains(id) &&
+                (found == textures.end() || !found->second.icon))
                 missing.push_back(id);
+        }
         if (missing != requested_icons && service.request_icons(missing))
             requested_icons = std::move(missing);
         for (const auto &cue : feedback.cues)
@@ -326,6 +342,8 @@ int main()
         }
         if (first_swap)
         {
+            // The console's splash picture stays up until there is a frame to show.
+            sys::hide_splash_screen();
             sys::log("[STORE] first-swap ok");
             first_swap = false;
         }
@@ -347,14 +365,12 @@ int main()
         pthread_join(request_thread, nullptr);
     audio.stop();
     pad.close();
-    if (qr_texture)
-        glDeleteTextures(1, &qr_texture);
     if (coming_soon_texture)
         glDeleteTextures(1, &coming_soon_texture);
-    for (const auto &[id, texture] : textures)
+    for (auto &[id, art] : textures)
     {
         (void)id;
-        glDeleteTextures(1, &texture);
+        release(art);
     }
     renderer.release();
     display.close();

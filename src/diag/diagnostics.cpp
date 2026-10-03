@@ -4,7 +4,9 @@
 #include "diag/diagnostics.hpp"
 #include "core/save_file.hpp"
 #include "../../examples/crash-report/crash_report.hpp"
+#include <atomic>
 #include <cstdio>
+#include <pthread.h>
 #include <unistd.h>
 
 extern "C" int sceSystemServiceLoadExec(const char *, const char **);
@@ -15,6 +17,22 @@ namespace
 void lifecycle(bool restart)
 {
     sceSystemServiceLoadExec(restart ? "/app0/eboot.bin" : "exit", nullptr);
+}
+// The log is buffered and written out five times a second from here. An
+// unbuffered log on /data cost the render thread tens of milliseconds for
+// every line the OpenGL runtime prints; at most a fifth of a second of log
+// is lost if the app dies.
+std::atomic<bool> flushing{false};
+pthread_t flusher{};
+void *flush_log(void *)
+{
+    while (flushing.load())
+    {
+        std::fflush(stdout);
+        std::fflush(stderr);
+        usleep(200000);
+    }
+    return nullptr;
 }
 void rotate(const std::string &path)
 {
@@ -38,13 +56,23 @@ bool start(const std::string &root)
         std::freopen(log.c_str(), "a", stdout) && std::freopen(log.c_str(), "a", stderr);
     if (redirected)
     {
-        std::setvbuf(stdout, nullptr, _IONBF, 0);
-        std::setvbuf(stderr, nullptr, _IONBF, 0);
+        std::setvbuf(stdout, nullptr, _IOFBF, 64 * 1024);
+        std::setvbuf(stderr, nullptr, _IOFBF, 16 * 1024);
+        flushing = true;
+        if (pthread_create(&flusher, nullptr, flush_log, nullptr) != 0)
+        {
+            flushing = false;
+            std::setvbuf(stdout, nullptr, _IONBF, 0);
+            std::setvbuf(stderr, nullptr, _IONBF, 0);
+        }
     }
     return redirected && crash_report::install(directory.c_str(), "01.000.000", lifecycle);
 }
 void stop()
 {
+    if (flushing.exchange(false))
+        pthread_join(flusher, nullptr);
+    std::fflush(nullptr);
     crash_report::stop();
 }
 bool recovered()
