@@ -81,6 +81,7 @@ constexpr Rect kPageIcon{96.0f, 146.0f, 144.0f, 144.0f};
 constexpr float kInfoX = 96.0f;
 constexpr float kInfoW = 900.0f;
 constexpr Rect kActionBox{1336.0f, 212.0f, 488.0f, 604.0f};
+constexpr Rect kPageHero{96.0f, 84.0f, 212.0f, 212.0f}; // the icon, when it is the app's picture
 constexpr float kButtonRadius = 18.0f;
 
 constexpr const char *kSectionNames[] = {"Discover",    "Apps",      "Games",  "Tools",
@@ -587,7 +588,20 @@ void Screen::set_background(const std::string &id, std::uint32_t texture)
 {
     for (auto &app : apps_)
         if (app.title_id == id)
+        {
             app.background = texture;
+            app.ambient = false;
+        }
+}
+
+void Screen::set_ambient(const std::string &id, std::uint32_t texture)
+{
+    for (auto &app : apps_)
+        if (app.title_id == id && (app.ambient || !app.background))
+        {
+            app.background = texture;
+            app.ambient = texture != 0;
+        }
 }
 
 void Screen::set_accent(const std::string &id, Color accent)
@@ -1347,16 +1361,26 @@ void Screen::draw_stage(const ui::Fonts &fonts)
     draw_art(list, stage_, full, stage_previous_ >= 0 ? fade : 1.0f, 0);
     const auto icon_stage = [&](int index, float alpha)
     {
-        if (index < 0 || alpha <= 0.01f || apps_[static_cast<std::size_t>(index)].background)
+        if (index < 0 || alpha <= 0.01f)
             return;
         const App &app = apps_[static_cast<std::size_t>(index)];
-        const Rect cover{1200.0f, 136.0f, 440.0f, 440.0f};
-        list.glow(cover.inset(30.0f), 60, 200, app.accent.with_alpha(0.32f * alpha));
-        list.shadow({cover.x, cover.y + 26.0f, cover.w, cover.h}, 44, 64,
+        if (app.background && !app.ambient)
+            return;
+        // The icon is the picture: large, floating a little over its own colours.
+        const float bob = 7.0f * std::sin(time_ * 0.9f);
+        const Rect cover{1252.0f, 240.0f + bob, 352.0f, 352.0f};
+        list.glow(cover.inset(-10.0f), 90, 230,
+                  gfx::mix(app.accent, kInk, 0.18f).with_alpha(0.4f * alpha));
+        list.shadow({cover.x + 60.0f, 606.0f, cover.w - 120.0f, 18.0f}, 9, 30.0f - bob,
                     kBlack.with_alpha(0.55f * alpha));
+        list.shadow({cover.x, cover.y + 30.0f, cover.w, cover.h}, 40, 70,
+                    kBlack.with_alpha(0.5f * alpha));
         if (const auto texture = art(app, true))
-            list.image(texture, cover, gfx::kFullUv, kWhite.with_alpha(alpha), 44);
-        list.bordered_rect(cover, 44, kClear, 1.5f, kInk.with_alpha(0.16f * alpha));
+            list.image(texture, cover, gfx::kFullUv, kWhite.with_alpha(alpha), 78);
+        // A sheen across its top: an object under light, not a sticker.
+        list.gradient_rect({cover.x, cover.y, cover.w, cover.h * 0.46f}, 78,
+                           kWhite.with_alpha(0.1f * alpha), kWhite.with_alpha(0.0f));
+        list.bordered_rect(cover, 78, kClear, 1.5f, kInk.with_alpha(0.2f * alpha));
     };
     if (stage_previous_ >= 0 && fade < 1.0f)
         icon_stage(stage_previous_, 1.0f - fade);
@@ -1522,7 +1546,8 @@ void Screen::draw_tile(const ui::Fonts &fonts, int k, unsigned layers)
     auto &list = scene_;
     const std::size_t index = visible_[static_cast<std::size_t>(k)];
     const App &app = apps_[index];
-    const bool keyart = app.background != 0;
+    const bool picture = app.background != 0;   // key art, or the field made from the icon
+    const bool keyart = picture && !app.ambient; // a picture that speaks for itself
     // Fitting allocates: once per app, the first time it is drawn.
     if (auto &fit = fits_[index]; !fit.ready)
         fit = {fonts.semibold.font->fit(app.name, 24, kTileW - 100.0f),
@@ -1533,6 +1558,7 @@ void Screen::draw_tile(const ui::Fonts &fonts, int k, unsigned layers)
     list.push_transform(1.0f + kLift * lift, r.cx(), r.cy(), shake * nudge_x_,
                         shake * nudge_y_ + 18.0f * (1.0f - in));
     const float top = in * fade_at(r.y + 1.0f), foot = in * fade_at(r.y + r.h);
+    const float middle = in * fade_at(r.y + r.h * 0.4f); // where a centred icon sits
     const float light = 0.74f + 0.26f * lift; // resting tiles sit back a little
     const float shown = appear_[index].value;
     if (layers & kPlates)
@@ -1548,12 +1574,13 @@ void Screen::draw_tile(const ui::Fonts &fonts, int k, unsigned layers)
     }
     if (layers & kImages)
     {
-        if (keyart)
-        {
+        if (picture)
             // The picture darkens toward its foot, where the words go.
             list.image_gradient(app.background, r, gfx::kFullUv, Color{light, light, light, top},
                                 Color{light * 0.36f, light * 0.36f, light * 0.4f, foot},
                                 kTileRadius);
+        if (keyart)
+        {
             if (app.icon)
                 list.image(app.icon, {r.x + 16.0f, r.y + r.h - 64.0f, 48.0f, 48.0f}, gfx::kFullUv,
                            kWhite.with_alpha(foot), 11.0f);
@@ -1562,7 +1589,7 @@ void Screen::draw_tile(const ui::Fonts &fonts, int k, unsigned layers)
         {
             const float size = r.h * 0.48f;
             list.image(texture, {r.cx() - size * 0.5f, r.y + r.h * 0.4f - size * 0.5f, size, size},
-                       gfx::kFullUv, kWhite.with_alpha(std::min(top, foot) * shown), size * 0.22f);
+                       gfx::kFullUv, kWhite.with_alpha(middle * shown), size * 0.22f);
         }
     }
     const bool queued = std::find(activity_.waiting.begin(), activity_.waiting.end(),
@@ -1574,6 +1601,13 @@ void Screen::draw_tile(const ui::Fonts &fonts, int k, unsigned layers)
         if (keyart && app.icon)
             list.bordered_rect({r.x + 16.0f, r.y + r.h - 64.0f, 48.0f, 48.0f}, 11, kClear, 1.0f,
                                kInk.with_alpha(0.22f * foot));
+        else if (picture && art(app) && shown > 0.01f)
+        {
+            const float size = r.h * 0.48f;
+            list.bordered_rect({r.cx() - size * 0.5f, r.y + r.h * 0.4f - size * 0.5f, size, size},
+                               size * 0.22f, kClear, 1.0f,
+                               kInk.with_alpha(0.2f * middle * shown));
+        }
         if ((working || queued) && foot > 0.01f)
         {
             const Offer state = offer(app);
@@ -2292,7 +2326,7 @@ void Screen::draw_page(const ui::Fonts &fonts, std::uint32_t glass)
     const float slide = 44.0f * (1.0f - tween::cubic_out(t));
     list.push_opacity(content);
     list.push_transform(1.0f, 0, 0, slide, 0);
-    if (app.background)
+    if (app.background && !app.ambient)
     {
         list.shadow({kPageIcon.x, kPageIcon.y + 16.0f, kPageIcon.w, kPageIcon.h}, 30, 40,
                     kBlack.with_alpha(0.55f));
@@ -2352,12 +2386,16 @@ void Screen::draw_page(const ui::Fonts &fonts, std::uint32_t glass)
     }
 
     // An app without key art: its icon flies from the tile to the page.
-    if (!app.background)
+    if (!app.background || app.ambient)
     {
         const float size = from.h * 0.48f;
         const Rect icon_from{from.cx() - size * 0.5f, from.y + from.h * 0.4f - size * 0.5f, size, size};
-        const Rect cover = lerp(icon_from, kPageIcon, open);
-        const float radius = tween::lerp(size * 0.22f, 30.0f, open);
+        const Rect to = app.ambient ? kPageHero : kPageIcon;
+        const Rect cover = lerp(icon_from, to, open);
+        const float radius = tween::lerp(size * 0.22f, to.w * 0.21f, open);
+        if (app.ambient)
+            list.glow(cover.inset(-6.0f), radius + 6.0f, 110,
+                      gfx::mix(app.accent, kInk, 0.18f).with_alpha(0.34f * veil));
         list.shadow({cover.x, cover.y + 18.0f * t, cover.w, cover.h}, radius, 40,
                     kBlack.with_alpha(0.55f * veil));
         if (const auto texture = art(app, true))
@@ -2810,7 +2848,7 @@ void Screen::draw_panel(const ui::Fonts &fonts, std::uint32_t glass)
             list.gradient_rect(thumb, 12, gfx::mix(accent, kMid, 0.25f), gfx::mix(accent, kDeep, 0.85f));
             if (app && app->background)
                 list.image(app->background, thumb, gfx::kFullUv, kWhite, 12);
-            else if (app && art(*app))
+            if (app && (!app->background || app->ambient) && art(*app))
                 list.image(art(*app), {thumb.cx() - 30.0f, thumb.cy() - 30.0f, 60.0f, 60.0f},
                            gfx::kFullUv, kWhite, 13);
             list.bordered_rect(thumb, 12, kClear, 1.0f, kInk.with_alpha(0.18f));

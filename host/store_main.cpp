@@ -2,6 +2,7 @@
 // Copyright (C) 2026 BlackBearReloaded
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+#include "app/ambient.hpp"
 #include "app/store.hpp"
 #include "catalog/client.hpp"
 #include "catalog/icons.hpp"
@@ -263,7 +264,22 @@ int main(int argc, char **argv)
                     renderer.batch().create_texture(image.width, image.height, image.rgba.data());
                 textures.push_back(texture);
                 screen.set_icon(entry.id, texture);
-                // An app without key art leans toward its icon's average colour.
+                // Its own picture, made from the icon, and the colour the screen leans toward.
+                std::uint32_t vivid = 0;
+                const auto ambient = store::make_ambient(image, vivid);
+                if (!ambient.rgba.empty())
+                {
+                    const auto field = renderer.batch().create_texture(ambient.width, ambient.height,
+                                                                       ambient.rgba.data());
+                    textures.push_back(field);
+                    screen.set_ambient(entry.id, field);
+                }
+                if (vivid)
+                {
+                    screen.set_accent(entry.id, hui::gfx::Color::rgb(vivid));
+                    continue;
+                }
+                // A grey icon: its average colour.
                 double sum[3] = {0, 0, 0}, weight = 0;
                 for (std::size_t i = 0; i + 3 < image.rgba.size(); i += 4 * 7)
                 {
@@ -295,8 +311,11 @@ int main(int argc, char **argv)
                         accents[id] = static_cast<unsigned>(std::stoul(body.substr(key + 11, 6), nullptr, 16));
                 }
             }
+            // STORE_NO_ART: every app as if it shipped no key art, the icon-led look.
             for (const auto &entry : snapshot.entries)
             {
+                if (std::getenv("STORE_NO_ART"))
+                    break;
                 std::string encoded;
                 hui::Image image;
                 if (!hui::save::read_file(art + "/" + entry.id + ".png", &encoded, 8u << 20) ||

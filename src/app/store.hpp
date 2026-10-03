@@ -41,6 +41,7 @@ struct App
     // The app's key art (its home-screen background, 16:9) and the colour the
     // screen leans toward while it is in focus.
     std::uint32_t background = 0;
+    bool ambient = false; // the background was made from the icon (make_ambient)
     hui::gfx::Color accent = hui::gfx::Color::rgb(0x42358f);
     std::uint64_t size = 0;
 };
@@ -94,6 +95,8 @@ class Screen
     void set_icon(const std::string &id, std::uint32_t texture);
     void set_art(const std::string &id, std::uint32_t texture);
     void set_background(const std::string &id, std::uint32_t texture);
+    // The field made from the app's icon; key art drawn for the store wins over it.
+    void set_ambient(const std::string &id, std::uint32_t texture);
     void set_accent(const std::string &id, hui::gfx::Color accent);
     // Every catalog app with a picture, the ones on screen first: the frame
     // loop loads them all once and keeps them, so moving never waits.
