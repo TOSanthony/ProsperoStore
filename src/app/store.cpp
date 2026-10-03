@@ -1085,7 +1085,11 @@ void Screen::draw_top_bar(const ui::Fonts &fonts)
         // A transaction is running: a turning arc, what it is doing, and to whom.
         std::string line = std::string(phase) + " " + busy->name;
         if (progress >= 0.0f)
+        {
             line += "  " + std::to_string(static_cast<int>(progress * 100.0f)) + "%";
+            if (const auto left = time_left(); !left.empty())
+                line += "  \xC2\xB7  " + left;
+        }
         const float width =
             ui::text(list, fonts.semibold, fonts.semibold.font->fit(line, 22, 760.0f), kRight,
                      centred(kTopY, 22), 22, kInk, gfx::Align::right);
@@ -1474,6 +1478,45 @@ bool Screen::remote_order()
     return true;
 }
 
+void Screen::set_activity(Activity activity)
+{
+    // The speed is measured over half-second steps and smoothed, so the time
+    // left settles instead of jumping with every block that arrives.
+    const bool same = activity.id == activity_.id && activity.phase == activity_.phase &&
+                      activity.done >= rate_done_;
+    if (!same)
+    {
+        rate_ = 0.0f;
+        rate_time_ = time_;
+        rate_done_ = activity.done;
+    }
+    else if (time_ - rate_time_ >= 0.5f)
+    {
+        const float speed = static_cast<float>(activity.done - rate_done_) / (time_ - rate_time_);
+        rate_ = rate_ > 0.0f ? rate_ * 0.75f + speed * 0.25f : speed;
+        rate_time_ = time_;
+        rate_done_ = activity.done;
+    }
+    activity_ = std::move(activity);
+}
+
+// "about 40 s left", "about 3 min left"; nothing until the speed is known.
+std::string Screen::time_left() const
+{
+    if (rate_ < 1024.0f || activity_.total <= activity_.done)
+        return {};
+    const float seconds = static_cast<float>(activity_.total - activity_.done) / rate_;
+    if (seconds < 8.0f)
+        return "a few seconds left";
+    if (seconds < 55.0f)
+        return "about " + std::to_string(static_cast<int>(std::ceil(seconds / 5.0f)) * 5) +
+               " s left";
+    if (seconds < 3600.0f * 3.0f)
+        return "about " + std::to_string(static_cast<int>(std::ceil(seconds / 60.0f))) +
+               " min left";
+    return {};
+}
+
 void Screen::set_installer(bool available, bool guard, std::string reason, std::string location)
 {
     installer_ = available;
@@ -1525,6 +1568,8 @@ Screen::Offer Screen::offer(const App &app) const
             out.progress = tween::clamp01(static_cast<float>(activity_.done) /
                                           static_cast<float>(activity_.total));
             out.note = megabytes(activity_.done) + " of " + megabytes(activity_.total);
+            if (const auto left = time_left(); !waiting && !left.empty())
+                out.note += "  \xC2\xB7  " + left;
         }
         else
             out.note = waiting ? "Queued behind another app" : "One moment";
@@ -2134,7 +2179,11 @@ void Screen::draw_panel(const ui::Fonts &fonts, std::uint32_t glass)
                 busy_app(progress, phase);
             std::string line = phase;
             if (working && progress >= 0.0f)
+            {
                 line += "  " + megabytes(activity_.done) + " of " + megabytes(activity_.total);
+                if (const auto left = time_left(); !left.empty())
+                    line += "  \xC2\xB7  " + left;
+            }
             ui::text(list, fonts.regular, line, row.x + 32.0f, row.y + 80.0f, 22,
                      kInk.with_alpha(0.62f));
             const Rect track{row.x + row.w - 560.0f, row.cy() - 4.0f, 400.0f, 8.0f};

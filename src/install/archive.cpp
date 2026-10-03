@@ -10,6 +10,8 @@
 #include <cstring>
 #include <fcntl.h>
 #include <limits>
+#include <pthread.h>
+#include <time.h>
 #include <set>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -284,12 +286,42 @@ bool make_parents(const std::string &base, std::string_view relative, bool last_
     }
 }
 
+std::uint64_t now_ms()
+{
+    timespec time{};
+    clock_gettime(CLOCK_MONOTONIC, &time);
+    return static_cast<std::uint64_t>(time.tv_sec) * 1000u +
+           static_cast<std::uint64_t>(time.tv_nsec) / 1000000u;
+}
+
+// The inflater hands over 32 KB at a time. Small writes are slow on the
+// console's storage, so they are gathered and written a few megabytes at once.
 struct Output
 {
     int descriptor;
     std::uint64_t expected, written = 0;
     const std::atomic<bool> &cancelled;
     std::atomic<std::uint64_t> &total;
+    std::vector<char> &buffer;
+    std::size_t held = 0;
+    std::uint64_t write_ms = 0;
+    bool flush()
+    {
+        const auto started = now_ms();
+        std::size_t done = 0;
+        while (done < held)
+        {
+            const auto result = write(descriptor, buffer.data() + done, held - done);
+            if (result < 0 && errno == EINTR)
+                continue;
+            if (result <= 0)
+                return false;
+            done += static_cast<std::size_t>(result);
+        }
+        held = 0;
+        write_ms += now_ms() - started;
+        return true;
+    }
 };
 std::size_t write_output(void *opaque, mz_uint64 offset, const void *data, std::size_t count)
 {
@@ -297,20 +329,64 @@ std::size_t write_output(void *opaque, mz_uint64 offset, const void *data, std::
     if (output.cancelled.load() || offset != output.written ||
         count > output.expected - output.written)
         return 0;
-    std::size_t done = 0;
-    while (done < count)
+    const char *bytes = static_cast<const char *>(data);
+    std::size_t taken = 0;
+    while (taken < count)
     {
-        const auto result =
-            write(output.descriptor, static_cast<const char *>(data) + done, count - done);
-        if (result < 0 && errno == EINTR)
-            continue;
-        if (result <= 0)
+        const std::size_t room = output.buffer.size() - output.held;
+        const std::size_t piece = std::min(room, count - taken);
+        std::memcpy(output.buffer.data() + output.held, bytes + taken, piece);
+        output.held += piece;
+        taken += piece;
+        if (output.held == output.buffer.size() && !output.flush())
             return 0;
-        done += static_cast<std::size_t>(result);
     }
     output.written += count;
     output.total.fetch_add(count);
     return count;
+}
+
+// Every unpacked file must be on the disk before the app is put in place: a
+// power cut must never leave an installed app with empty files. Asking for
+// that file by file, as each is written, costs a fraction of a second apiece
+// on the console, which is minutes for an app of thousands of files. So the
+// files are written first and made durable together at the end, by several
+// workers at once, which lets the filesystem commit them in groups.
+struct SyncWork
+{
+    const std::vector<std::string> *paths;
+    std::atomic<std::size_t> next{0};
+    std::atomic<bool> failed{false};
+    const std::atomic<bool> *cancelled;
+};
+void *sync_worker(void *opaque)
+{
+    auto &work = *static_cast<SyncWork *>(opaque);
+    for (;;)
+    {
+        const std::size_t index = work.next.fetch_add(1);
+        if (index >= work.paths->size() || work.failed.load() || work.cancelled->load())
+            return nullptr;
+        const int descriptor = open((*work.paths)[index].c_str(), O_RDONLY | O_NOFOLLOW);
+        if (descriptor < 0 || fsync(descriptor) != 0)
+            work.failed = true;
+        if (descriptor >= 0)
+            close(descriptor);
+    }
+}
+bool sync_files(const std::vector<std::string> &paths, const std::atomic<bool> &cancelled)
+{
+    SyncWork work{&paths, {}, {}, &cancelled};
+    pthread_t workers[8];
+    std::size_t started = 0;
+    for (auto &worker : workers)
+        if (pthread_create(&worker, nullptr, sync_worker, &work) == 0)
+            workers[started++] = worker;
+    if (started == 0)
+        sync_worker(&work);
+    for (std::size_t i = 0; i < started; ++i)
+        pthread_join(workers[i], nullptr);
+    return !work.failed.load() && !cancelled.load();
 }
 } // namespace
 
@@ -333,8 +409,12 @@ bool inspect_archive(const std::string &path, std::string_view title, ArchiveInf
 
 bool extract_archive(const std::string &path, std::string_view title,
                      const std::string &destination, const std::atomic<bool> &cancelled,
-                     std::atomic<std::uint64_t> &written, std::string &error)
+                     std::atomic<std::uint64_t> &written, std::string &error, ExtractTimes *times)
 {
+    const auto started = now_ms();
+    std::vector<char> buffer(4u << 20);
+    std::vector<std::string> files;
+    std::uint64_t write_ms = 0;
     Reader reader;
     std::vector<Entry> entries;
     ArchiveInfo info;
@@ -364,27 +444,42 @@ bool extract_archive(const std::string &path, std::string_view title,
             continue;
         const std::string target = destination + "/" + entry.relative;
         Output output{open(target.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0644),
-                      entry.size, 0, cancelled, written};
+                      entry.size,
+                      0,
+                      cancelled,
+                      written,
+                      buffer};
         if (output.descriptor < 0)
             return false;
         // The reader checks the stored CRC-32; the callback enforces the declared size.
         bool ok = mz_zip_reader_extract_to_callback(reader.zip(), entry.index, write_output,
                                                     &output, 0) != 0 &&
                   output.written == output.expected;
-        ok = fsync(output.descriptor) == 0 && ok;
+        ok = ok && output.flush();
         ok = close(output.descriptor) == 0 && ok;
+        write_ms += output.write_ms;
         if (!ok)
         {
             if (cancelled.load())
                 error = "Cancelled";
             return false;
         }
+        files.push_back(target);
+    }
+    const auto syncing = now_ms();
+    if (!sync_files(files, cancelled))
+    {
+        if (cancelled.load())
+            error = "Cancelled";
+        return false;
     }
     for (const auto &directory : made)
         if (!sync_directory(destination + "/" + directory))
             return false;
     if (!sync_directory(destination))
         return false;
+    if (times)
+        *times = {write_ms, now_ms() - syncing, now_ms() - started, files.size()};
     error.clear();
     return true;
 }

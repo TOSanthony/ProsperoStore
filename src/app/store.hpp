@@ -102,10 +102,7 @@ class Screen
     // whether running apps can be told apart (updates and uninstalls need it),
     // and the scanned folder new apps go to.
     void set_installer(bool available, bool guard, std::string reason, std::string location);
-    void set_activity(Activity activity)
-    {
-        activity_ = std::move(activity);
-    }
+    void set_activity(Activity activity);
     void finish_job(bool ok, bool restart, std::string title, std::string body);
     void set_settings(Settings settings)
     {
@@ -242,6 +239,7 @@ class Screen
     void draw_panel(const hui::ui::Fonts &fonts, std::uint32_t glass);
     void write_about();
     const App *self_app() const;
+    std::string time_left() const;
     void draw_action_box(const hui::ui::Fonts &fonts, std::uint32_t glass, const App &app,
                          float content);
 
@@ -250,6 +248,9 @@ class Screen
     hui::ui::ToastStack toasts_;
     hui::ui::Dialog dialog_;
     Activity activity_;
+    // How fast the running phase moves, smoothed, for the time left.
+    float rate_ = 0.0f, rate_time_ = 0.0f;
+    std::uint64_t rate_done_ = 0;
     Settings settings_;
     std::vector<std::pair<std::string, std::uint64_t>> locations_;
     std::string self_id_, self_version_, self_location_ = "/data/homebrew";

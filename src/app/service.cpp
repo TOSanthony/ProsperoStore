@@ -433,9 +433,9 @@ void Service::run_installer()
             result = install::apply(
                 environment, {job.entry, job.location, minimum, job.entry.id == environment.self},
                 job_control_, progress_);
-        hui::sys::log("[STORE] job id=%s operation=%s ok=%d version=%s error=%s",
+        hui::sys::log("[STORE] job id=%s operation=%s ok=%d version=%s error=%s %s",
                       job.entry.id.c_str(), result.operation.c_str(), result.ok,
-                      result.version.c_str(), result.error.c_str());
+                      result.version.c_str(), result.error.c_str(), result.note.c_str());
         Update done;
         done.kind = Update::Kind::job;
         done.entry.id = job.entry.id;

@@ -410,7 +410,13 @@ int main(int argc, char **argv)
                     textures.push_back(texture);
                     screen.set_qr(entry.id, texture, qr.width);
                     if (mode == "detail-progress")
+                    {
+                        // Two samples a second apart give the page a speed, and so a time left.
+                        screen.set_activity({entry.id, 1, entry.size / 5, entry.size, {}});
+                        for (int frame = 0; frame < 60; ++frame)
+                            screen.update({}, 1.0f / 60.0f, feedback);
                         screen.set_activity({entry.id, 1, entry.size * 2 / 5, entry.size, {}});
+                    }
                     if (mode == "detail-armed")
                     {
                         // Cross asks for the install of exactly this verified record.

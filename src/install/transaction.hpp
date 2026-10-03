@@ -72,6 +72,7 @@ struct Result
     std::string operation; // "install", "update", "uninstall", or what recovery found.
     std::string version;   // The contentVersion now on disk.
     std::string error;
+    std::string note; // For the log: where the time went.
 };
 // At every instant <location>/<TITLEID> is the complete old version, the
 // complete new version, or absent. Installs when the folder is absent, updates

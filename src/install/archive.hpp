@@ -24,9 +24,16 @@ struct ArchiveInfo
 // duplicates and anything over the limits are refused.
 bool inspect_archive(const std::string &path, std::string_view title, ArchiveInfo &out,
                      std::string &error);
+// Where the time of an unpack went, for the log.
+struct ExtractTimes
+{
+    std::uint64_t write_ms = 0, sync_ms = 0, total_ms = 0;
+    std::size_t files = 0;
+};
 // Unpacks the title's folder as destination, which must not exist. On failure
 // the caller removes destination. written counts unpacked bytes for progress.
 bool extract_archive(const std::string &path, std::string_view title,
                      const std::string &destination, const std::atomic<bool> &cancelled,
-                     std::atomic<std::uint64_t> &written, std::string &error);
+                     std::atomic<std::uint64_t> &written, std::string &error,
+                     ExtractTimes *times = nullptr);
 } // namespace store::install

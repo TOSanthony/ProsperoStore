@@ -410,8 +410,13 @@ Result apply(const Environment &environment, const Request &request, net::Contro
     progress.total = info.unpacked;
     progress.done = 0;
     progress.phase = static_cast<int>(Phase::unpacking);
-    if (!extract_archive(paths.archive, id, paths.staged, control.cancelled, progress.done, error))
+    ExtractTimes times;
+    if (!extract_archive(paths.archive, id, paths.staged, control.cancelled, progress.done, error,
+                         &times))
         return abandon(error);
+    result.note =
+        "files=" + std::to_string(times.files) + " unpack_ms=" + std::to_string(times.total_ms) +
+        " write_ms=" + std::to_string(times.write_ms) + " sync_ms=" + std::to_string(times.sync_ms);
     STORE_STEP("unpacked");
     if (!remove_tree(paths.archive))
         return abandon("The staging folder could not be cleaned");
