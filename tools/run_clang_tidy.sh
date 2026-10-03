@@ -22,6 +22,13 @@ read -r -a app_definitions <<< "${APP_DEFINITIONS:-}"
 read -r -a app_includes <<< "${APP_INCLUDE_PATHS:-}"
 for value in "${app_definitions[@]}"; do app_flags+=("-D$value"); done
 for value in "${app_includes[@]}"; do app_flags+=("-I$root/$value"); done
+if [[ -n ${PACBREW_PACKAGES:-} ]]; then
+    read -r -a packages <<< "$PACBREW_PACKAGES"
+    resolved=$(bash "$root/tools/setup-pacbrew-dependencies.sh" --resolve "${packages[@]}")
+    mapfile -d '' package_flags < <(python3 -c \
+        'import json,sys; [print(v, end="\0") for v in json.loads(sys.argv[1])["cflags"]]' "$resolved")
+    app_flags+=("${package_flags[@]}")
+fi
 
 mapfile -d '' host_sources < <(find "$root/tooling/native" -maxdepth 1 \
     -type f -name '*.cpp' ! -name 'app_crt.cpp' ! -name 'app_cpp_runtime.cpp' -print0)
@@ -40,7 +47,7 @@ mapfile -d '' app_c_sources < <(find "$root/src" -path "$root/src/third_party" -
     -o -type f -name '*.c' -print0)
 if (( ${#app_c_sources[@]} )); then
     "$tidy" "${app_c_sources[@]}" --quiet --warnings-as-errors='*' -- \
-        -std=c11 "${app_flags[@]}" -isystem "$sdk/target/include"
+        -std=c11 --target=x86_64-sie-ps5 "${app_flags[@]}" -isystem "$sdk/target/include"
 fi
 
 mapfile -d '' app_cpp_sources < <(find "$root/src" -path "$root/src/third_party" -prune -o -type f \

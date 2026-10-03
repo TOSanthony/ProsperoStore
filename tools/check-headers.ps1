@@ -34,6 +34,7 @@ $markers = @(
 $missing = @()
 
 foreach ($file in $files) {
+    if ($file -like 'third_party/*' -or $file -like 'src/third_party/*') { continue }
     $path = Join-Path $root $file
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
         $missing += "$file (missing file)"

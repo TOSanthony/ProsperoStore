@@ -12,8 +12,9 @@
 
 namespace store::net
 {
-// Console startup only: snapshot system trust before elevation and workers.
-int prepare_system_trust();
+// Console startup/shutdown, outside the worker lifetime.
+int start_transport(bool elevated);
+void stop_transport();
 enum class Purpose
 {
     catalog,

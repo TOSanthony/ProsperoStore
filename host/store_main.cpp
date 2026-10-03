@@ -4,6 +4,7 @@
 
 #include "app/store.hpp"
 #include "catalog/client.hpp"
+#include "catalog/icons.hpp"
 #include "gfx/gl_program.hpp"
 
 #include <EGL/egl.h>
@@ -49,6 +50,7 @@ int main(int argc, char **argv)
         if (!renderer.init() || !fonts.load(renderer, argv[1]) || !target.create(1920, 1080, 1))
             return 5;
         store::Screen screen;
+        std::vector<GLuint> textures;
         if (argc == 4)
         {
             store::catalog::Client catalog(argv[3]);
@@ -65,6 +67,24 @@ int main(int argc, char **argv)
                                 entry.version, entry.status == "coming_soon" ? "Coming soon" : "",
                                 0});
             screen.set_catalog(std::move(apps), "Verified catalog");
+            store::catalog::Icons icons(std::string(argv[3]) + "/icons");
+            store::net::Control control;
+            for (const auto &entry : snapshot.entries)
+            {
+                hui::Image image;
+                if (!icons.cached(entry, image))
+                {
+                    std::string encoded;
+                    const auto response = store::net::fetch(
+                        entry.icon, store::net::Purpose::catalog, 2u << 20, encoded, control);
+                    if (!response.ok() || !icons.store(entry, encoded, image))
+                        continue;
+                }
+                const auto texture =
+                    renderer.batch().create_texture(image.width, image.height, image.rgba.data());
+                textures.push_back(texture);
+                screen.set_icon(entry.id, texture);
+            }
         }
         hui::ui::Feedback feedback;
         for (int frame = 0; frame < 120; ++frame)
@@ -81,6 +101,7 @@ int main(int argc, char **argv)
         std::printf("Snapshot: %s GL=0x%x draws=%zu\n", argv[2], error, renderer.last_draw_calls());
         if (error != GL_NO_ERROR)
             return 7;
+        glDeleteTextures(static_cast<GLsizei>(textures.size()), textures.data());
     }
     eglMakeCurrent(display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
     eglDestroyContext(display, context);

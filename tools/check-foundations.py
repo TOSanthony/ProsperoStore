@@ -17,4 +17,7 @@ for dependency in json.loads((root / "third_party/STORE_SOURCES.json").read_text
     for name, digest in dependency["files"].items():
         if hashlib.sha256((root / name).read_bytes()).hexdigest() != digest:
             raise SystemExit("Vendored source changed in place: " + name)
-print(f"Verified {len(expected)} unchanged foundation files")
+for license in json.loads((root / "third_party/PACBREW_LICENSES.json").read_text()):
+    if hashlib.sha256((root / license["file"]).read_bytes()).hexdigest() != license["sha256"]:
+        raise SystemExit("Dependency license changed: " + license["file"])
+print(f"Verified {len(expected)} unchanged foundation files and dependency licenses")

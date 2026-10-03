@@ -4,7 +4,7 @@
 
 #include "net/http.hpp"
 #include "platform/ps5/system.hpp"
-#include "../../../examples/https-trust/https_trust.hpp"
+#include "net/curl_request.hpp"
 #include <algorithm>
 #include <vector>
 
@@ -40,16 +40,23 @@ namespace store::net
 {
 namespace
 {
-std::string system_roots;
-}
-int prepare_system_trust()
+bool elevated_transport = false;
+bool curl_ready = false;
+} // namespace
+int start_transport(bool elevated)
 {
-    const int ssl = sceSslInit(2 * 1024 * 1024);
-    if (ssl < 0)
-        return ssl;
-    const int result = https_trust::read_builtin_roots(ssl, system_roots);
-    const int released = sceSslTerm(ssl);
-    return result < 0 ? result : released;
+    elevated_transport = elevated;
+    if (!elevated)
+        return 0;
+    const auto result = curl_global_init(CURL_GLOBAL_DEFAULT);
+    curl_ready = result == CURLE_OK;
+    return curl_ready ? 0 : -static_cast<int>(result);
+}
+void stop_transport()
+{
+    if (curl_ready)
+        curl_global_cleanup();
+    curl_ready = false;
 }
 void Control::cancel()
 {
@@ -62,6 +69,20 @@ void Control::cancel()
 Response request_once(const std::string &url, std::uint64_t limit, const Sink &sink,
                       Control &control, const std::string &etag)
 {
+    if (elevated_transport)
+    {
+        if (!curl_ready)
+        {
+            Response failure;
+            failure.error = "The secure network transport is unavailable";
+            return failure;
+        }
+        auto result =
+            curl_request(url, limit, sink, control, etag, "/system/common/cert/CA_LIST.cer");
+        hui::sys::log("[STORE] curl status=%d bytes=%llu error=%s", result.status,
+                      static_cast<unsigned long long>(result.bytes), result.error.c_str());
+        return result;
+    }
     struct Resources
     {
         int pool = -1, ssl = -1, http = -1, tmpl = -1, connection = -1, request = -1;
@@ -92,12 +113,6 @@ Response request_once(const std::string &url, std::uint64_t limit, const Sink &s
         result = resources.ssl = sceSslInit(2 * 1024 * 1024);
     if (result >= 0)
         result = resources.http = sceHttpInit(resources.pool, resources.ssl, 4 * 1024 * 1024);
-    if (result >= 0)
-    {
-        result = https_trust::load_pem_roots(resources.http, system_roots);
-        if (result < 0)
-            out.error = "The system certificate store could not be loaded";
-    }
     if (result >= 0)
         result = resources.tmpl =
             sceHttpCreateTemplate(resources.http, "ProsperoStore/01.000.000", 2, 0);

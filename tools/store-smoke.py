@@ -12,6 +12,38 @@ import subprocess
 import threading
 import time
 import uuid
+import sys
+
+
+def complete_run(receipt, token):
+    markers = [f"[STORE] run start token={token}",
+               "[STORE] interactive width=3840 height=2160", "[STORE] first-swap ok",
+               f"[STORE] remote clean exit token={token}", "[STORE] teardown complete",
+               f"[STORE] run end token={token}"]
+    start, end = markers[0].encode(), markers[-1].encode()
+    if receipt.count(start) != 1 or receipt.count(end) != 1:
+        return False
+    position = -1
+    for marker in markers:
+        position = receipt.find(marker.encode(), position + 1)
+        if position < 0:
+            return False
+    return True
+
+
+if sys.argv[1:] == ["--self-test"]:
+    valid = (b"[STORE] run start token=test\n"
+             b"[STORE] interactive width=3840 height=2160\n[STORE] first-swap ok\n"
+             b"[STORE] remote clean exit token=test\n[STORE] teardown complete\n"
+             b"[STORE] run end token=test\n")
+    assert complete_run(valid, "test")
+    assert not complete_run(valid, "other")
+    assert not complete_run(valid + valid, "test")
+    assert not complete_run(valid.replace(b"remote clean exit", b"shell close"), "test")
+    assert not complete_run(valid.replace(b"teardown complete", b"interrupted"), "test")
+    assert not complete_run(b"[STORE] teardown complete\n" + valid.replace(
+        b"[STORE] teardown complete\n", b""), "test")
+    raise SystemExit(0)
 
 parser = argparse.ArgumentParser(__doc__)
 parser.add_argument("--host", required=True)
@@ -21,6 +53,7 @@ parser.add_argument("--ui-tools", type=Path, required=True)
 parser.add_argument("--results", type=Path, required=True)
 parser.add_argument("--close-prior", help="Exact previously identified title to close before the case")
 parser.add_argument("--sandbox-control", action="store_true")
+parser.add_argument("--require-catalog", action="store_true")
 args = parser.parse_args()
 root = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("console_tour", args.ui_tools / "console-tour.py")
@@ -39,6 +72,8 @@ args.results.mkdir(parents=True, exist_ok=False)
 manifest = {str(path.relative_to(package)): hashlib.sha256(path.read_bytes()).hexdigest() for path in files}
 (args.results / "candidate.json").write_text(json.dumps({
     "commit": commit, "files": manifest,
+    "package_sha256": hashlib.sha256((root / "dist" / (title + ".zip")).read_bytes()).hexdigest(),
+    "require_catalog": args.require_catalog,
     "transport_sha256": hashlib.sha256((args.ui_tools / "console-tour.py").read_bytes()).hexdigest()
 }, indent=2))
 token = "prosperostore-" + uuid.uuid4().hex
@@ -103,6 +138,7 @@ try:
         data = console.read(remote + "/" + relative)
         if data is None or hashlib.sha256(data).hexdigest() != digest:
             raise RuntimeError("Remote verification failed: " + relative)
+    console.write(remote + "/dev/run.txt", token.encode())
     console.close()
     console = None
     result["classification"] = "inconclusive"
@@ -121,6 +157,9 @@ try:
         log = console.read(log_root + "/app.log") or log
         (args.results / "app.log").write_bytes(log)
         crash = console.read(log_root + "/crash-latest.txt")
+        names = console.names("/mnt/sandbox")
+        if names is None or not any(name.startswith(title + "_") for name in names):
+            raise RuntimeError("Candidate stopped before the requested exit; inspect evidence")
         if crash:
             (args.results / "crash.txt").write_bytes(crash)
         console.close()
@@ -146,13 +185,17 @@ try:
         line for line in lifecycle.decode(errors="replace").splitlines() if title in line))
     if closed:
         console.ftp.sendcmd("DELE " + remote + "/dev/request.txt")
+        console.ftp.sendcmd("DELE " + remote + "/dev/run.txt")
     healthy = all(transport.port_open(args.host, port) for port in (2121, 3232, 9021))
     result.update(closed=closed, healthy=healthy)
-    required = (b"interactive width=3840 height=2160", b"first-swap ok", b"teardown complete")
     done.set()
     logger.join(timeout=5)
-    receipts = log + (args.results / "klog.txt").read_bytes()
-    passed = closed and healthy and all(marker in receipts for marker in required)
+    klog = (args.results / "klog.txt").read_bytes()
+    passed = closed and healthy and complete_run(klog, token)
+    if passed and args.require_catalog:
+        current_run = klog.split(f"[STORE] run start token={token}".encode(), 1)[1]
+        current_run = current_run.split(f"[STORE] run end token={token}".encode(), 1)[0]
+        passed = b"[STORE] catalog verified=1 online=1" in current_run
     result["classification"] = "pass" if passed else "failed"
     if not passed:
         raise RuntimeError("Startup or teardown criterion failed; inspect saved evidence")

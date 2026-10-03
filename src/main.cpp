@@ -26,6 +26,7 @@ namespace
 std::atomic<bool> quit{false};
 std::string request_path;
 std::string handled_path;
+std::string run_token;
 
 void *development_requests(void *)
 {
@@ -59,8 +60,6 @@ int main()
 {
     using namespace hui;
     sys::log("[STORE] PPSA99000 startup");
-    const int trust = store::net::prepare_system_trust();
-    sys::log("[STORE] system trust snapshot rc=0x%08x", static_cast<unsigned>(trust));
 #ifdef STORE_SANDBOX_CONTROL
     const auto elevation_status = elevation::Status::unavailable;
 #else
@@ -75,7 +74,13 @@ int main()
     handled_path = std::string(storage_root) + "/handled.txt";
     if (!store::diag::start(storage_root))
         sys::log("[STORE] persistent diagnostics unavailable");
+#ifdef STORE_DEVELOPMENT
+    hui::save::read_file(app_root + "/dev/run.txt", &run_token, 64);
+    sys::log("[STORE] run start token=%s", run_token.c_str());
+#endif
     sys::log("[STORE] elevation status=%u", static_cast<unsigned>(elevation_status));
+    const int transport = store::net::start_transport(elevation_status == elevation::Status::ok);
+    sys::log("[STORE] transport startup rc=0x%08x", static_cast<unsigned>(transport));
     ps5::Display display;
     if (!display.open(3840, 2160))
     {
@@ -174,6 +179,7 @@ int main()
     }
     quit.store(true);
     service.stop();
+    store::net::stop_transport();
     if (requests_started)
         pthread_join(request_thread, nullptr);
     audio.stop();
@@ -181,6 +187,9 @@ int main()
     renderer.release();
     display.close();
     sys::log("[STORE] teardown complete");
+#ifdef STORE_DEVELOPMENT
+    sys::log("[STORE] run end token=%s", run_token.c_str());
+#endif
     store::diag::stop();
     sys::quit();
 }

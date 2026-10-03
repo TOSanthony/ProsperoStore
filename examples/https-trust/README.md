@@ -1,4 +1,10 @@
-# HTTPS after filesystem elevation
+# Explicit platform certificate import
+
+**Console limitation (6.02):** explicit imports succeed, but they do not repair
+elevated `sceHttp` requests to homebrew.page. The native known-CA lookup still
+reads its sandbox-relative bundle even when that root was explicitly imported.
+The request fails with `0x8095f00c`; this helper is not an elevated-HTTPS fix.
+Use a separately validated transport rather than disabling certificate checks.
 
 The SSL library's normal sandbox-relative certificate path can become
 unreachable after elevation. Keep certificate verification enabled. Call

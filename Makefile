@@ -68,7 +68,11 @@ doctor:
 	@printf '%s\n' '==> [doctor] Checking the Linux/WSL host without changing it'
 	@bash tools/doctor.sh
 
-test: test-unit test-integration test-elevation test-update-check test-crash-report test-https-trust
+test: test-unit test-integration test-elevation test-update-check test-crash-report test-https-trust test-pacbrew-curl
+
+.PHONY: test-pacbrew-curl
+test-pacbrew-curl:
+	@bash tools/test-pacbrew-curl.sh
 
 .PHONY: test-https-trust
 test-https-trust:

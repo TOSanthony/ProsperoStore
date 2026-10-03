@@ -27,9 +27,23 @@ for record, argument in zip(records, sys.argv[1:]):
     tracked = subprocess.check_output(["git", "-C", str(source), "ls-files"], text=True).splitlines()
     if record["repository"].endswith("/ps5-native-app-boilerplate"):
         for name in tracked:
-            if name.startswith("examples/") or name in ("tests/test_crash_report.cpp", "tests/test_https_trust.cpp"):
+            if name.startswith("examples/") or name in ("tests/test_crash_report.cpp", "tests/test_https_trust.cpp", "tests/test_curl_time.cpp", "tests/test_curl_dns.c", "tools/test-pacbrew-curl.sh"):
                 record["files"].setdefault(name, "")
-    for name in record["files"]:
+    else:
+        for name in tracked:
+            if name.startswith("src/core/") or name in ("third_party/stb/stb_image.h", "third_party/stb/IMAGE_SOURCE.json"):
+                record["files"].setdefault(name, "")
+    for name in list(record["files"]):
+        destination = root / name
+        if not destination.resolve().is_relative_to(root):
+            raise SystemExit("Foundation path escapes the adopter")
+        if not (source / name).is_file():
+            if destination.exists():
+                if hashlib.sha256(destination.read_bytes()).hexdigest() != record["files"][name]:
+                    raise SystemExit("Refusing to remove a modified foundation file: " + name)
+                destination.unlink()
+            del record["files"][name]
+            continue
         (root / name).parent.mkdir(parents=True, exist_ok=True)
         if not (root / name).is_file() or (source / name).read_bytes() != (root / name).read_bytes():
             shutil.copyfile(source / name, root / name)

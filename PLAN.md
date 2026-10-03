@@ -896,6 +896,8 @@ To be confirmed and listed in `THIRD_PARTY_NOTICES.md` when each is added.
 - 2026-10-02 | M0 | 24601ac | host | partial-pass: signed catalog, offline cache, sanitizers, lint, native build | build/candidate-tests.log | console startup
 - 2026-10-02 | M0 | 61a38a3 | PS5 6.02 | failed: elevated startup, asset path failure, runtime released | results/m0-smoke-raw | correct post-elevation paths
 - 2026-10-02 | M0 | fa52645 | PS5 6.02 | partial-pass: 4K, audio, controller, clean exit; catalog fails and timing spikes | results/m0-smoke-paths | worker logging, HTTPS diagnostics
+- 2026-10-02 | M0/M2 | 59a7670 | PS5 6.02 | failed: 4K steady frames and app teardown; elevated TLS rejects root CA; console services lost after exit | results/m0-preserve-pem-roots | offline analysis; owner recovery requested, no automatic rerun
+- 2026-10-02 | M0 | 6bbf1e5 | PS5 6.02 | inconclusive: two launches, shell close; services healthy | results/recovery-control-6bbf1e5 | correlate each run with a unique token
 
 | Repository | Role |
 | --- | --- |

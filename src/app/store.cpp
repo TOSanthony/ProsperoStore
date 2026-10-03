@@ -78,6 +78,16 @@ void Screen::set_detail(const catalog::Entry &entry)
         }
 }
 
+void Screen::set_icon(const std::string &id, std::uint32_t texture)
+{
+    for (auto &app : apps_)
+        if (app.title_id == id)
+            app.icon = texture;
+    for (std::size_t i = 0; i < visible_.size(); ++i)
+        if (apps_[visible_[i]].title_id == id)
+            grid_.item(static_cast<int>(i)).texture = texture;
+}
+
 void Screen::update(const InputFrame &input, float dt, ui::Feedback &feedback)
 {
     time_ += dt;
