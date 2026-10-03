@@ -10,6 +10,9 @@ updating, and uninstalling are not enabled yet. **[PLAN.md](PLAN.md)** is the im
 what is known about the console and how well, the owner's decisions, the
 design, the milestones and the open questions.
 
+See [IMPLEMENTATION_NOTES.md](IMPLEMENTATION_NOTES.md) for completed work,
+validation results, known limitations, and the remaining implementation work.
+
 The catalog side is ready: the store reads the API at
 `https://homebrew.page/api/v1/`, specified in
 [the catalog's `docs/api.md`](https://github.com/blackbearreloaded/ps5-homebrew-catalog/blob/main/docs/api.md).
