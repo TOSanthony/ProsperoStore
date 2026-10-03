@@ -141,6 +141,32 @@ static void check_installed_sections()
     assert(screen.artwork() == std::vector<std::string>{app.title_id});
     screen.update(section, 1.0f / 60.0f, feedback);
     assert(screen.artwork() == std::vector<std::string>{app.title_id});
+    // Update all: Square asks for the details, then orders the update.
+    screen.set_installer(true, true, "", "/data/homebrew");
+    screen.set_running({}, true);
+    hui::InputFrame square;
+    square.pressed = hui::action_bit(hui::Action::west);
+    screen.update(square, 1.0f / 60.0f, feedback);
+    screen.update({}, 1.0f / 60.0f, feedback);
+    assert(screen.pending_detail == app.title_id);
+    assert(screen.pending_order.kind == store::Order::Kind::none);
+    store::catalog::Entry listed;
+    listed.id = app.title_id;
+    listed.format = "zip";
+    listed.digest = std::string(64, 'a');
+    screen.set_detail(listed);
+    screen.update({}, 1.0f / 60.0f, feedback);
+    assert(screen.pending_order.kind == store::Order::Kind::install);
+    assert(screen.pending_order.entry.digest == listed.digest);
+    assert(screen.pending_order.location == "/data/homebrew");
+    screen.pending_order = {};
+    screen.pending_detail.clear();
+    // A running app is passed over.
+    screen.set_running({app.title_id}, true);
+    screen.update(square, 1.0f / 60.0f, feedback);
+    screen.update({}, 1.0f / 60.0f, feedback);
+    assert(screen.pending_order.kind == store::Order::Kind::none);
+    screen.set_running({}, true);
     inventory.apps.front().managed = false;
     screen.set_inventory(inventory);
     assert(screen.artwork().empty());

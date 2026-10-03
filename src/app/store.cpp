@@ -664,6 +664,21 @@ void Screen::update_home(const InputFrame &input, ui::Feedback &feedback)
     }
     if (input.is_pressed(Action::page_next) || input.is_pressed(Action::page_prev))
         return step_section(input.is_pressed(Action::page_next) ? 1 : -1, false, feedback);
+    if (section_ == 6 && input.is_pressed(Action::west) && !visible_.empty())
+    {
+        // Update all: every update on this shelf, in the order shown.
+        if (!installer_ || !guard_)
+            return refuse(feedback, false, 0.0f, 1.0f);
+        update_all_.clear();
+        for (const auto index : visible_)
+            update_all_.push_back(apps_[index].title_id);
+        toasts_.push(ui::StatusKind::info,
+                     "Updating " + std::to_string(update_all_.size()) +
+                         (update_all_.size() == 1 ? " app" : " apps"),
+                     "Apps that are running are skipped.", 6.0f);
+        feedback.play(audio::Cue::select);
+        return;
+    }
 
     const int count = static_cast<int>(visible_.size());
     const int featured = static_cast<int>(featured_.size());
@@ -855,6 +870,28 @@ void Screen::update(const InputFrame &input, float dt, ui::Feedback &feedback)
         }
     }
     fresh_catalog_ = false;
+    // "Update all" hands the installer one app at a time: each needs its
+    // verified details first, and one that can't be updated now is passed over.
+    if (!update_all_.empty() && pending_order.kind == Order::Kind::none)
+    {
+        const auto &id = update_all_.front();
+        const auto found = std::find_if(apps_.begin(), apps_.end(),
+                                        [&](const auto &app) { return app.title_id == id; });
+        if (found == apps_.end() || found->badge != "Update" || !found->detail_error.empty())
+            update_all_.erase(update_all_.begin());
+        else if (!found->detail)
+        {
+            if (update_asked_ != id && pending_detail.empty())
+                pending_detail = update_asked_ = id;
+        }
+        else
+        {
+            const Offer state = offer(*found);
+            if (state.armed && !state.busy && state.primary == Order::Kind::install)
+                order(*found, Order::Kind::install);
+            update_all_.erase(update_all_.begin());
+        }
+    }
     if (dialog_.is_open())
     {
         // The question takes every input until it is answered.
@@ -1649,11 +1686,14 @@ void Screen::draw(gfx::Renderer &renderer, const ui::Fonts &fonts)
     scene_.pop_transform();
 
     const auto glyphs = ui::GlyphStyle::dark();
-    const ui::Hint home[] = {{ui::Button::cross, "Details"},
-                             {ui::Button::triangle, "Search"},
-                             {ui::Button::right_stick, "Sort"},
-                             {ui::Button::l1, "Sections", ui::Button::r1},
-                             {ui::Button::circle, "Close"}};
+    // On the Updates shelf Square takes them all.
+    const bool all = section_ == 6 && !visible_.empty() && installer_ && guard_;
+    const ui::Hint home[] = {
+        {ui::Button::cross, "Details"},
+        {all ? ui::Button::square : ui::Button::triangle, all ? "Update all" : "Search"},
+        {ui::Button::right_stick, "Sort"},
+        {ui::Button::l1, "Sections", ui::Button::r1},
+        {ui::Button::circle, "Close"}};
     // The page's row names the one thing Cross does for this app, when it can.
     const Offer state = focused() ? offer(*focused()) : Offer{};
     ui::Hint detail[5];

@@ -213,6 +213,10 @@ class Screen
     Activity activity_;
     std::vector<std::string> running_;
     std::string auto_order_;
+    // "Update all": the titles still to be asked for, one at a time, each
+    // once its verified details have arrived.
+    std::vector<std::string> update_all_;
+    std::string update_asked_;
     enum class Ask
     {
         none,
