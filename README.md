@@ -34,3 +34,8 @@ the store. Native keyboard integration still awaits console qualification.
 App pages show verified metadata, full-size artwork, and a scrolling article.
 Use the D-pad to scroll and Triangle to retry or refresh details. Scan the QR
 code for the app's page, release notes, and source repository.
+
+Installed scans the configured ShadowMountPlus locations without changing them.
+Only folders with matching store receipts are managed; duplicate title IDs
+and externally installed apps stay unmanaged. Updates lists newer catalog
+versions for managed folders. Image files are listed without mounting them.

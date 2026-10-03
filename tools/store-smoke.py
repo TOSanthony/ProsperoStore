@@ -37,6 +37,12 @@ def artwork_ready(receipt):
         rb"\[STORE\] frames=600 [^\r\n]* icons=(\d+)(?:\r?\n|$)", receipt))
 
 
+def launch_accepted(output, title):
+    results = re.findall(rb"\[launch\] title=" + title.encode() +
+                         rb" result=0x([0-9a-fA-F]{8})(?:\r?\n|$)", output)
+    return len(results) == 1 and int(results[0], 16) < 0x80000000
+
+
 if sys.argv[1:] == ["--self-test"]:
     valid = (b"[STORE] run start token=test\n"
              b"[STORE] interactive width=3840 height=2160\n[STORE] first-swap ok\n"
@@ -52,6 +58,10 @@ if sys.argv[1:] == ["--self-test"]:
     assert artwork_ready(b"[STORE] frames=600 mean=16.68ms icons=10\n")
     assert not artwork_ready(b"[STORE] frames=600 mean=16.68ms icons=0\n")
     assert not artwork_ready(b"icons=10\n")
+    assert launch_accepted(b"[launch] title=PPSA99000 result=0x60000001\n", "PPSA99000")
+    assert not launch_accepted(b"[launch] title=PPSA99000 result=0x80940010\n", "PPSA99000")
+    assert not launch_accepted(b"", "PPSA99000")
+    assert not launch_accepted(b"[launch] title=PPSA99001 result=0x00000000\n", "PPSA99000")
     raise SystemExit(0)
 
 parser = argparse.ArgumentParser(__doc__)
@@ -159,8 +169,8 @@ try:
         env={**os.environ, "PS5_PAYLOAD_SDK": str(root / ".deps/native/ps5-payload-sdk")},
         capture_output=True, timeout=60)
     (args.results / "launch.log").write_bytes(launched.stdout + launched.stderr)
-    if launched.returncode:
-        raise RuntimeError("Exact-title launch helper failed")
+    if launched.returncode or not launch_accepted(launched.stdout + launched.stderr, title):
+        raise RuntimeError("Exact-title launch was rejected or not acknowledged; inspect launch.log")
     print("Candidate verified; launch request sent, observing 60 seconds", flush=True)
     log = b""
     for _ in range(12):
