@@ -202,12 +202,15 @@ try:
     for step in steps:
         parts = step.split(":")
         verb, argument = parts[0], parts[1]
-        if verb != "wait" and not request(verb, argument):
+        # The app keeps its log in memory while a job runs, so the line that
+        # acknowledges a request can arrive together with the job's result.
+        watched = len(parts) >= 4 and parts[2].startswith("/")
+        mark = len(log(f))
+        if verb != "wait" and not request(verb, argument) and not watched:
             say(f"request not taken: {step}")
             break
-        if len(parts) >= 4 and parts[2].startswith("/"):
+        if watched:
             pattern, limit = re.compile(parts[2].strip("/")), float(parts[3])
-            mark = len(log(f))
             end = time.time() + limit
             hit = None
             while time.time() < end and not hit:

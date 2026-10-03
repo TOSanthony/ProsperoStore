@@ -3,6 +3,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 #include "catalog/catalog.hpp"
+#include "install/archive.hpp"
+#include "install/worker.hpp"
 #include "net/http.hpp"
 #include "system/locations.hpp"
 #include <atomic>
@@ -50,6 +52,17 @@ struct Environment
     // <registered>/appmeta/<TITLEID>). They are refreshed after an update, so a
     // new icon, name or background reaches the home screen.
     std::string registered = "/user";
+    // The console limits how fast an app may write to its storage, so the
+    // heavy file work is given to another process when these are set. Each
+    // returns 1 when done, 0 when it failed and -1 when it could not start
+    // (nothing touched): then the store does the work itself.
+    std::function<int(const std::string &archive, const std::string &title,
+                      const std::string &destination, const std::atomic<bool> &cancelled,
+                      std::atomic<std::uint64_t> &written, std::string &error, ExtractTimes &times)>
+        unpack;
+    std::function<int(const std::string &path)> remove;
+    // A download written by another process. False: write it here instead.
+    std::function<bool(const std::string &path, Writer &writer)> save;
     // Tests only. Work folder instead of <drive>/prosperostore, and a hook
     // that returns true to stop dead at a named step, as a power cut would.
     std::string work;

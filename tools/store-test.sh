@@ -46,8 +46,14 @@ clang++ -std=c++20 "${flags[@]}" -Wall -Wextra -Wpedantic -Werror -I"$root/src" 
     "$root/src/system/inventory.cpp" "$root/src/system/locations.cpp" \
     "$root/src/system/storage_probe.cpp" "$root/src/system/running.cpp" \
     "$root/src/catalog/catalog.cpp" \
+    "$root/src/install/worker.cpp" \
     "$root/src/core/save_file.cpp" "${objects[@]}" "${miniz[@]}" -o "$build/install-test"
-ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 "$build/install-test"
+# The file worker as a host program: the same sources the console payload is built from.
+clang++ -std=c++20 "${flags[@]}" -fno-exceptions -fno-rtti -Wall -Wextra -Wpedantic -Werror \
+    -I"$root/src" "$root/helper/main.cpp" "$root/src/install/archive.cpp" \
+    "$root/src/install/files.cpp" "$root/src/install/worker.cpp" "${miniz[@]}" -pthread \
+    -o "$build/store-worker"
+ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 "$build/install-test" "$build/store-worker"
 # Fuzz the ZIP and JSON readers from valid seeds. STORE_FUZZ_SECONDS=0 skips it.
 fuzz_seconds=${STORE_FUZZ_SECONDS:-20}
 if (( fuzz_seconds > 0 )); then
@@ -121,7 +127,7 @@ clang++ -std=c++20 "${flags[@]}" -Wall -Wextra -Wpedantic -Werror -I"$root/src" 
     "$root/src/core/image.cpp" "$root/src/core/save_file.cpp" "$root/host/platform_host.cpp" \
     "$root/src/install/archive.cpp" "$root/src/install/files.cpp" \
     "$root/src/install/transaction.cpp" "$root/src/system/storage_probe.cpp" \
-    "$root/src/system/running.cpp" \
+    "$root/src/system/running.cpp" "$root/src/install/worker.cpp" \
     "${objects[@]}" "${miniz[@]}" "$build/update_check.o" -pthread -o "$build/service-test"
 ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 "$build/service-test"
 clang++ -std=c++20 "${flags[@]}" -Wall -Wextra -Wpedantic -Werror -I"$root/src" \

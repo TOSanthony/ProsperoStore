@@ -183,6 +183,15 @@ void pause(const Environment &environment, unsigned seconds, const std::atomic<b
         usleep(100000);
 }
 
+// Removes a folder through the file worker when there is one, and by itself
+// otherwise or when the worker left something behind.
+bool discard(const Environment &environment, const std::string &path)
+{
+    if (environment.remove && kind(path) == Kind::directory && environment.remove(path) == 1)
+        return true;
+    return remove_tree(path);
+}
+
 // Downloads to path and accepts the file only when its size and SHA-256 are
 // the ones the signed catalog lists. Nothing else ever reads a partial file.
 bool download(const Environment &environment, const catalog::Entry &entry, const std::string &path,
@@ -196,11 +205,35 @@ bool download(const Environment &environment, const catalog::Entry &entry, const
             error = "The download could not be saved";
             return false;
         }
-        const int descriptor = open(path.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0600);
-        if (descriptor < 0)
+        Writer writer;
+        if (!environment.save || !environment.save(path, writer))
         {
-            error = "The download could not be saved";
-            return false;
+            const int descriptor =
+                open(path.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0600);
+            if (descriptor < 0)
+            {
+                error = "The download could not be saved";
+                return false;
+            }
+            writer.write = [descriptor](std::string_view chunk)
+            {
+                std::size_t done = 0;
+                while (done < chunk.size())
+                {
+                    const auto count = write(descriptor, chunk.data() + done, chunk.size() - done);
+                    if (count < 0 && errno == EINTR)
+                        continue;
+                    if (count <= 0)
+                        return false;
+                    done += static_cast<std::size_t>(count);
+                }
+                return true;
+            };
+            writer.finish = [descriptor]
+            {
+                const bool synced = fsync(descriptor) == 0;
+                return close(descriptor) == 0 && synced;
+            };
         }
         picosha2::hash256_one_by_one hash;
         std::uint64_t received = 0;
@@ -210,24 +243,16 @@ bool download(const Environment &environment, const catalog::Entry &entry, const
             entry.artifact, limit,
             [&](std::string_view chunk)
             {
-                std::size_t done = 0;
-                while (done < chunk.size())
-                {
-                    const auto count = write(descriptor, chunk.data() + done, chunk.size() - done);
-                    if (count < 0 && errno == EINTR)
-                        continue;
-                    if (count <= 0)
-                        return saved = false;
-                    done += static_cast<std::size_t>(count);
-                }
+                if (!writer.write(chunk))
+                    return saved = false;
                 hash.process(chunk.begin(), chunk.end());
                 received += chunk.size();
                 progress.done = received;
                 return true;
             },
             control);
-        saved = fsync(descriptor) == 0 && saved;
-        saved = close(descriptor) == 0 && saved;
+        saved = writer.finish() && saved;
+        writer = {};
         if (response.ok() && response.status == 200 && saved)
         {
             std::array<std::uint8_t, 32> digest{}, expected{};
@@ -365,7 +390,7 @@ Result apply(const Environment &environment, const Request &request, net::Contro
         return fail("The location can't be changed in a single step on this drive");
     if (kind(paths.backup) != Kind::absent)
         return fail("An earlier update left a backup that needs attention");
-    if (!remove_tree(paths.archive) || !remove_tree(paths.staged))
+    if (!discard(environment, paths.archive) || !discard(environment, paths.staged))
         return fail("The staging folder could not be cleaned");
 
     catalog::Journal journal;
@@ -378,7 +403,8 @@ Result apply(const Environment &environment, const Request &request, net::Contro
     // Until the journal says otherwise, nothing outside staging has changed.
     const auto abandon = [&](std::string message)
     {
-        const bool clean = remove_tree(paths.archive) && remove_tree(paths.staged);
+        const bool clean =
+            discard(environment, paths.archive) && discard(environment, paths.staged);
         if (clean)
             clear_journal(environment, paths);
         return fail(std::move(message));
@@ -411,14 +437,24 @@ Result apply(const Environment &environment, const Request &request, net::Contro
     progress.done = 0;
     progress.phase = static_cast<int>(Phase::unpacking);
     ExtractTimes times;
-    if (!extract_archive(paths.archive, id, paths.staged, control.cancelled, progress.done, error,
-                         &times))
+    int unpacked = -1;
+    if (environment.unpack)
+        unpacked = environment.unpack(paths.archive, id, paths.staged, control.cancelled,
+                                      progress.done, error, times);
+    const bool helped = unpacked >= 0;
+    if (unpacked < 0)
+        unpacked = extract_archive(paths.archive, id, paths.staged, control.cancelled,
+                                   progress.done, error, &times)
+                       ? 1
+                       : 0;
+    if (unpacked != 1)
         return abandon(error);
     result.note =
         "files=" + std::to_string(times.files) + " unpack_ms=" + std::to_string(times.total_ms) +
-        " write_ms=" + std::to_string(times.write_ms) + " sync_ms=" + std::to_string(times.sync_ms);
+        " write_ms=" + std::to_string(times.write_ms) +
+        " sync_ms=" + std::to_string(times.sync_ms) + " worker=" + std::to_string(helped ? 1 : 0);
     STORE_STEP("unpacked");
-    if (!remove_tree(paths.archive))
+    if (!discard(environment, paths.archive))
         return abandon("The staging folder could not be cleaned");
     if (!folder_version(paths.staged, id, result.version))
         return abandon("The archive isn't a valid app");
@@ -489,7 +525,7 @@ Result apply(const Environment &environment, const Request &request, net::Contro
                        entry.digest))
         return fail("Installed, but not recorded yet. Restart ProsperoStore to finish.");
     STORE_STEP("recorded");
-    if (update && !remove_tree(paths.backup))
+    if (update && !discard(environment, paths.backup))
         return fail("Updated, but the previous version is still being removed.");
     if (update)
         refresh_registered(environment, id, paths.target);
@@ -524,7 +560,8 @@ Result uninstall(const Environment &environment, const std::string &id, const st
         return fail("Installed outside ProsperoStore. Not managed by this app.");
     if (const int state = running(environment, id); state != 0)
         return fail(running_refusal(state));
-    if (!make_directory(paths.work) || !make_directory(paths.trashes) || !remove_tree(paths.trash))
+    if (!make_directory(paths.work) || !make_directory(paths.trashes) ||
+        !discard(environment, paths.trash))
         return fail("No permission to write to the location's drive");
     catalog::Journal journal;
     journal.operation = "uninstall";
@@ -545,7 +582,7 @@ Result uninstall(const Environment &environment, const std::string &id, const st
     sync_directory(paths.trashes);
     STORE_STEP("moved");
     const std::time_t removing = std::time(nullptr);
-    if (!remove_tree(paths.trash))
+    if (!discard(environment, paths.trash))
         return fail("Uninstalled, but its files are still being removed.");
     result.note =
         "remove_s=" + std::to_string(static_cast<long long>(std::time(nullptr) - removing));
@@ -612,7 +649,7 @@ Result recover(const Environment &environment)
     const auto placed = kind(paths.target), staged = kind(paths.staged);
     const auto close = [&]
     {
-        if (!remove_tree(paths.archive) || !remove_tree(paths.staged) ||
+        if (!discard(environment, paths.archive) || !discard(environment, paths.staged) ||
             !clear_journal(environment, paths))
             return fail("An interrupted operation could not be cleaned up");
         result.ok = true;
@@ -661,7 +698,7 @@ Result recover(const Environment &environment)
         if (placed == Kind::directory && folder_version(paths.target, id, version) &&
             version == journal.content_version)
         {
-            if (!record() || !remove_tree(paths.backup))
+            if (!record() || !discard(environment, paths.backup))
                 return fail("An interrupted update could not be finished");
             refresh_registered(environment, id, paths.target);
             result.version = version;
@@ -675,7 +712,7 @@ Result recover(const Environment &environment)
     const auto trash = kind(paths.trash);
     if (trash == Kind::absent && placed != Kind::absent)
         return close(); // Never started: the app and its receipt stay.
-    if (!remove_tree(paths.trash))
+    if (!discard(environment, paths.trash))
         return fail("An interrupted uninstall could not be finished");
     if (unlink(paths.receipt.c_str()) != 0 && errno != ENOENT)
         return fail("An interrupted uninstall could not be finished");

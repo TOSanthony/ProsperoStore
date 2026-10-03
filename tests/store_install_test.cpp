@@ -4,6 +4,7 @@
 #include "install/archive.hpp"
 #include "install/files.hpp"
 #include "install/transaction.hpp"
+#include "install/worker.hpp"
 #include "system/inventory.hpp"
 #include "system/running.hpp"
 #include "third_party/miniz/miniz.h"
@@ -15,6 +16,8 @@
 #include <fstream>
 #include <map>
 #include <sstream>
+#include <sys/socket.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 namespace fs = std::filesystem;
@@ -744,9 +747,265 @@ void check_records()
     assert(!catalog::parse_journal(catalog::format_journal(journal), read, error));
     assert(!catalog::parse_journal(std::string(20000, ' '), read, error));
 }
+
+// The file worker, started as the console's loader starts it: a new process
+// whose standard input and output are the connection.
+struct WorkerHost
+{
+    std::string program;
+    unsigned started = 0;
+    bool available = true;
+    // What the child runs instead of the worker: empty for the worker itself.
+    // Unless every is set, downloads still go to the real worker.
+    std::string script;
+    bool every = false;
+    bool connect(install::Channel &channel, bool download = false)
+    {
+        if (!available)
+            return false;
+        int pair[2];
+        assert(socketpair(AF_UNIX, SOCK_STREAM, 0, pair) == 0);
+        const pid_t child = fork();
+        assert(child >= 0);
+        if (child == 0)
+        {
+            dup2(pair[1], STDIN_FILENO);
+            dup2(pair[1], STDOUT_FILENO);
+            close(pair[0]);
+            close(pair[1]);
+            if (script.empty() || (download && !every))
+                execl(program.c_str(), program.c_str(), static_cast<char *>(nullptr));
+            else
+                execl("/bin/sh", "sh", "-c", script.c_str(), static_cast<char *>(nullptr));
+            _exit(127);
+        }
+        close(pair[1]);
+        ++started;
+        const int socket = pair[0];
+        channel.send = [socket](const void *data, std::size_t size)
+        { return static_cast<long>(send(socket, data, size, MSG_NOSIGNAL)); };
+        channel.receive = [socket](void *data, std::size_t size)
+        { return static_cast<long>(recv(socket, data, size, 0)); };
+        channel.close = [socket, child]
+        {
+            close(socket);
+            int status = 0;
+            waitpid(child, &status, 0);
+        };
+        return true;
+    }
+    void attach(install::Environment &environment)
+    {
+        const install::Connect connect = [this](install::Channel &channel)
+        { return this->connect(channel); };
+        environment.unpack = [connect](const std::string &archive, const std::string &title,
+                                       const std::string &destination,
+                                       const std::atomic<bool> &cancelled,
+                                       std::atomic<std::uint64_t> &written, std::string &error,
+                                       install::ExtractTimes &times)
+        {
+            return install::worker_extract(connect, archive, title, destination, cancelled, written,
+                                           error, times);
+        };
+        environment.remove = [connect](const std::string &path)
+        { return install::worker_remove(connect, path); };
+        const install::Connect saving = [this](install::Channel &channel)
+        { return this->connect(channel, true); };
+        environment.save = [saving](const std::string &path, install::Writer &writer)
+        { return install::worker_store(saving, path, writer); };
+    }
+};
+
+void check_worker(const fs::path &base, const std::string &program)
+{
+    using install::worker_path;
+    assert(worker_path("/data/prosperostore/staging/PPSA99500"));
+    assert(worker_path("/mnt/usb0/prosperostore/trash/PPSA99500"));
+    assert(!worker_path("/data/prosperostore"));          // The work folder itself.
+    assert(!worker_path("/data/homebrew/PPSA99500"));     // An installed app.
+    assert(!worker_path("data/prosperostore/staging/x")); // Not absolute.
+    assert(!worker_path("/data/prosperostore/../etc"));
+    assert(!worker_path("/data/prosperostore/./x"));
+    assert(!worker_path("/data/prosperostore//x"));
+    assert(!worker_path("/data/prosperostore/x/"));
+    assert(!worker_path("/data/prosperostore/a\nb"));
+    assert(!worker_path("/data/myprosperostore/x"));
+    assert(!worker_path(""));
+
+    const auto v1 = expected_tree(app("01.000.001")), v2 = expected_tree(app("01.000.002"));
+    Fixture f(base, "worker");
+    f.work = f.root / "prosperostore";
+    f.environment.work = f.work.string();
+    WorkerHost host;
+    host.program = program;
+    host.attach(f.environment);
+
+    // Install, update and uninstall, with the worker unpacking and removing.
+    auto request = f.request("01.000.001");
+    auto result = f.apply(request);
+    assert(result.ok && result.operation == "install" && result.version == "01.000.001");
+    // One worker saved the download, another unpacked it.
+    assert(result.note.find("worker=1") != std::string::npos && host.started == 2);
+    assert(result.note.find("files=3 ") != std::string::npos);
+    assert(tree(f.target()) == v1 && f.managed() == "01.000.001" && f.settled());
+
+    request = f.request("01.000.002");
+    host.started = 0;
+    result = f.apply(request);
+    assert(result.ok && result.operation == "update" && result.version == "01.000.002");
+    // Download, unpack, and the removal of the old version: a worker each.
+    assert(result.note.find("worker=1") != std::string::npos && host.started == 3);
+    assert(tree(f.target()) == v2 && f.managed() == "01.000.002" && f.settled());
+
+    host.started = 0;
+    result = f.uninstall();
+    assert(result.ok && host.started == 1 && !fs::exists(f.target()) && f.settled());
+    assert(!fs::exists(f.state / "receipts" / (kId + ".json")));
+
+    // No worker can be started: the store does all of it by itself.
+    host.available = false;
+    request = f.request("01.000.001");
+    result = f.apply(request);
+    assert(result.ok && result.note.find("worker=0") != std::string::npos);
+    assert(tree(f.target()) == v1 && f.settled());
+    request = f.request("01.000.002");
+    result = f.apply(request);
+    assert(result.ok && tree(f.target()) == v2 && f.settled());
+    assert(f.uninstall().ok && !fs::exists(f.target()) && f.settled());
+    host.available = true;
+
+    // Something that isn't the worker answers: nothing was touched, the store does it.
+    host.script = "echo nonsense";
+    request = f.request("01.000.001");
+    result = f.apply(request);
+    assert(result.ok && result.note.find("worker=0") != std::string::npos &&
+           tree(f.target()) == v1);
+
+    // The worker dies after it accepted the job. An unpack fails cleanly and
+    // leaves the installed version alone; a removal is finished by the store.
+    host.script = "echo ready; echo 'p 10'";
+    request = f.request("01.000.002");
+    result = f.apply(request);
+    assert(!result.ok && !result.error.empty() && tree(f.target()) == v1 && f.settled());
+    assert(f.managed() == "01.000.001");
+    result = f.uninstall();
+    assert(result.ok && !fs::exists(f.target()) && f.settled());
+
+    // The worker says why it failed.
+    host.script = "echo ready; echo 'fail The archive is damaged'";
+    request = f.request("01.000.001");
+    result = f.apply(request);
+    assert(!result.ok && result.error == "The archive is damaged" && !fs::exists(f.target()));
+    assert(f.settled());
+    host.script.clear();
+
+    // Downloads: something else answers and the store saves the file itself;
+    // a worker that dies after accepting loses the download, and nothing else.
+    host.every = true;
+    host.script = "echo nonsense";
+    result = f.apply(request);
+    assert(result.ok && result.note.find("worker=0") != std::string::npos &&
+           tree(f.target()) == v1);
+    host.script = "echo ready";
+    request = f.request("01.000.002");
+    f.requests = 0;
+    result = f.apply(request);
+    assert(!result.ok && result.error == "The download could not be saved" && f.requests == 1);
+    assert(tree(f.target()) == v1 && f.managed() == "01.000.001" && f.settled());
+    host.script.clear();
+    host.every = false;
+    assert(f.uninstall().ok && f.settled());
+    {
+        // What the worker saves is what was sent, in pieces of any size; a
+        // file that exists is never replaced, and a cut connection leaves none.
+        const install::Connect connect = [&host](install::Channel &channel)
+        { return host.connect(channel); };
+        fs::create_directories(f.work / "staging");
+        const auto path = (f.work / "staging/download.bin").string();
+        std::string body(3 * install::kWorkerPiece + 12345, 'd');
+        for (std::size_t i = 0; i < body.size(); i += 4099)
+            body[i] = static_cast<char>(i);
+        install::Writer writer;
+        assert(install::worker_store(connect, path, writer));
+        assert(writer.write(std::string_view(body).substr(0, 7)));
+        assert(writer.write(std::string_view(body).substr(7)));
+        assert(writer.finish());
+        writer = {};
+        assert(get(path) == body);
+        assert(install::worker_store(connect, path, writer));
+        assert(!writer.finish());
+        writer = {};
+        assert(get(path) == body);
+        fs::remove(path);
+        assert(install::worker_store(connect, path, writer));
+        assert(writer.write("partial"));
+        writer = {}; // Dropped: the connection closes before the end mark.
+        assert(!fs::exists(path));
+        assert(!install::worker_store(connect, (f.root / "elsewhere.bin").string(), writer));
+    }
+
+    // The worker itself refuses paths outside the store's work folders, whoever asks.
+    const auto ask = [&](const std::string &request_text)
+    {
+        install::Channel channel;
+        assert(host.connect(channel));
+        assert(channel.send(request_text.data(), request_text.size()) ==
+               static_cast<long>(request_text.size()));
+        std::string reply;
+        char buffer[256];
+        for (long count; (count = channel.receive(buffer, sizeof(buffer))) > 0;)
+            reply.append(buffer, static_cast<std::size_t>(count));
+        channel.close();
+        return reply;
+    };
+    const fs::path outside = f.root / "outside";
+    fs::create_directories(outside / "kept");
+    assert(ask("PSW1\nremove\n" + outside.string() + "\n") == "fail The request was refused\n");
+    assert(ask("PSW1\nremove\n" + (f.work / "..").string() + "\n") ==
+           "fail The request was refused\n");
+    assert(ask("PSW1\nextract\n" + (f.work / "a.zip").string() + "\n" + kId + "\n" +
+               (outside / "x").string() + "\n") == "fail The request was refused\n");
+    assert(ask("PSW1\nformat\n" + (f.work / "x").string() + "\n") ==
+           "fail The request was refused\n");
+    assert(ask("PSW1\nstore\n" + (outside / "x.bin").string() + "\n") ==
+           "fail The request was refused\n");
+    assert(ask("HELLO\n").empty());
+    assert(fs::exists(outside / "kept"));
+
+    // A cancel reaches the worker: the unpack stops, or had already finished.
+    {
+        Files big = app("01.000.003");
+        std::string noise(1 << 20, 'n');
+        std::uint32_t state = 99;
+        for (auto &c : noise)
+            c = static_cast<char>((state = state * 1664525u + 1013904223u) >> 24);
+        for (int i = 0; i < 48; ++i)
+            big.push_back({kId + "/data/" + std::to_string(i) + ".bin", noise});
+        fs::create_directories(f.work / "staging");
+        put(f.work / "staging/big.zip", zip(big));
+        std::atomic<bool> cancelled{true};
+        std::atomic<std::uint64_t> written{0};
+        std::string error;
+        install::ExtractTimes times;
+        const install::Connect connect = [&host](install::Channel &channel)
+        { return host.connect(channel); };
+        const int outcome = install::worker_extract(connect, (f.work / "staging/big.zip").string(),
+                                                    kId, (f.work / "staging/big").string(),
+                                                    cancelled, written, error, times);
+        assert(outcome == 1 || (outcome == 0 && error == "Cancelled"));
+        assert(install::worker_remove(connect, (f.work / "staging/big").string()) == 1);
+        assert(!fs::exists(f.work / "staging/big"));
+        // Removing what isn't there is done, as it is for the store itself.
+        assert(install::worker_remove(connect, (f.work / "staging/big").string()) == 1);
+        fs::remove(f.work / "staging/big.zip");
+        // Paths outside the work folders never reach a worker.
+        host.started = 0;
+        assert(install::worker_remove(connect, outside.string()) == -1 && host.started == 0);
+    }
+}
 } // namespace
 
-int main()
+int main(int argc, char **argv)
 {
     char temporary[] = "/tmp/prospero-install-XXXXXX";
     assert(mkdtemp(temporary));
@@ -757,6 +1016,8 @@ int main()
     check_transactions(root);
     check_self_update(root);
     check_interruptions(root);
+    if (argc > 1)
+        check_worker(root, argv[1]);
     fs::remove_all(root);
     std::puts("Install, update, uninstall and recovery checks passed");
 }

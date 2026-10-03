@@ -10,6 +10,10 @@
 #include "core/version.hpp"
 #include "core/save_file.hpp"
 #include "diag/diagnostics.hpp"
+#ifdef STORE_DEVELOPMENT
+#include "diag/fsbench.hpp"
+#include "system/worker_launch.hpp"
+#endif
 #include "platform/ps5/audio_out.hpp"
 #include "platform/ps5/display_egl.hpp"
 #include "platform/ps5/pad.hpp"
@@ -441,6 +445,34 @@ int main()
                 tour_until = now + std::atoll(argument.c_str()) * 1000000;
                 tour_step = 0;
                 tour_next = now;
+            }
+            else if (verb == "fsbench")
+            {
+                // The folder to measure, e.g. /data/prosperostore/staging.
+                static std::string bench_root;
+                bench_root = argument;
+                pthread_t thread;
+                if (pthread_create(&thread, nullptr, store::diag::fsbench, &bench_root) == 0)
+                    pthread_detach(thread);
+            }
+            else if (verb == "clean")
+            {
+                // Removes a leftover inside one of the store's work folders, through the worker.
+                static std::string clean_path;
+                clean_path = argument;
+                pthread_t thread;
+                if (pthread_create(
+                        &thread, nullptr,
+                        +[](void *opaque) -> void *
+                        {
+                            const auto &path = *static_cast<std::string *>(opaque);
+                            const int result =
+                                store::install::worker_remove(store::system::launch_worker, path);
+                            sys::log("[STORE] clean %s result=%d", path.c_str(), result);
+                            return nullptr;
+                        },
+                        &clean_path) == 0)
+                    pthread_detach(thread);
             }
             else if (verb == "texbench")
                 bench_step = 0;

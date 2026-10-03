@@ -9,6 +9,9 @@
 #include "system/locations.hpp"
 #include "system/running.hpp"
 #include "system/storage_probe.hpp"
+#ifdef STORE_FILE_WORKER
+#include "system/worker_launch.hpp"
+#endif
 #include "install/files.hpp"
 #include "catalog/icons.hpp"
 #include "../../examples/update-check/update_check.h"
@@ -306,6 +309,20 @@ void Service::run_installer()
             return net::get(url, net::Purpose::artifact, limit, sink, control);
         };
         environment.running = [](const std::string &id) { return system::title_running(id); };
+#ifdef STORE_FILE_WORKER
+        environment.unpack = [](const std::string &archive, const std::string &title,
+                                const std::string &destination, const std::atomic<bool> &cancelled,
+                                std::atomic<std::uint64_t> &written, std::string &error,
+                                install::ExtractTimes &times)
+        {
+            return install::worker_extract(system::launch_worker, archive, title, destination,
+                                           cancelled, written, error, times);
+        };
+        environment.remove = [](const std::string &path)
+        { return install::worker_remove(system::launch_worker, path); };
+        environment.save = [](const std::string &path, install::Writer &writer)
+        { return install::worker_store(system::launch_worker, path, writer); };
+#endif
     }
     std::string broken;
     if (environment.root.empty() || !hui::save::ensure_directory(environment.root) ||
