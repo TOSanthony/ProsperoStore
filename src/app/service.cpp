@@ -387,8 +387,8 @@ void Service::run_installer()
             notice.ok = true;
             notice.restart = true;
             notice.message = "ProsperoStore was updated";
-            notice.detail = "The console is still switching to the new version. Close "
-                            "ProsperoStore and open it again in a few minutes.";
+            notice.detail = "The console is still running the previous version. Close "
+                            "ProsperoStore, restart the console and open it again.";
             publish(std::move(notice));
         }
         else if (!recovered.operation.empty())
@@ -483,14 +483,15 @@ void Service::run_installer()
                                    : result.operation == "adopt"   ? " is now managed"
                                    : result.operation == "update"  ? " updated"
                                                                    : " installed");
-            done.detail = result.restart ? "Close ProsperoStore and open it again to finish."
-                          : result.operation == "uninstall" ? "Its saved data was left in place."
-                          : result.operation == "adopt"
-                              ? "ProsperoStore will offer its updates from now on."
-                          : result.operation == "update"
-                              ? "The new version is in place. Give the console a few minutes "
-                                "before starting it."
-                              : "ShadowMountPlus will add it to your home screen in a moment.";
+            done.detail =
+                result.restart ? "Close ProsperoStore and open it again to finish. If the "
+                                 "old version opens, restart the console first."
+                : result.operation == "uninstall" ? "Its saved data was left in place."
+                : result.operation == "adopt" ? "ProsperoStore will offer its updates from now on."
+                : result.operation == "update"
+                    ? "The new version is in place. Give the console a few minutes "
+                      "before starting it."
+                    : "ShadowMountPlus will add it to your home screen in a moment.";
         }
         else
         {

@@ -12,8 +12,13 @@ the open questions.
 
 ## Install
 
-1. The console needs ShadowMountPlus and a payload loader listening on port
-   9021 (the store uses it to leave its sandbox and to start its file worker).
+1. The console needs ShadowMountPlus, a payload loader listening on port 9021
+   (the store starts its file worker through it), and the upstream
+   [Lapy owned-root daemon](https://github.com/mpereiraesaa/PS5-Lapy-JB-Daemon)
+   running before the store starts: the store asks Lapy for access to `/data`
+   and installs nothing without it. See
+   [docs/SANDBOX_ELEVATION.md](docs/SANDBOX_ELEVATION.md) for the firmware Lapy
+   has been checked on.
 2. Unpack `PPSA99000.zip` and copy the `PPSA99000` folder into a location
    ShadowMountPlus scans, for example `/data/homebrew`.
 3. Start ProsperoStore from the home screen. Later versions are installed by

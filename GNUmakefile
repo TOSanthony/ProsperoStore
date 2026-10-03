@@ -10,8 +10,7 @@ APP_IMPORT_STUBS := .deps/ps5-opengl/current/lib/libSceAgc.so .deps/ps5-opengl/c
 APP_WRAP_SYMBOLS := malloc calloc realloc free posix_memalign malloc_usable_size sceSystemServiceHideSplashScreen
 APP_HEAP_SIZE := 0x10000000
 STORE_WORKER := build/store-worker/store-worker.elf
-APP_ROOT_FILES := build/sandbox-elevation/sandbox-elevator.elf $(STORE_WORKER)
-export ELEVATION_TITLE_ID := PPSA99000
+APP_ROOT_FILES := $(STORE_WORKER)
 DEVELOPMENT ?= 0
 ifeq ($(DEVELOPMENT),1)
 APP_DEFINITIONS += STORE_DEVELOPMENT=1
@@ -25,7 +24,7 @@ include Makefile
 .PHONY: opengl host-snapshots foundations-check test-store
 opengl:
 	@bash tools/prepare-opengl.sh
-app ffpkg ffpfsc packages: opengl sandbox-elevation-helper system-keyboard-imports store-worker
+app ffpkg ffpfsc packages: opengl system-keyboard-imports store-worker
 
 # The console limits how fast an app writes to its storage; this payload, sent
 # to the loader for each job, unpacks and removes apps at full speed.
@@ -36,7 +35,7 @@ store-worker:
 	@$(MAKE) --no-print-directory -C helper \
 		PS5_PAYLOAD_SDK="$(abspath .deps/native/ps5-payload-sdk)" \
 		OUTPUT="$(abspath $(STORE_WORKER))"
-	@python3 tools/validate-elevation-helper.py "$(STORE_WORKER)"
+	@python3 tools/validate-loader-elf.py "$(STORE_WORKER)"
 
 .PHONY: system-keyboard-imports
 system-keyboard-imports:
