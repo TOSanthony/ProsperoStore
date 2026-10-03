@@ -32,7 +32,10 @@ TITLE_ID ?=
 APP_NAME ?=
 APP_CATEGORY ?= game
 CONTENT_SUFFIX ?=
+HOST_CC ?= clang
 HOST_CXX ?= clang++
+HOST_TEST_CFLAGS ?= -std=c11 -O2 -Wall -Wextra -Wpedantic -Werror \
+	-ffunction-sections -fdata-sections
 HOST_TEST_CXXFLAGS ?= -std=c++20 -O2 -Wall -Wextra -Wpedantic -Werror \
 	-ffunction-sections -fdata-sections
 HOST_TEST_LDFLAGS ?= -Wl,--gc-sections
@@ -53,9 +56,8 @@ RUNTIME_INPUTS := tools/rebuild-libc.sh tools/build-host-tools.sh tools/ninja-bu
 	$(wildcard tooling/native/*.cpp tooling/native/*.hpp) \
 	$(wildcard tooling/native/runtime/*.txt)
 HOST_UNIT_TEST := build/tests/demo_renderer_tests
-SANDBOX_ELEVATION_HELPER := build/sandbox-elevation/sandbox-elevator.elf
 
-.PHONY: all app build init doctor test test-deps test-unit test-integration libc deps pacbrew pacbrew-list assets-check format format-check tidy lint check ffpkg ffpfsc packages sandbox-elevation-helper sandbox-elevation-ffpfsc update-check-example test-update-check deploy undeploy clean distclean help
+.PHONY: all app build init doctor test test-deps test-unit test-integration libc deps pacbrew pacbrew-list assets-check format format-check tidy lint check ffpkg ffpfsc packages sandbox-elevation-ffpfsc update-check-example test-update-check deploy undeploy clean distclean help
 
 all: app
 build: app
@@ -95,7 +97,7 @@ test-elevation:
 	@$(HOST_CXX) $(HOST_TEST_CXXFLAGS) -idirafter .deps/native/ps5-payload-sdk/target/include \
 		tests/test_elevation.cpp $(HOST_TEST_LDFLAGS) -o build/tests/test_elevation
 	@build/tests/test_elevation
-	@printf '%s\n' 'Elevation protocol and rollback checks passed.'
+	@printf '%s\n' 'Lapy cooperative request, data-ready polling, and proof checks passed.'
 
 test-update-check:
 	@mkdir -p build/tests
@@ -157,20 +159,11 @@ packages: $(RUNTIME)
 	@printf '%s\n' '==> [packages] Building the app folder and both package formats'
 	@bash tools/build.sh All
 
-sandbox-elevation-helper:
-	@printf '%s\n' '==> [sandbox-elevation] Building the exact-title elfldr helper'
-	@bash tools/setup-native-dependencies.sh >/dev/null
-	@$(MAKE) -C examples/sandbox-elevation/payload \
-		PS5_PAYLOAD_SDK="$(abspath .deps/native/ps5-payload-sdk)" \
-		OUTPUT="$(abspath $(SANDBOX_ELEVATION_HELPER))"
-	@python3 tools/validate-elevation-helper.py "$(SANDBOX_ELEVATION_HELPER)"
-
-sandbox-elevation-ffpfsc: $(RUNTIME) sandbox-elevation-helper
-	@printf '%s\n' '==> [sandbox-elevation] Building the self-elevating proof image'
+sandbox-elevation-ffpfsc: $(RUNTIME)
+	@printf '%s\n' '==> [sandbox-elevation] Building the official-Lapy client proof image'
 	@APP_SOURCE_DIR=examples/sandbox-elevation/src \
 		APP_PARAM=examples/sandbox-elevation/sce_sys/param.json \
 		APP_SCE_SYS=sce_sys APP_ASSETS= \
-		APP_ROOT_FILES=$(SANDBOX_ELEVATION_HELPER) \
 		bash tools/build.sh Ffpfsc
 
 update-check-example: $(RUNTIME)
@@ -236,7 +229,7 @@ help:
 	  'make ffpkg           Build the folder and UFS2 .ffpkg image' \
 	  'make ffpfsc          Build the folder and compressed .ffpfsc image' \
 	  'make packages        Build folder, .ffpkg, and .ffpfsc outputs' \
-	  'make sandbox-elevation-ffpfsc  Build the exact-title /data proof image' \
+	  'make sandbox-elevation-ffpfsc  Build the official-Lapy client proof image' \
 	  'make update-check-example  Build the catalog update-check example title' \
 	  'make test-update-check     Run the update-check host tests' \
 	  'make deploy PS5_HOST=<address>  Build and FTP-deploy the app folder' \
