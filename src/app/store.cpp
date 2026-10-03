@@ -1392,6 +1392,14 @@ bool Screen::remote_uninstall(const std::string &id)
     return false;
 }
 
+bool Screen::remote_order()
+{
+    if (!details_ || !focused() || !focused()->detail)
+        return false;
+    order(*focused(), Order::Kind::install);
+    return true;
+}
+
 void Screen::set_installer(bool available, bool guard, std::string reason, std::string location)
 {
     installer_ = available;

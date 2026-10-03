@@ -110,6 +110,9 @@ class Screen
     }
     void remote_install(const std::string &id);
     bool remote_uninstall(const std::string &id);
+    // Sends the open page's install or update to the installer even when the
+    // page would not offer it, to see the installer's own refusal.
+    bool remote_order();
     // Fills the catalog with copies up to count apps, to measure a large one.
     void stress(std::size_t count);
     Order pending_order;

@@ -126,9 +126,11 @@ try:
         sys.exit(6)
     f = ftp()
     active = running(f)
-    if active:
+    if active and not os.environ.get("PS5_ALLOW_RUNNING"):
         say(f"a title is running ({active}): stopping")
         sys.exit(7)
+    if active:
+        say(f"running before the launch: {active}")
     f.quit()
     check = subprocess.run(["python3", str(TOOLS / "store-deploy.py"), "verify", host, str(frozen)],
                            capture_output=True, text=True)
@@ -218,6 +220,7 @@ try:
             break
     if any(n.startswith(TITLE) for n in running(f)):
         write(f, STATE + "/dev/request.txt", f"quit - {token}\n".encode())
+    say("titles with a sandbox before the quit: " + str(running(f)))
     closed = False
     for _ in range(24):
         time.sleep(5)

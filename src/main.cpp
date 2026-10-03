@@ -383,6 +383,8 @@ int main()
             else if (verb == "uninstall")
                 sys::log("[STORE] remote uninstall %s accepted=%d", argument.c_str(),
                          screen.remote_uninstall(argument));
+            else if (verb == "order")
+                sys::log("[STORE] remote order sent=%d", screen.remote_order());
             else if (verb == "cancel")
             {
                 screen.pending_order = {};
