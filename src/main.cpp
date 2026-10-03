@@ -139,8 +139,17 @@ int main()
                 renderer.batch().create_texture(image.width, image.height, image.rgba.data());
         screen.set_coming_soon_art(coming_soon_texture);
     }
-    store::Service service(elevated ? storage_root : "",
-                           read_content_version(app_root + "/sce_sys/param.json"));
+    const std::string own_version = read_content_version(app_root + "/sce_sys/param.json");
+    store::Service service(elevated ? storage_root : "", own_version);
+    screen.set_self("PPSA99000", own_version);
+    {
+        // What the player chose last time; the defaults when there is no file.
+        std::string saved;
+        if (elevated)
+            save::read_file(std::string(storage_root) + "/settings.txt", &saved, 4096);
+        screen.set_settings(store::parse_settings(saved));
+        service.check_updates = screen.settings().check_updates;
+    }
 #ifdef STORE_INSTALLER
     service.installer = elevated;
     const char *installer_reason = "This console didn't grant permission to write, so nothing "
@@ -291,7 +300,10 @@ int main()
             else if (update.kind == store::Update::Kind::notice)
                 screen.notify(std::move(update.message), std::move(update.detail));
             else if (update.kind == store::Update::Kind::job)
-                screen.finish_job(update.ok, std::move(update.message), std::move(update.detail));
+                screen.finish_job(update.ok, update.restart, std::move(update.message),
+                                  std::move(update.detail));
+            else if (update.kind == store::Update::Kind::locations)
+                screen.set_locations(std::move(update.locations));
             else if (update.kind == store::Update::Kind::icon)
             {
                 const auto listed = hashes.find(update.entry.id);
@@ -345,6 +357,8 @@ int main()
         {
             const bool accepted = order.kind == store::Order::Kind::install
                                       ? service.request_install(order.entry, order.location)
+                                  : order.kind == store::Order::Kind::adopt
+                                      ? service.request_adopt(order.entry, order.location)
                                   : order.kind == store::Order::Kind::uninstall
                                       ? service.request_uninstall(order.id, order.location)
                                       : service.cancel_job(order.id);
@@ -357,6 +371,9 @@ int main()
             if (service.running(running, known))
                 screen.set_running(std::move(running), known);
         }
+        if (screen.settings_changed &&
+            service.save_settings(store::format_settings(screen.settings())))
+            screen.settings_changed = false;
         if (store::JobView view; service.job(view))
             screen.set_activity({view.id, static_cast<int>(view.phase), view.done, view.total,
                                  std::move(view.waiting)});
@@ -383,6 +400,29 @@ int main()
             else if (verb == "uninstall")
                 sys::log("[STORE] remote uninstall %s accepted=%d", argument.c_str(),
                          screen.remote_uninstall(argument));
+            else if (verb == "panel")
+                screen.open_panel(std::atoi(argument.c_str()));
+            else if (verb == "search")
+                screen.pending_search = true;
+            else if (verb == "selfupdate")
+            {
+                // The archive and its SHA-256 were put on the console by the test:
+                // the store updates itself from them as it would from a release.
+                store::catalog::Entry entry;
+                std::string digest;
+                save::read_file(std::string(storage_root) + "/dev/self.sha256", &digest, 80);
+                entry.id = "PPSA99000";
+                entry.name = "ProsperoStore";
+                entry.status = "available";
+                entry.format = "zip";
+                entry.version = argument;
+                entry.content_version = argument;
+                entry.digest = digest.substr(0, 64);
+                entry.artifact = "https://github.com/blackbearreloaded/ProsperoStore/releases/"
+                                 "download/dev/PPSA99000.zip";
+                sys::log("[STORE] remote selfupdate accepted=%d",
+                         service.request_install(entry, "/data/homebrew"));
+            }
             else if (verb == "order")
                 sys::log("[STORE] remote order sent=%d", screen.remote_order());
             else if (verb == "cancel")
@@ -493,9 +533,10 @@ int main()
         }
         if (missing != requested_icons && service.request_icons(missing))
             requested_icons = std::move(missing);
-        for (const auto &cue : feedback.cues)
-            sounds.play(mixer, audio::SoundSet::glass, cue);
-        if (feedback.rumble_strength > 0)
+        if (screen.settings().sounds)
+            for (const auto &cue : feedback.cues)
+                sounds.play(mixer, audio::SoundSet::glass, cue);
+        if (feedback.rumble_strength > 0 && screen.settings().vibration)
             pad.rumble(feedback.rumble_strength, feedback.rumble_seconds);
         pad.tick(dt);
         screen.draw(renderer, fonts.refs);

@@ -269,6 +269,47 @@ int main(int argc, char **argv)
                 screen.set_installer(true, true, "", "/data/homebrew");
                 screen.set_activity({"PPSA99007", 1, 30u << 20, 58u << 20, {"PPSA99420"}});
             }
+            else if (mode == "queue" || mode == "settings" || mode == "about")
+            {
+                screen.set_installer(true, true, "", "/data/homebrew");
+                screen.set_self("PPSA99000", "01.000.000");
+                screen.set_locations({{"/data/homebrew", 548ull << 30},
+                                      {"/mnt/ext1/homebrew", 912ull << 30}});
+                if (mode == "queue")
+                {
+                    screen.set_activity({"PPSA99007", 3, 61u << 20, 94u << 20,
+                                         {"PPSA99420", "PPSA99169"}});
+                    screen.finish_job(true, false, "ProsperoRadio installed",
+                                      "ShadowMountPlus will add it to your home screen in a moment.");
+                    screen.finish_job(false, false, "PS5SX2: not changed", "Close the app first");
+                }
+                screen.open_panel(mode == "queue" ? 0 : mode == "settings" ? 1 : 2);
+                // Settings: down to the location, right to the next one, saved once.
+                if (mode == "settings")
+                {
+                    hui::InputFrame right;
+                    right.nav = hui::Direction::right;
+                    screen.update(right, 1.0f / 60.0f, feedback);
+                    assert(screen.settings().location == "/mnt/ext1/homebrew");
+                    assert(screen.settings_changed);
+                    assert(store::parse_settings(store::format_settings(screen.settings())).location ==
+                           "/mnt/ext1/homebrew");
+                    screen.update(right, 1.0f / 60.0f, feedback);
+                    assert(screen.settings().location == "/data/homebrew");
+                    assert(!store::parse_settings("location=../x\nsounds=0\n").sounds);
+                    assert(store::parse_settings("location=../x\n").location == "/data/homebrew");
+                }
+                if (mode == "queue")
+                {
+                    // Cross on the first row cancels the running job.
+                    hui::InputFrame cross;
+                    cross.pressed = hui::action_bit(hui::Action::confirm);
+                    screen.update(cross, 1.0f / 60.0f, feedback);
+                    assert(screen.pending_order.kind == store::Order::Kind::cancel);
+                    assert(screen.pending_order.id == "PPSA99007");
+                    screen.pending_order = {};
+                }
+            }
             else if (mode == "notice")
                 screen.notify("Update available: 01.000.010",
                               "A newer ProsperoStore is listed on homebrew.page.");
@@ -321,10 +362,22 @@ int main(int argc, char **argv)
                 }
             }
             else if (mode == "detail" || mode == "detail-error" || mode == "detail-end" ||
-                     mode == "detail-armed" || mode == "detail-progress" || mode == "confirm")
+                     mode == "detail-armed" || mode == "detail-progress" || mode == "confirm" ||
+                     mode == "adopt")
             {
-                if (mode == "detail-armed" || mode == "detail-progress" || mode == "confirm")
+                if (mode == "detail-armed" || mode == "detail-progress" || mode == "confirm" ||
+                    mode == "adopt")
                     screen.set_installer(true, true, "", "/data/homebrew");
+                if (mode == "adopt")
+                {
+                    // Installed by hand, listed in the catalog: it can be handed over.
+                    store::system::Inventory inventory;
+                    inventory.apps = {{"PPSA99001", "ProsperoRadio", "01.000.005",
+                                       "/data/homebrew/PPSA99001",
+                                       "Installed outside ProsperoStore. Not managed by this app.",
+                                       false, false, false}};
+                    screen.set_inventory(std::move(inventory));
+                }
                 if (mode == "confirm")
                 {
                     store::system::Inventory inventory;
@@ -366,6 +419,12 @@ int main(int argc, char **argv)
                         assert(screen.pending_order.entry.digest == entry.digest);
                         assert(screen.pending_order.location == "/data/homebrew");
                         screen.pending_order = {};
+                    }
+                    if (mode == "adopt")
+                    {
+                        // Cross asks first; the answer orders the hand-over, nothing else.
+                        screen.update(open, 1.0f / 60.0f, feedback);
+                        assert(screen.pending_order.kind == store::Order::Kind::none);
                     }
                     if (mode == "confirm")
                     {

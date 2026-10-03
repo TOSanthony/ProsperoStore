@@ -568,6 +568,17 @@ void check_transactions(const fs::path &base)
     result = f.apply(f.request("01.000.002"));
     assert(!result.ok && f.requests == 0 && tree(f.target()) == foreign && f.settled());
     assert(!f.uninstall().ok && tree(f.target()) == foreign);
+    // Until its owner hands it over: then it is the store's to update and remove.
+    assert(!install::adopt(f.environment, "PPSA99501", f.location.string()).ok);
+    assert(!install::adopt(f.environment, kId, f.root.string()).ok);
+    auto adopted = install::adopt(f.environment, kId, f.location.string());
+    assert(adopted.ok && adopted.version == "01.000.000" && f.managed() == "01.000.000");
+    assert(tree(f.target()) == foreign); // Nothing but the receipt was written.
+    result = f.apply(f.request("01.000.002"));
+    assert(result.ok && result.operation == "update" && tree(f.target()) == v2);
+    assert(f.uninstall().ok && !fs::exists(f.target()) && f.settled());
+    fs::create_directories(f.target() / "sce_sys");
+    put(f.target() / "sce_sys/param.json", metadata(kId, "01.000.000"));
     // Nor is one whose receipt names another version or location.
     put(f.state / "receipts" / (kId + ".json"),
         catalog::format_receipt(
@@ -668,6 +679,44 @@ void check_running(const fs::path &root)
     fs::remove_all(root / "sandbox");
 }
 
+// The store updating itself: swapped while it runs, finished at the next start.
+void check_self_update(const fs::path &base)
+{
+    const auto v1 = expected_tree(app("01.000.001")), v2 = expected_tree(app("01.000.002"));
+    Fixture f(base, "self");
+    f.environment.self = kId;
+    f.environment.running = [](const std::string &) { return 1; }; // It is running: itself.
+    auto request = f.request("01.000.002");
+    assert(!f.apply(request).ok && f.requests == 0); // Never through the ordinary path.
+    request.self_update = true;
+    assert(!f.apply(request).ok && f.requests == 0); // Not installed here.
+    // As put there by hand: the folder, no receipt.
+    for (const auto &[name, data] : app("01.000.001"))
+        if (!name.ends_with('/'))
+        {
+            const fs::path file = f.location / name;
+            fs::create_directories(file.parent_path());
+            put(file, data);
+        }
+    auto result = f.apply(request);
+    assert(result.ok && result.restart && result.operation == "update");
+    assert(tree(f.target()) == v2 && tree(f.work / "backup" / kId) == v1);
+    assert(fs::exists(f.state / "journal.json"));
+    // Until the restart nothing else is changed.
+    f.environment.self = "PPSA99000";
+    assert(!f.apply(f.request("01.000.001")).ok);
+    f.environment.self = kId;
+    // The next start finishes: receipt written, the old folder gone.
+    const auto recovered = install::recover(f.environment);
+    assert(recovered.ok && recovered.operation == "update" && f.settled());
+    assert(tree(f.target()) == v2 && f.managed() == "01.000.002");
+    // The same version again is not an update.
+    request = f.request("01.000.002");
+    request.self_update = true;
+    assert(!f.apply(request).ok && tree(f.target()) == v2 && f.settled());
+    fs::remove_all(f.root);
+}
+
 void check_records()
 {
     catalog::Receipt receipt{"PPSA99500",   "/data/home\"brew",   "01.000.001",
@@ -700,6 +749,7 @@ int main()
     check_archives(root);
     check_running(root);
     check_transactions(root);
+    check_self_update(root);
     check_interruptions(root);
     fs::remove_all(root);
     std::puts("Install, update, uninstall and recovery checks passed");

@@ -9,6 +9,7 @@
 #include "system/locations.hpp"
 #include "system/running.hpp"
 #include "system/storage_probe.hpp"
+#include "install/files.hpp"
 #include "catalog/icons.hpp"
 #include "../../examples/update-check/update_check.h"
 #include <algorithm>
@@ -168,12 +169,32 @@ bool Service::load_policy(system::ScanPolicy &out) const
 
 bool Service::request_install(const catalog::Entry &entry, const std::string &location)
 {
+    return enqueue({Job::Kind::install, entry, location});
+}
+
+bool Service::request_adopt(const catalog::Entry &entry, const std::string &location)
+{
+    return enqueue({Job::Kind::adopt, entry, location});
+}
+
+bool Service::enqueue(Job job)
+{
     std::unique_lock lock(mutex_, std::try_to_lock);
     if (!lock.owns_lock() || !installer_started_ || jobs_.size() >= 16)
         return false;
-    const auto same = [&](const Job &job) { return job.entry.id == entry.id; };
-    if (job_id_ != entry.id && std::none_of(jobs_.begin(), jobs_.end(), same))
-        jobs_.push_back({false, entry, location});
+    const auto same = [&](const Job &other) { return other.entry.id == job.entry.id; };
+    if (job_id_ != job.entry.id && std::none_of(jobs_.begin(), jobs_.end(), same))
+        jobs_.push_back(std::move(job));
+    return true;
+}
+
+bool Service::save_settings(std::string text)
+{
+    std::unique_lock lock(mutex_, std::try_to_lock);
+    if (!lock.owns_lock())
+        return false;
+    settings_ = std::move(text);
+    settings_pending_ = true;
     return true;
 }
 
@@ -181,13 +202,16 @@ bool Service::request_uninstall(const std::string &id, const std::string &locati
 {
     catalog::Entry entry;
     entry.id = id;
-    std::unique_lock lock(mutex_, std::try_to_lock);
-    if (!lock.owns_lock() || !installer_started_ || jobs_.size() >= 16)
-        return false;
-    const auto same = [&](const Job &job) { return job.entry.id == id; };
-    if (job_id_ != id && std::none_of(jobs_.begin(), jobs_.end(), same))
-        jobs_.push_back({true, std::move(entry), location});
-    return true;
+    std::string name;
+    {
+        std::unique_lock lock(mutex_, std::try_to_lock);
+        if (!lock.owns_lock())
+            return false;
+        for (const auto &listed : entries_)
+            if (listed.id == id)
+                entry.name = listed.name;
+    }
+    return enqueue({Job::Kind::uninstall, std::move(entry), location});
 }
 
 bool Service::cancel_job(const std::string &id)
@@ -243,7 +267,24 @@ void Service::run_installer()
         environment.self = "PPSA99000";
         environment.fetch = [](const std::string &url, std::uint64_t limit, const net::Sink &sink,
                                net::Control &control)
-        { return net::get(url, net::Purpose::artifact, limit, sink, control); };
+        {
+#ifdef STORE_DEVELOPMENT
+            // A scripted self-update reads its archive from the console, since
+            // no newer store is published while it is being tested.
+            if (url.ends_with("/dev/PPSA99000.zip"))
+            {
+                net::Response response;
+                std::string body;
+                if (!hui::save::read_file("/data/prosperostore/dev/self.zip", &body, 256u << 20) ||
+                    body.size() > limit || !sink(body))
+                    response.error = "The development archive could not be read";
+                else
+                    response.status = 200;
+                return response;
+            }
+#endif
+            return net::get(url, net::Purpose::artifact, limit, sink, control);
+        };
         environment.running = [](const std::string &id) { return system::title_running(id); };
     }
     std::string broken;
@@ -260,6 +301,21 @@ void Service::run_installer()
     };
     if (broken.empty())
     {
+        // Where apps can go: the folders ShadowMountPlus scans that exist on a
+        // drive the store can work on, with the room each has.
+        Update places;
+        places.kind = Update::Kind::locations;
+        for (const auto &path : environment.policy.roots)
+        {
+            std::uint64_t available = 0;
+            if (path.starts_with("/mnt/shadowmnt") ||
+                (!installer_environment && system::drive_root(path).empty()) ||
+                install::kind(path) != install::Kind::directory ||
+                !system::available_space(path, available) || available < (256ull << 20))
+                continue;
+            places.locations.emplace_back(path, available);
+        }
+        publish(std::move(places));
         // Before anything else: finish or undo what was interrupted last time.
         const auto recovered = install::recover(environment);
         hui::sys::log("[STORE] recovery ok=%d operation=%s error=%s", recovered.ok,
@@ -335,11 +391,14 @@ void Service::run_installer()
         install::Result result;
         if (!broken.empty())
             result.error = broken;
-        else if (job.uninstall)
+        else if (job.kind == Job::Kind::uninstall)
             result = install::uninstall(environment, job.entry.id, job.location, progress_);
+        else if (job.kind == Job::Kind::adopt)
+            result = install::adopt(environment, job.entry.id, job.location);
         else
-            result = install::apply(environment, {job.entry, job.location, minimum}, job_control_,
-                                    progress_);
+            result = install::apply(
+                environment, {job.entry, job.location, minimum, job.entry.id == environment.self},
+                job_control_, progress_);
         hui::sys::log("[STORE] job id=%s operation=%s ok=%d version=%s error=%s",
                       job.entry.id.c_str(), result.operation.c_str(), result.ok,
                       result.version.c_str(), result.error.c_str());
@@ -350,11 +409,17 @@ void Service::run_installer()
         const auto &name = job.entry.name.empty() ? job.entry.id : job.entry.name;
         if (result.ok)
         {
+            done.restart = result.restart;
             done.message = name + (result.operation == "uninstall" ? " uninstalled"
+                                   : result.operation == "adopt"   ? " is now managed"
                                    : result.operation == "update"  ? " updated"
                                                                    : " installed");
-            done.detail = result.operation == "uninstall"
-                              ? "Its saved data was left in place."
+            done.detail = result.restart ? "Close ProsperoStore and open it again to finish."
+                          : result.operation == "uninstall" ? "Its saved data was left in place."
+                          : result.operation == "adopt"
+                              ? "ProsperoStore will offer its updates from now on."
+                          : result.operation == "update"
+                              ? "The new version is in place."
                               : "ShadowMountPlus will add it to your home screen in a moment.";
         }
         else
@@ -445,7 +510,7 @@ void Service::run()
                       snapshot.entries.size());
         publish(std::move(result));
     }
-    if (refreshed && !control_.cancelled.load())
+    if (refreshed && check_updates && !control_.cancelled.load())
         check_store_update();
     if (!control_.cancelled.load())
     {
@@ -479,6 +544,19 @@ void Service::run()
         }
         if (!frame_report.empty())
             hui::sys::log("[STORE] %s", frame_report.c_str());
+        std::string settings;
+        bool save = false;
+        {
+            std::lock_guard lock(mutex_);
+            if (settings_pending_)
+            {
+                settings.swap(settings_);
+                settings_pending_ = false;
+                save = true;
+            }
+        }
+        if (save && !root_.empty())
+            (void)hui::save::write_atomic(root_ + "/settings.txt", settings);
         if (!id.empty())
         {
             Update result;

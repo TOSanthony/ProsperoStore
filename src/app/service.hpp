@@ -23,8 +23,9 @@ struct Update
         icon,
         qr,
         inventory,
-        notice, // message is its title, detail its body
-        job,    // a finished install, update or uninstall: entry.id, ok, message, detail
+        notice,    // message is its title, detail its body
+        job,       // a finished install, update or uninstall: entry.id, ok, message, detail
+        locations, // where apps can be installed on this console
         error
     } kind = Kind::error;
     std::string detail;
@@ -35,6 +36,8 @@ struct Update
     std::uint64_t generation = 0;
     std::string message;
     bool ok = false;
+    bool restart = false; // the store updated itself: restart to finish
+    std::vector<std::pair<std::string, std::uint64_t>> locations; // path, free bytes
 };
 // What the installer is doing, for the frame that draws it.
 struct JobView
@@ -56,6 +59,8 @@ class Service
     // Set before start() to run the installer: one transaction at a time, on
     // its own worker, after recovering whatever the journal says was interrupted.
     bool installer = false;
+    // Set before start(): whether to ask the catalog for a newer store.
+    bool check_updates = true;
     // Tests only: replaces the environment built from the console's configuration.
     std::optional<install::Environment> installer_environment;
     bool start();
@@ -68,6 +73,10 @@ class Service
     // location is the scanned folder that holds, or will hold, the app's folder.
     bool request_install(const catalog::Entry &entry, const std::string &location);
     bool request_uninstall(const std::string &id, const std::string &location);
+    // Takes over an app installed by hand (a receipt is written, nothing else).
+    bool request_adopt(const catalog::Entry &entry, const std::string &location);
+    // The settings file, written by a worker: never on the frame.
+    bool save_settings(std::string text);
     bool cancel_job(const std::string &id);
     bool job(JobView &view);
     // The titles running now, refreshed every two seconds by the installer's
@@ -77,7 +86,12 @@ class Service
   private:
     struct Job
     {
-        bool uninstall = false;
+        enum class Kind
+        {
+            install,
+            uninstall,
+            adopt
+        } kind = Kind::install;
         catalog::Entry entry;
         std::string location;
     };
@@ -89,6 +103,7 @@ class Service
     void run_installer();
     void publish(Update update);
     void check_store_update();
+    bool enqueue(Job job);
     bool load_policy(system::ScanPolicy &policy) const;
     std::string root_, version_;
     net::Control control_;
@@ -114,5 +129,7 @@ class Service
     std::uint64_t generation_ = 0;
     bool online_ = false;
     std::string frame_report_;
+    std::string settings_;
+    bool settings_pending_ = false;
 };
 } // namespace store

@@ -56,11 +56,15 @@ struct Request
     catalog::Entry entry;        // The app's verified detail record.
     std::string location;        // A folder ShadowMountPlus scans; used for a new install.
     std::string minimum_version; // From the signed versions.json; empty when unknown.
+    // The store updating itself: its own running folder is swapped for the new
+    // one and the old one is kept until the next start, which finishes the job.
+    bool self_update = false;
 };
 struct Result
 {
     bool ok = false;
     bool interrupted = false;
+    bool restart = false;  // Done as far as a running store can: restart to finish.
     std::string operation; // "install", "update", "uninstall", or what recovery found.
     std::string version;   // The contentVersion now on disk.
     std::string error;
@@ -72,6 +76,11 @@ Result apply(const Environment &environment, const Request &request, net::Contro
              Progress &progress);
 Result uninstall(const Environment &environment, const std::string &id, const std::string &location,
                  Progress &progress);
+// Takes over an app that was installed by hand: a folder named after the title
+// in a scanned location, whose param.json names that title. Only a receipt is
+// written; the folder is not touched. From then on the store updates and
+// uninstalls it like any app it installed.
+Result adopt(const Environment &environment, const std::string &id, const std::string &location);
 // Run once at start, before any transaction: finishes or undoes what the
 // journal says was in progress.
 Result recover(const Environment &environment);

@@ -5,6 +5,7 @@
 #include "app/store.hpp"
 #include "core/save_file.hpp"
 #include "install/transaction.hpp"
+#include "system/locations.hpp"
 #include "ui/glyphs.hpp"
 #include "ui/components/data_common.hpp"
 
@@ -12,6 +13,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstdio>
 #include <map>
 
 namespace store
@@ -96,6 +98,22 @@ std::string folded(std::string text)
     return text;
 }
 
+// "31.8 MB", "548 GB": sizes as people say them.
+std::string size_text(std::uint64_t bytes)
+{
+    char text[32];
+    const double megabytes = static_cast<double>(bytes) / (1024.0 * 1024.0);
+    if (megabytes >= 10240.0)
+        std::snprintf(text, sizeof(text), "%.0f GB", megabytes / 1024.0);
+    else if (megabytes >= 1024.0)
+        std::snprintf(text, sizeof(text), "%.1f GB", megabytes / 1024.0);
+    else if (megabytes >= 10.0)
+        std::snprintf(text, sizeof(text), "%.0f MB", megabytes);
+    else
+        std::snprintf(text, sizeof(text), "%.1f MB", megabytes);
+    return text;
+}
+
 // Baseline that centres a line of the given size on cy.
 float centred(float cy, float size)
 {
@@ -173,6 +191,13 @@ Screen::Screen() : theme_(farlight_theme())
     article_.style.padding = 4;
     article_.set_bounds({kInfoX - 4.0f, 392.0f, kInfoW + 8.0f, 500.0f});
     dialog_.style.theme = theme_;
+    about_.style.theme = theme_;
+    about_.style.body_size = 26;
+    about_.style.footer = false;
+    about_.style.panel = false;
+    about_.style.focus_ring = false;
+    about_.style.padding = 4;
+    about_.set_bounds({kMargin - 4.0f, 350.0f, 1300.0f, 590.0f});
     toasts_.style.theme = theme_;
     toasts_.style.frosted = true;
     toasts_.style.duration = 10.0f;
@@ -392,6 +417,10 @@ void Screen::set_catalog(std::vector<App> apps, std::string status, bool current
 void Screen::set_inventory(system::Inventory inventory)
 {
     inventory_ = std::move(inventory);
+    // Where the store itself is installed, for its own update.
+    for (const auto &app : inventory_.apps)
+        if (app.id == self_id_ && !app.image && app.path.ends_with("/" + self_id_))
+            self_location_ = app.path.substr(0, app.path.find_last_of('/'));
     inventory_ready_ = true;
     auto catalog_apps = apps_;
     std::erase_if(catalog_apps, [](const auto &app) { return app.local_only; });
@@ -456,8 +485,7 @@ void Screen::refresh_detail()
             blocks.push_back(
                 Block::key_value("Released", entry.released.substr(0, entry.released.find('T'))));
         if (entry.size != 0)
-            blocks.push_back(Block::key_value(
-                "Download", ui::format_value(static_cast<double>(entry.size)) + "B"));
+            blocks.push_back(Block::key_value("Download", size_text(entry.size)));
         blocks.push_back(
             Block::key_value("License", entry.license.empty() ? "Not specified" : entry.license));
         if (!entry.source.empty())
@@ -830,6 +858,18 @@ void Screen::update_page(const InputFrame &input, ui::Feedback &feedback)
         }
         else if (state.primary == Order::Kind::uninstall)
             ask_uninstall(shown, feedback);
+        else if (state.primary == Order::Kind::adopt)
+        {
+            ask_ = Ask::adopt;
+            ask_id_ = shown.title_id;
+            dialog_.open({ui::StatusKind::question,
+                          "Manage " + shown.name + " with ProsperoStore?",
+                          "Nothing is changed now. From then on its updates are offered here, and "
+                          "an update replaces the app's whole folder: anything you added inside "
+                          "that folder is lost with it.",
+                          {{"Cancel"}, {"Manage", ui::ButtonKind::primary}}},
+                         feedback);
+        }
         else
         {
             press_.trigger();
@@ -902,8 +942,18 @@ void Screen::update(const InputFrame &input, float dt, ui::Feedback &feedback)
             else
                 for (const auto &app : apps_)
                     if (app.title_id == ask_id_ && !app.installed.empty())
-                        order(app, Order::Kind::uninstall);
+                        order(app,
+                              ask_ == Ask::adopt ? Order::Kind::adopt : Order::Kind::uninstall);
         }
+    }
+    else if (panel_)
+        update_panel(input, feedback);
+    else if (input.is_pressed(Action::menu) ||
+             (input.is_pressed(Action::west) && !details_ && section_ != 6))
+    {
+        // Options opens the settings; Square, the queue.
+        open_panel(input.is_pressed(Action::menu) ? 1 : 0);
+        feedback.play(audio::Cue::open);
     }
     else if (details_ && focused())
         update_page(input, feedback);
@@ -912,6 +962,10 @@ void Screen::update(const InputFrame &input, float dt, ui::Feedback &feedback)
         details_ = false;
         update_home(input, feedback);
     }
+    panel_value_.target = panel_ ? 1.0f : 0.0f;
+    panel_value_.update(dt, 14.0f);
+    about_.set_active(panel_ && panel_tab_ == 2);
+    about_.update(dt);
 
     // The banner moves on by itself while nothing holds it.
     const bool home = !details_ && banner_shown();
@@ -1352,9 +1406,14 @@ void Screen::order(const App &app, Order::Kind kind)
         pending_order.location = path.substr(0, path.find_last_of('/'));
     }
     else
-        pending_order.location = install_location_;
+        pending_order.location = settings_.location;
+    if (app.title_id == self_id_)
+        pending_order.location = self_location_;
     if (kind == Order::Kind::install && app.detail)
         pending_order.entry = *app.detail;
+    pending_order.entry.id = app.title_id;
+    if (pending_order.entry.name.empty())
+        pending_order.entry.name = app.name;
 }
 
 bool Screen::open_app(const std::string &id)
@@ -1408,9 +1467,13 @@ void Screen::set_installer(bool available, bool guard, std::string reason, std::
     install_location_ = std::move(location);
 }
 
-void Screen::finish_job(bool ok, std::string title, std::string body)
+void Screen::finish_job(bool ok, bool restart, std::string title, std::string body)
 {
     const bool cancelled = title.ends_with(": cancelled");
+    restart_needed_ = restart_needed_ || restart;
+    history_.push_back({ok, title, body});
+    if (history_.size() > 12)
+        history_.erase(history_.begin());
     toasts_.push(ok          ? ui::StatusKind::success
                  : cancelled ? ui::StatusKind::info
                              : ui::StatusKind::danger,
@@ -1423,8 +1486,7 @@ Screen::Offer Screen::offer(const App &app) const
     const system::InstalledApp *installed = app.installed.empty() ? nullptr : &app.installed[0];
     const bool soon = app.catalog_badge == "Coming soon";
     const bool image = app.detail && !app.detail->format.empty() && app.detail->format != "zip";
-    const auto megabytes = [](std::uint64_t bytes)
-    { return ui::format_value(static_cast<double>(bytes)) + "B"; };
+    const auto megabytes = [](std::uint64_t bytes) { return size_text(bytes); };
 
     // A transaction for this app comes first: what it is doing, and Cancel.
     const bool waiting = std::find(activity_.waiting.begin(), activity_.waiting.end(),
@@ -1462,6 +1524,39 @@ Screen::Offer Screen::offer(const App &app) const
         return out;
     }
 
+    if (app.title_id == self_id_ && !self_id_.empty())
+    {
+        // The store's own page: it can't be uninstalled from inside, and its
+        // update is finished by restarting it.
+        const bool newer = catalog::update_available(self_version_, app.available_version);
+        out.headline = restart_needed_ ? "Restart to finish"
+                       : newer         ? "Update"
+                                       : "This is ProsperoStore";
+        out.note = newer && !restart_needed_
+                       ? self_version_ + "  \xE2\x86\x92  " + app.available_version
+                       : "Version " + self_version_;
+        out.tone = newer || restart_needed_ ? 1 : 0;
+        out.reason = restart_needed_
+                         ? "Close ProsperoStore and open it again to use the new version."
+                     : newer ? ""
+                             : "You are using it right now.";
+        if (newer && !restart_needed_)
+        {
+            out.label = "Update";
+            out.primary = Order::Kind::install;
+            if (!installer_)
+                out.reason = installer_reason_;
+            else if (!app.detail)
+                out.reason = "Waiting for the app's verified details.";
+            else
+            {
+                out.armed = true;
+                out.reason = "The new version is put in place now and starts the next time "
+                             "ProsperoStore is opened.";
+            }
+        }
+        return out;
+    }
     if (installed && app.badge == "Update")
     {
         out.headline = "Update";
@@ -1481,6 +1576,18 @@ Screen::Offer Screen::offer(const App &app) const
         {
             out.label = "Uninstall";
             out.primary = Order::Kind::uninstall;
+        }
+        else if (!app.local_only && !installed->image && !installed->duplicate &&
+                 installed->path.ends_with("/" + app.title_id))
+        {
+            // Installed by hand, and listed in the catalog: it can be handed over.
+            out.label = "Manage with ProsperoStore";
+            out.primary = Order::Kind::adopt;
+            out.armed = installer_;
+            out.reason = installer_ ? "Installed outside ProsperoStore. Hand it over to get its "
+                                      "updates here."
+                                    : installer_reason_;
+            return out;
         }
         else
             out.reason = installed->reason;
@@ -1728,6 +1835,7 @@ void Screen::draw(gfx::Renderer &renderer, const ui::Fonts &fonts)
         ui::draw_hints(overlay_, fonts, glyphs, detail, details, kRight, true);
         overlay_.pop_opacity();
     }
+    draw_panel(fonts, glass);
     ui::Canvas canvas{overlay_, fonts, glass, time_};
     dialog_.draw(canvas);
     toasts_.draw(canvas);
@@ -1749,6 +1857,383 @@ void Screen::draw(gfx::Renderer &renderer, const ui::Fonts &fonts)
         renderer.glass();
         renderer.draw(overlay_);
     }
+}
+
+// ---- settings ---------------------------------------------------------------
+
+std::string format_settings(const Settings &settings)
+{
+    return "location=" + settings.location + "\nupdates=" + (settings.check_updates ? "1" : "0") +
+           "\nsounds=" + (settings.sounds ? "1" : "0") +
+           "\nvibration=" + (settings.vibration ? "1" : "0") + "\n";
+}
+
+Settings parse_settings(std::string_view text)
+{
+    Settings settings;
+    while (!text.empty())
+    {
+        const auto end = text.find('\n');
+        const auto line = text.substr(0, end);
+        text = end == text.npos ? std::string_view{} : text.substr(end + 1);
+        const auto equals = line.find('=');
+        if (equals == line.npos)
+            continue;
+        const auto key = line.substr(0, equals), value = line.substr(equals + 1);
+        if (key == "location" && system::clean_absolute_path(value))
+            settings.location = value;
+        else if (key == "updates")
+            settings.check_updates = value != "0";
+        else if (key == "sounds")
+            settings.sounds = value != "0";
+        else if (key == "vibration")
+            settings.vibration = value != "0";
+    }
+    return settings;
+}
+
+void Screen::set_locations(std::vector<std::pair<std::string, std::uint64_t>> locations)
+{
+    locations_ = std::move(locations);
+    // A saved location that isn't offered on this console gives way to the first that is.
+    const auto offered = [&](const auto &place) { return place.first == settings_.location; };
+    if (!locations_.empty() && std::none_of(locations_.begin(), locations_.end(), offered))
+        settings_.location = locations_.front().first;
+}
+
+const App *Screen::self_app() const
+{
+    for (const auto &app : apps_)
+        if (app.title_id == self_id_)
+            return &app;
+    return nullptr;
+}
+
+// ---- the panel: Queue, Settings, About ----------------------------------------
+
+void Screen::open_panel(int tab)
+{
+    panel_ = true;
+    panel_tab_ = std::clamp(tab, 0, 2);
+    queue_focus_ = 0;
+    if (panel_tab_ == 2)
+        write_about();
+}
+
+void Screen::write_about()
+{
+    using Block = ui::TextBlock;
+    std::vector<Block> blocks;
+    blocks.push_back(Block::paragraph(
+        "ProsperoStore installs, updates and uninstalls the apps listed at homebrew.page, "
+        "the catalog of homebrew for this console."));
+    blocks.push_back(
+        Block::key_value("Version", self_version_.empty() ? "Unknown" : self_version_));
+    blocks.push_back(Block::key_value("Catalog", status_));
+    blocks.push_back(Block::key_value("New apps go to", settings_.location));
+    blocks.push_back(Block::heading("How it keeps installs safe", 3));
+    blocks.push_back(
+        Block::bullet("The catalog is signed, and the store refuses one it can't verify."));
+    blocks.push_back(
+        Block::bullet("A download is checked against the catalog before it is unpacked."));
+    blocks.push_back(
+        Block::bullet("An app's folder is replaced in one step, only when the new one is "
+                      "complete. A running app is never touched."));
+    blocks.push_back(Block::heading("Please note", 3));
+    blocks.push_back(Block::paragraph(
+        "Apps are published by their own developers, who are responsible for their content "
+        "and licensing. A listing is not a security audit. ProsperoStore and the catalog come "
+        "without warranty."));
+    blocks.push_back(Block::heading("Where things are", 3));
+    blocks.push_back(Block::key_value("Store files", "/data/prosperostore"));
+    blocks.push_back(Block::key_value("Logs", "/data/prosperostore/logs"));
+    blocks.push_back(Block::heading("Thanks", 3));
+    blocks.push_back(Block::paragraph(
+        "ShadowMountPlus by drakmor puts installed apps on the home screen. Built with "
+        "ps5-opengl, the Homebrew UI Lab and the PS5 native app boilerplate, and with curl, "
+        "OpenSSL, zlib, miniz, Monocypher, yyjson, PicoSHA2, QR Code generator and stb. "
+        "Fonts: Inter, Montserrat and DejaVu Sans Mono."));
+    blocks.push_back(
+        Block::paragraph("BlackBearReloaded. Free software under the GPL, version 3 or later."));
+    about_.set_content(std::move(blocks));
+    about_.scroll_to(0, true);
+}
+
+void Screen::update_panel(const InputFrame &input, ui::Feedback &feedback)
+{
+    if (input.is_pressed(Action::back) || input.is_pressed(Action::menu))
+    {
+        panel_ = false;
+        feedback.play(audio::Cue::back);
+        return;
+    }
+    if (input.is_pressed(Action::page_next) || input.is_pressed(Action::page_prev))
+    {
+        const int next = panel_tab_ + (input.is_pressed(Action::page_next) ? 1 : -1);
+        if (next < 0 || next > 2)
+            return refuse(feedback, false, 0.0f, 0.0f);
+        open_panel(next);
+        feedback.play(audio::Cue::tab, 0.96f + 0.04f * static_cast<float>(next));
+        return;
+    }
+    const int step = input.nav == Direction::down ? 1 : input.nav == Direction::up ? -1 : 0;
+    if (panel_tab_ == 0)
+    {
+        // What is running first, then what waits, in order.
+        std::vector<std::string> ids;
+        if (!activity_.id.empty())
+            ids.push_back(activity_.id);
+        ids.insert(ids.end(), activity_.waiting.begin(), activity_.waiting.end());
+        const int count = static_cast<int>(ids.size());
+        queue_focus_ = std::clamp(queue_focus_, 0, std::max(0, count - 1));
+        if (step && count)
+        {
+            const int next = queue_focus_ + step;
+            if (next < 0 || next >= count)
+                return refuse(feedback, input.nav_repeat, 0.0f, static_cast<float>(step));
+            queue_focus_ = next;
+            feedback.play(audio::Cue::focus);
+        }
+        else if (input.is_pressed(Action::confirm) && count)
+        {
+            pending_order = {};
+            pending_order.kind = Order::Kind::cancel;
+            pending_order.id = ids[static_cast<std::size_t>(queue_focus_)];
+            feedback.play(audio::Cue::select);
+        }
+        return;
+    }
+    if (panel_tab_ == 2)
+    {
+        about_.handle(input, feedback);
+        return;
+    }
+    constexpr int kRows = 5;
+    if (step)
+    {
+        const int next = setting_focus_ + step;
+        if (next < 0 || next >= kRows)
+            return refuse(feedback, input.nav_repeat, 0.0f, static_cast<float>(step));
+        setting_focus_ = next;
+        feedback.play(audio::Cue::focus);
+        return;
+    }
+    const int turn = input.nav == Direction::right || input.is_pressed(Action::confirm) ? 1
+                     : input.nav == Direction::left                                     ? -1
+                                                                                        : 0;
+    if (!turn)
+        return;
+    if (setting_focus_ == 0)
+    {
+        if (locations_.size() < 2)
+            return refuse(feedback, input.nav_repeat, static_cast<float>(turn), 0.0f);
+        const auto current =
+            std::find_if(locations_.begin(), locations_.end(),
+                         [&](const auto &place) { return place.first == settings_.location; });
+        const auto count = static_cast<int>(locations_.size());
+        const int index =
+            current == locations_.end() ? 0 : static_cast<int>(current - locations_.begin());
+        settings_.location =
+            locations_[static_cast<std::size_t>((index + turn + count) % count)].first;
+    }
+    else if (setting_focus_ == 1)
+        settings_.check_updates = !settings_.check_updates;
+    else if (setting_focus_ == 2)
+        settings_.sounds = !settings_.sounds;
+    else if (setting_focus_ == 3)
+        settings_.vibration = !settings_.vibration;
+    else
+    {
+        // The store's own page says what can be done about its version.
+        if (!input.is_pressed(Action::confirm) || !self_app())
+            return refuse(feedback, input.nav_repeat, 0.0f, 0.0f);
+        panel_ = false;
+        open_app(self_id_);
+        feedback.play(audio::Cue::open);
+        return;
+    }
+    settings_changed = true;
+    feedback.play(audio::Cue::toggle);
+}
+
+void Screen::draw_panel(const ui::Fonts &fonts, std::uint32_t glass)
+{
+    const float t = panel_value_.value;
+    if (t <= 0.004f)
+        return;
+    auto &list = overlay_;
+    const float veil = tween::clamp01(t * 1.6f);
+    list.glass(glass, {0, 0, kWidth, kHeight}, 0, kWhite.with_alpha(veil));
+    list.rounded_rect({0, 0, kWidth, kHeight}, 0,
+                      gfx::mix(kCoal, kDeep, 0.4f).with_alpha(0.9f * veil));
+    list.push_opacity(tween::smoothstep(t));
+    list.push_transform(1.0f, 0, 0, 0, 24.0f * (1.0f - tween::cubic_out(t)));
+
+    // The three tabs, as the home page's chips are drawn.
+    constexpr const char *kTabs[] = {"Queue", "Settings", "About"};
+    float x = kMargin + ui::button_width(ui::Button::l1, 30) + 16.0f;
+    const float cy = 140.0f;
+    ui::draw_button(list, fonts, ui::GlyphStyle::dark(), ui::Button::l1, kMargin, cy, 30);
+    for (int i = 0; i < 3; ++i)
+    {
+        const float w = 48.0f + fonts.semibold.measure(kTabs[i], 22);
+        const Rect chip{x, cy - kChipH * 0.5f, w, kChipH};
+        const bool on = i == panel_tab_;
+        list.bordered_rect(chip, kChipH * 0.5f, on ? kInk : kClear, 1.5f,
+                           kInk.with_alpha(on ? 1.0f : 0.2f));
+        ui::text(list, fonts.semibold, kTabs[i], chip.x + 24.0f, centred(cy, 22), 22,
+                 on ? kCoal : kInk.with_alpha(0.78f));
+        x += w + 12.0f;
+    }
+    ui::draw_button(list, fonts, ui::GlyphStyle::dark(), ui::Button::r1, x + 4.0f, cy, 30);
+
+    const float top = 232.0f;
+    const auto megabytes = [](std::uint64_t bytes) { return size_text(bytes); };
+    const auto name_of = [&](const std::string &id)
+    {
+        for (const auto &app : apps_)
+            if (app.title_id == id)
+                return app.name;
+        return id;
+    };
+    if (panel_tab_ == 0)
+    {
+        std::vector<std::string> ids;
+        if (!activity_.id.empty())
+            ids.push_back(activity_.id);
+        ids.insert(ids.end(), activity_.waiting.begin(), activity_.waiting.end());
+        float y = top;
+        for (std::size_t i = 0; i < ids.size() && i < 6; ++i)
+        {
+            const Rect row{kMargin, y, kWidth - 2.0f * kMargin, 104.0f};
+            const bool focused = static_cast<int>(i) == queue_focus_;
+            list.rounded_rect(row, 18, kPanel.with_alpha(0.85f));
+            if (focused)
+                list.bordered_rect(row.inset(-5.0f), 22, kClear, 3.0f, kInk.with_alpha(0.94f));
+            ui::text(list, fonts.semibold, fonts.semibold.font->fit(name_of(ids[i]), 28, 900.0f),
+                     row.x + 32.0f, row.y + 44.0f, 28, kInk);
+            const bool working = i == 0 && !activity_.id.empty();
+            float progress = -1.0f;
+            const char *phase = "Waiting";
+            if (working)
+                busy_app(progress, phase);
+            std::string line = phase;
+            if (working && progress >= 0.0f)
+                line += "  " + megabytes(activity_.done) + " of " + megabytes(activity_.total);
+            ui::text(list, fonts.regular, line, row.x + 32.0f, row.y + 80.0f, 22,
+                     kInk.with_alpha(0.62f));
+            const Rect track{row.x + row.w - 560.0f, row.cy() - 4.0f, 400.0f, 8.0f};
+            list.rounded_rect(track, 4, kInk.with_alpha(0.14f));
+            if (progress >= 0.0f)
+                list.rounded_rect({track.x, track.y, std::max(8.0f, track.w * progress), 8.0f}, 4,
+                                  kAccent);
+            if (focused)
+                ui::text(list, fonts.semibold, "Cancel", row.x + row.w - 32.0f,
+                         centred(row.cy(), 22), 22, kAccent, gfx::Align::right);
+            y += 120.0f;
+        }
+        if (ids.empty())
+        {
+            ui::text(list, fonts.semibold, "Nothing is being installed", kMargin, top + 40.0f, 34,
+                     kInk);
+            ui::text(list, fonts.regular,
+                     "Installs, updates and removals line up here, one at a time.", kMargin,
+                     top + 84.0f, 24, kInk.with_alpha(0.62f));
+            y = top + 150.0f;
+        }
+        // What finished since the store was opened, newest first.
+        if (!history_.empty())
+        {
+            ui::text(list, fonts.semibold, "FINISHED", kMargin, y + 30.0f, 16,
+                     kInk.with_alpha(0.55f), gfx::Align::left, 3.5f);
+            y += 58.0f;
+            for (auto done = history_.rbegin(); done != history_.rend() && y < 930.0f; ++done)
+            {
+                if (done->ok)
+                    draw_check(list, kMargin + 14.0f, y + 6.0f, 22.0f, kOwned);
+                else
+                    list.ring(kMargin + 14.0f, y + 6.0f, 10.0f, 3.0f, Color::rgb(0xe5484d));
+                ui::text(list, fonts.semibold, fonts.semibold.font->fit(done->title, 24, 700.0f),
+                         kMargin + 44.0f, y + 14.0f, 24, kInk);
+                ui::text(list, fonts.regular, fonts.regular.font->fit(done->body, 22, 900.0f),
+                         kMargin + 780.0f, y + 14.0f, 22, kInk.with_alpha(0.62f));
+                y += 52.0f;
+            }
+        }
+    }
+    else if (panel_tab_ == 1)
+    {
+        const App *self = self_app();
+        const bool newer =
+            self && catalog::update_available(self_version_, self->available_version);
+        std::string place = settings_.location;
+        for (const auto &[path, room] : locations_)
+            if (path == settings_.location)
+                place += "   " + megabytes(room) + " free";
+        const struct Row
+        {
+            const char *label, *note;
+            std::string value;
+            bool on;
+        } rows[] = {
+            {"Install location",
+             "Where new apps go. A folder ShadowMountPlus scans on this console.", place, true},
+            {"Check for a newer ProsperoStore",
+             "Asked once at start; a notice appears when there is one.",
+             settings_.check_updates ? "On" : "Off", settings_.check_updates},
+            {"Sounds", "The interface's own sounds.", settings_.sounds ? "On" : "Off",
+             settings_.sounds},
+            {"Vibration", "A light answer from the controller.", settings_.vibration ? "On" : "Off",
+             settings_.vibration},
+            {"ProsperoStore", "Open its page to update it.",
+             restart_needed_ ? "Restart to finish the update"
+             : newer         ? "Version " + self->available_version + " is available"
+                             : "Version " + self_version_ + (self ? ", up to date" : ""),
+             newer || restart_needed_},
+        };
+        float y = top;
+        for (int i = 0; i < 5; ++i)
+        {
+            const Rect row{kMargin, y, kWidth - 2.0f * kMargin, 112.0f};
+            list.rounded_rect(row, 18, kPanel.with_alpha(0.85f));
+            if (i == setting_focus_)
+                list.bordered_rect(row.inset(-5.0f), 22, kClear, 3.0f, kInk.with_alpha(0.94f));
+            ui::text(list, fonts.semibold, rows[i].label, row.x + 32.0f, row.y + 48.0f, 28, kInk);
+            ui::text(list, fonts.regular, rows[i].note, row.x + 32.0f, row.y + 84.0f, 22,
+                     kInk.with_alpha(0.62f));
+            ui::text(list, fonts.semibold, fonts.semibold.font->fit(rows[i].value, 26, 760.0f),
+                     row.x + row.w - 32.0f, centred(row.cy(), 26), 26,
+                     rows[i].on ? kAccent : kInk.with_alpha(0.62f), gfx::Align::right);
+            y += 128.0f;
+        }
+    }
+    else
+    {
+        ui::text(list, fonts.display, "ProsperoStore", kMargin - 3.0f, top + 44.0f, 60, kInk);
+        float words = ui::text(list, fonts.regular, "Apps from ", kMargin, top + 92.0f, 26,
+                               kInk.with_alpha(0.62f));
+        ui::text(list, fonts.semibold, "homebrew.page", kMargin + words, top + 92.0f, 26, kAccent);
+        ui::Canvas canvas{list, fonts, glass, time_};
+        about_.draw(canvas);
+    }
+    const ui::Hint queue[] = {{ui::Button::cross, "Cancel"},
+                              {ui::Button::l1, "Tabs", ui::Button::r1},
+                              {ui::Button::circle, "Close"}};
+    const ui::Hint change[] = {{ui::Button::cross, "Change"},
+                               {ui::Button::l1, "Tabs", ui::Button::r1},
+                               {ui::Button::circle, "Close"}};
+    const ui::Hint read[] = {{ui::Button::dpad, "Scroll"},
+                             {ui::Button::l1, "Tabs", ui::Button::r1},
+                             {ui::Button::circle, "Close"}};
+    const bool jobs = !activity_.id.empty() || !activity_.waiting.empty();
+    if (panel_tab_ == 0)
+        ui::draw_hints(list, fonts, ui::GlyphStyle::dark(), queue + (jobs ? 0 : 1), jobs ? 3 : 2,
+                       kRight, true);
+    else
+        ui::draw_hints(list, fonts, ui::GlyphStyle::dark(), panel_tab_ == 1 ? change : read, 3,
+                       kRight, true);
+    list.pop_transform();
+    list.pop_opacity();
 }
 
 bool Fonts::load(gfx::Renderer &renderer, const std::string &assets)

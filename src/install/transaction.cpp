@@ -326,7 +326,8 @@ Result apply(const Environment &environment, const Request &request, net::Contro
     if (!request.minimum_version.empty() && catalog::version(entry.content_version) &&
         entry.content_version < request.minimum_version)
         return fail("An older version than the catalog's current one was refused");
-    if (id == environment.self)
+    const bool self = id == environment.self;
+    if (self != request.self_update)
         return fail("ProsperoStore is updated separately");
 
     std::string error, previous;
@@ -340,15 +341,20 @@ Result apply(const Environment &environment, const Request &request, net::Contro
     const bool update = existing == Kind::directory;
     if (update)
     {
-        if (!managed(paths, id, request.location, previous))
+        // The store itself has no receipt (it was put there by hand or by an
+        // earlier version) and is, of course, running.
+        if (self ? !folder_version(paths.target, id, previous)
+                 : !managed(paths, id, request.location, previous))
             return fail("Installed outside ProsperoStore. Not managed by this app.");
         if (!catalog::update_available(previous, entry.content_version))
             return fail("The catalog doesn't list a newer version");
-        if (const int state = running(environment, id); state != 0)
+        if (const int state = self ? 0 : running(environment, id); state != 0)
             return fail(running_refusal(state));
     }
     else if (existing != Kind::absent)
         return fail("The install location holds something unexpected");
+    else if (self)
+        return fail("ProsperoStore isn't installed in this location");
     result.operation = update ? "update" : "install";
     if (kind(request.location) != Kind::directory)
         return fail("The location isn't available");
@@ -421,9 +427,11 @@ Result apply(const Environment &environment, const Request &request, net::Contro
     if (update)
     {
         std::string current;
-        if (!managed(paths, id, request.location, current) || current != previous)
+        if ((self ? !folder_version(paths.target, id, current)
+                  : !managed(paths, id, request.location, current)) ||
+            current != previous)
             return abandon("The installed app changed while the update was prepared");
-        if (const int state = running(environment, id); state != 0)
+        if (const int state = self ? 0 : running(environment, id); state != 0)
             return abandon(running_refusal(state));
     }
     else if (kind(paths.target) != Kind::absent)
@@ -458,6 +466,16 @@ Result apply(const Environment &environment, const Request &request, net::Contro
     sync_directory(request.location);
     sync_directory(paths.staging);
     STORE_STEP("placed");
+    if (self)
+    {
+        // The running store still uses the files of the folder that was moved
+        // aside. It stays until the next start, when recovery writes the
+        // receipt, removes it and closes the journal.
+        progress.phase = static_cast<int>(Phase::idle);
+        result.ok = true;
+        result.restart = true;
+        return result;
+    }
     // From here the journal is kept on failure, so the next start finishes the job.
     if (!write_receipt(environment, paths, id, request.location, result.version, entry.version,
                        entry.digest))
@@ -529,6 +547,28 @@ Result uninstall(const Environment &environment, const std::string &id, const st
         return fail("Uninstalled, but the transaction could not be closed.");
     progress.phase = static_cast<int>(Phase::idle);
     result.ok = true;
+    return result;
+}
+
+Result adopt(const Environment &environment, const std::string &id, const std::string &location)
+{
+    Result result;
+    result.operation = "adopt";
+    std::string error;
+    Paths paths;
+    if (id == environment.self)
+        result.error = "ProsperoStore manages itself";
+    else if (!resolve(environment, id, location, true, paths, error))
+        result.error = error;
+    else if (kind(paths.journal) != Kind::absent)
+        result.error = "An interrupted operation must be recovered first";
+    else if (!folder_version(paths.target, id, result.version))
+        result.error = "The folder doesn't hold this app";
+    else if (!write_receipt(environment, paths, id, location, result.version, "adopted",
+                            std::string(64, '0')))
+        result.error = "The receipt could not be written";
+    else
+        result.ok = true;
     return result;
 }
 

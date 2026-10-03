@@ -48,11 +48,23 @@ struct Order
         none,
         install, // or update: the engine decides from what is on disk
         uninstall,
+        adopt, // take over an app that was installed by hand
         cancel
     } kind = Kind::none;
     catalog::Entry entry; // install: the app's verified detail record
     std::string id, location;
 };
+// What the player chose, kept in /data/prosperostore/settings.txt.
+struct Settings
+{
+    std::string location = "/data/homebrew"; // where new apps are installed
+    bool check_updates = true;               // ask the catalog for a newer store at start
+    bool sounds = true;
+    bool vibration = true;
+};
+std::string format_settings(const Settings &settings);
+Settings parse_settings(std::string_view text);
+
 // What the installer is doing right now, as the page shows it.
 struct Activity
 {
@@ -94,7 +106,26 @@ class Screen
     {
         activity_ = std::move(activity);
     }
-    void finish_job(bool ok, std::string title, std::string body);
+    void finish_job(bool ok, bool restart, std::string title, std::string body);
+    void set_settings(Settings settings)
+    {
+        settings_ = std::move(settings);
+    }
+    const Settings &settings() const
+    {
+        return settings_;
+    }
+    bool settings_changed = false; // the frame loop saves them and clears this
+    // The scanned folders apps can be installed to, with the room in each.
+    void set_locations(std::vector<std::pair<std::string, std::uint64_t>> locations);
+    // The running store: its title and the version it was built as.
+    void set_self(std::string id, std::string version)
+    {
+        self_id_ = std::move(id);
+        self_version_ = std::move(version);
+    }
+    // Queue (0), Settings (1) or About (2), over whatever is on screen.
+    void open_panel(int tab);
     // The titles running now; known is false when that can't be told, and
     // then nothing installed is changed.
     void set_running(std::vector<std::string> ids, bool known)
@@ -206,6 +237,10 @@ class Screen
     const App *busy_app(float &progress, const char *&phase) const;
     void draw_grid(const hui::ui::Fonts &fonts);
     void draw_page(const hui::ui::Fonts &fonts, std::uint32_t glass);
+    void update_panel(const hui::InputFrame &input, hui::ui::Feedback &feedback);
+    void draw_panel(const hui::ui::Fonts &fonts, std::uint32_t glass);
+    void write_about();
+    const App *self_app() const;
     void draw_action_box(const hui::ui::Fonts &fonts, std::uint32_t glass, const App &app,
                          float content);
 
@@ -214,6 +249,20 @@ class Screen
     hui::ui::ToastStack toasts_;
     hui::ui::Dialog dialog_;
     Activity activity_;
+    Settings settings_;
+    std::vector<std::pair<std::string, std::uint64_t>> locations_;
+    std::string self_id_, self_version_, self_location_ = "/data/homebrew";
+    bool restart_needed_ = false;
+    struct Done
+    {
+        bool ok = false;
+        std::string title, body;
+    };
+    std::vector<Done> history_;
+    bool panel_ = false;
+    int panel_tab_ = 1, queue_focus_ = 0, setting_focus_ = 0;
+    hui::tween::Spring panel_value_;
+    hui::ui::TextView about_;
     std::vector<std::string> running_;
     std::string auto_order_;
     // "Update all": the titles still to be asked for, one at a time, each
@@ -224,6 +273,7 @@ class Screen
     {
         none,
         uninstall,
+        adopt,
         quit
     } ask_ = Ask::none;
     std::string ask_id_;
