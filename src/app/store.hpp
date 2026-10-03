@@ -6,6 +6,7 @@
 
 #include "gfx/renderer.hpp"
 #include "catalog/catalog.hpp"
+#include "system/inventory.hpp"
 #include "ui/components/grid.hpp"
 #include "ui/components/tabs.hpp"
 #include "ui/components/text_view.hpp"
@@ -30,13 +31,17 @@ struct App
     std::string released, updated;
     std::optional<catalog::Entry> detail = {};
     std::string detail_error = {};
+    std::string catalog_badge = {}, available_version = {};
+    std::vector<system::InstalledApp> installed = {};
+    bool local_only = false;
 };
 
 class Screen
 {
   public:
     Screen();
-    void set_catalog(std::vector<App> apps, std::string status);
+    void set_catalog(std::vector<App> apps, std::string status, bool current = false);
+    void set_inventory(system::Inventory inventory);
     void set_detail(const catalog::Entry &entry);
     void set_detail_error(const std::string &id, std::string message);
     void set_icon(const std::string &id, std::uint32_t texture);
@@ -74,6 +79,8 @@ class Screen
     float time_ = 0;
     bool details_ = false;
     bool quit_ = false;
+    system::Inventory inventory_;
+    bool inventory_ready_ = false, catalog_current_ = false;
     std::string query_;
     std::string qr_id_;
     std::uint32_t qr_texture_ = 0;

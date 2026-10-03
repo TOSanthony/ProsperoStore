@@ -52,12 +52,45 @@ Screen::Screen() : theme_(ui::themes()[0])
     article_.set_bounds({684, 364, 1140, 458});
 }
 
-void Screen::set_catalog(std::vector<App> apps, std::string status)
+void Screen::set_catalog(std::vector<App> apps, std::string status, bool current)
 {
     const auto previous = visible_.empty()
                               ? std::string{}
                               : apps_[visible_[static_cast<std::size_t>(grid_.focus())]].title_id;
     apps_ = std::move(apps);
+    catalog_current_ = current;
+    for (auto &app : apps_)
+    {
+        app.catalog_badge = app.badge;
+        app.installed.clear();
+    }
+    for (const auto &installed : inventory_.apps)
+    {
+        const auto id = installed.id.empty() ? "local:" + installed.path : installed.id;
+        auto found = std::find_if(apps_.begin(), apps_.end(),
+                                  [&](const auto &app) { return app.title_id == id; });
+        if (found == apps_.end())
+        {
+            App local;
+            local.title_id = id;
+            local.name = installed.name;
+            local.author = installed.image ? "Installed image" : "Installed app";
+            local.local_only = true;
+            apps_.push_back(std::move(local));
+            found = apps_.end() - 1;
+        }
+        found->installed.push_back(installed);
+    }
+    for (auto &app : apps_)
+        if (!app.installed.empty())
+        {
+            const auto &installed = app.installed.front();
+            app.badge = installed.duplicate ? "Duplicate"
+                        : installed.managed &&
+                                catalog::update_available(installed.version, app.available_version)
+                            ? "Update"
+                            : "Installed";
+        }
     status_ = std::move(status);
     refresh_grid();
     const auto found = std::find_if(visible_.begin(), visible_.end(),
@@ -69,8 +102,19 @@ void Screen::set_catalog(std::vector<App> apps, std::string status)
     if (details_)
     {
         refresh_detail();
-        pending_detail = previous;
+        pending_detail = apps_[*found].local_only ? std::string{} : previous;
     }
+}
+
+void Screen::set_inventory(system::Inventory inventory)
+{
+    inventory_ = std::move(inventory);
+    inventory_ready_ = true;
+    auto catalog_apps = apps_;
+    std::erase_if(catalog_apps, [](const auto &app) { return app.local_only; });
+    for (auto &app : catalog_apps)
+        app.badge = app.catalog_badge;
+    set_catalog(std::move(catalog_apps), status_, catalog_current_);
 }
 
 void Screen::set_query(std::string query)
@@ -89,9 +133,12 @@ void Screen::refresh_grid()
     for (std::size_t i = 0; i < apps_.size(); ++i)
     {
         const App &app = apps_[i];
+        if (app.local_only && section != 5)
+            continue;
         if ((section == 1 && app.kind != "app") || (section == 2 && app.kind != "game") ||
-            (section == 3 && app.kind != "tool") || (section == 4 && app.badge != "Coming soon") ||
-            (section == 5 && app.badge != "Installed") || (section == 6 && app.badge != "Update"))
+            (section == 3 && app.kind != "tool") ||
+            (section == 4 && app.catalog_badge != "Coming soon") ||
+            (section == 5 && app.installed.empty()) || (section == 6 && app.badge != "Update"))
             continue;
         if (!query.empty() && folded(app.name).find(query) == std::string::npos &&
             folded(app.author).find(query) == std::string::npos)
@@ -156,6 +203,19 @@ void Screen::refresh_detail()
     const auto &app = apps_[visible_[static_cast<std::size_t>(grid_.focus())]];
     using Block = ui::TextBlock;
     std::vector<Block> blocks;
+    for (const auto &installed : app.installed)
+    {
+        blocks.push_back(Block::key_value("Installed version",
+                                          installed.version.empty() ? "Image" : installed.version));
+        blocks.push_back(Block::paragraph(installed.path));
+        blocks.push_back(
+            Block::paragraph(installed.managed ? "Managed by ProsperoStore" : installed.reason));
+    }
+    if (app.local_only && catalog_current_ &&
+        std::any_of(app.installed.begin(), app.installed.end(),
+                    [](const auto &installed) { return installed.managed; }))
+        blocks.push_back(Block::paragraph("This app is no longer listed in the verified catalog. "
+                                          "Check with its developer before using it."));
     if (!app.detail_error.empty())
         blocks.push_back(Block::paragraph("Details unavailable: " + app.detail_error));
     if (app.detail)
@@ -190,7 +250,7 @@ void Screen::refresh_detail()
             blocks.push_back(Block::paragraph(entry.release_notes));
         }
     }
-    else if (app.detail_error.empty())
+    else if (app.detail_error.empty() && !app.local_only)
         blocks.push_back(Block::paragraph("Loading verified app details..."));
     article_.set_content(std::move(blocks));
     article_.scroll_to(0, true);
@@ -220,7 +280,8 @@ std::vector<std::string> Screen::artwork() const
         return wanted;
     wanted.reserve(16);
     const auto focus = grid_.focus();
-    wanted.push_back(apps_[visible_[static_cast<std::size_t>(focus)]].title_id);
+    if (!apps_[visible_[static_cast<std::size_t>(focus)]].local_only)
+        wanted.push_back(apps_[visible_[static_cast<std::size_t>(focus)]].title_id);
     if (details_)
         return wanted;
     const auto view = grid_.bounds();
@@ -229,6 +290,8 @@ std::vector<std::string> Screen::artwork() const
     const int end = std::min(static_cast<int>(visible_.size()), focus + 3 * columns);
     for (int i = begin; i < end && wanted.size() < 16; ++i)
     {
+        if (apps_[visible_[static_cast<std::size_t>(i)]].local_only)
+            continue;
         const auto cell = grid_.cell_rect(i);
         if (i != focus && cell.y + cell.h >= view.y - cell.h && cell.y <= view.y + view.h + cell.h)
             wanted.push_back(apps_[visible_[static_cast<std::size_t>(i)]].title_id);
@@ -243,7 +306,7 @@ void Screen::update(const InputFrame &input, float dt, ui::Feedback &feedback)
     {
         auto &app = apps_[visible_[static_cast<std::size_t>(grid_.focus())]];
         app.detail_error.clear();
-        pending_detail = app.title_id;
+        pending_detail = app.local_only ? std::string{} : app.title_id;
         refresh_detail();
         feedback.play(audio::Cue::select);
     }
@@ -277,7 +340,8 @@ void Screen::update(const InputFrame &input, float dt, ui::Feedback &feedback)
     else if (!details_ && grid_.handle(input, feedback) == ui::Event::activated)
     {
         details_ = true;
-        pending_detail = apps_[visible_[static_cast<std::size_t>(grid_.focus())]].title_id;
+        const auto &app = apps_[visible_[static_cast<std::size_t>(grid_.focus())]];
+        pending_detail = app.local_only ? std::string{} : app.title_id;
         refresh_detail();
     }
     else if (details_)
@@ -329,11 +393,18 @@ void Screen::draw(gfx::Renderer &renderer, const ui::Fonts &fonts)
     }
     else
     {
-        paint.heading("Your next discovery.", 96, 236, 76, paint.page_text());
+        const bool library = tabs_.active() == 5;
+        paint.heading(library               ? "Your library."
+                      : tabs_.active() == 6 ? "Ready for an update."
+                                            : "Your next discovery.",
+                      96, 236, 76, paint.page_text());
         ui::text(scene_, fonts.regular,
                  ui::fit_label(paint,
-                               query_.empty() ? "Independent apps. New possibilities."
-                                              : "Search: " + query_,
+                               query_.empty()
+                                   ? (library && !inventory_.complete
+                                          ? "Some installed locations could not be inspected."
+                                          : "Independent apps. New possibilities.")
+                                   : "Search: " + query_,
                                30, 1600),
                  100, 295, 30, paint.page_text_muted());
         tabs_.draw(canvas);
@@ -345,14 +416,20 @@ void Screen::draw(gfx::Renderer &renderer, const ui::Fonts &fonts)
         if (visible_.empty())
         {
             paint.panel({112, 590, 1696, 280});
-            paint.heading(!query_.empty() ? "No matches"
-                          : apps_.empty() ? "The catalog is on its way"
-                                          : "Nothing here yet",
+            paint.heading(library && !inventory_ready_      ? "Checking your library"
+                          : library && !inventory_.complete ? "Library unavailable"
+                          : !query_.empty()                 ? "No matches"
+                          : library                         ? "No installed apps found"
+                          : apps_.empty()                   ? "The catalog is on its way"
+                                                            : "Nothing here yet",
                           960, 707, 36, gfx::Align::center);
             ui::text(scene_, fonts.regular,
-                     !query_.empty() ? "Try another app name or developer."
-                     : apps_.empty() ? "Verified apps will appear here when the catalog is ready."
-                                     : "Explore Discover to find something new.",
+                     library && !inventory_ready_ ? "Reading installed apps and receipts."
+                     : library && !inventory_.complete
+                         ? "Installed apps are unavailable until their locations can be read."
+                     : !query_.empty() ? "Try another app name or developer."
+                     : apps_.empty()   ? "Verified apps will appear here when the catalog is ready."
+                                       : "Explore Discover to find something new.",
                      960, 764, 26, theme_.text, gfx::Align::center);
         }
         else
@@ -366,9 +443,10 @@ void Screen::draw(gfx::Renderer &renderer, const ui::Fonts &fonts)
     if (details_)
     {
         const ui::Hint back[] = {{ui::Button::dpad, "Scroll"},
-                                 {ui::Button::triangle, "Refresh details"},
-                                 {ui::Button::circle, "Back"}};
-        ui::draw_hints(scene_, fonts, ui::GlyphStyle::dark(), back, 3, 96, false);
+                                 {ui::Button::circle, "Back"},
+                                 {ui::Button::triangle, "Refresh details"}};
+        const bool local = apps_[visible_[static_cast<std::size_t>(grid_.focus())]].local_only;
+        ui::draw_hints(scene_, fonts, ui::GlyphStyle::dark(), back, local ? 2 : 3, 96, false);
     }
     else
         ui::draw_hints(scene_, fonts, ui::GlyphStyle::dark(), hints + (visible_.empty() ? 1 : 0),

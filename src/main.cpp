@@ -159,15 +159,21 @@ int main()
                 catalog_generation = update.generation;
                 std::vector<store::App> apps;
                 for (const auto &entry : update.snapshot.entries)
+                {
                     apps.push_back({entry.id, entry.name, entry.author, entry.description,
                                     entry.kind, entry.version,
                                     entry.status == "coming_soon" ? "Coming soon" : "", 0,
                                     entry.released, entry.updated});
+                    apps.back().available_version = entry.content_version;
+                }
                 screen.set_catalog(std::move(apps),
                                    elevated ? update.message
                                             : "Read only: install permission unavailable • " +
-                                                  update.message);
+                                                  update.message,
+                                   update.snapshot.online);
             }
+            else if (update.kind == store::Update::Kind::inventory)
+                screen.set_inventory(std::move(update.installed));
             else if (update.kind == store::Update::Kind::icon)
             {
                 if (update.generation == catalog_generation &&

@@ -4,6 +4,7 @@
 #pragma once
 #include "catalog/client.hpp"
 #include "core/image.hpp"
+#include "system/inventory.hpp"
 #include <mutex>
 #include <pthread.h>
 #include <vector>
@@ -18,11 +19,13 @@ struct Update
         detail,
         icon,
         qr,
+        inventory,
         error
     } kind = Kind::error;
     catalog::Snapshot snapshot;
     catalog::Entry entry;
     hui::Image image;
+    system::Inventory installed;
     std::uint64_t generation = 0;
     std::string message;
 };

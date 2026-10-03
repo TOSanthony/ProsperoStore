@@ -11,6 +11,8 @@
 #include "catalog/icons.hpp"
 #include <algorithm>
 #include <set>
+#include <cerrno>
+#include <sys/stat.h>
 
 namespace store
 {
@@ -119,7 +121,8 @@ void Service::run()
         return;
     }
     catalog::Client client(root_.empty() ? "" : root_ + "/cache");
-#ifdef STORE_DEVELOPMENT
+    system::ScanPolicy scan_policy;
+    bool can_scan = false;
     if (root_ == "/data/prosperostore")
     {
         std::string configuration, manual, policy_error;
@@ -127,14 +130,28 @@ void Service::run()
             hui::save::read_file("/data/shadowmount/config.ini", &configuration, 256 * 1024);
         const bool listed =
             hui::save::read_file("/data/shadowmount/manual.lst", &manual, 256 * 1024);
+        const auto unreadable = [](const char *path, bool read)
+        {
+            struct stat info
+            {
+            };
+            return !read && (lstat(path, &info) == 0 || errno != ENOENT);
+        };
         system::ScanPolicy policy;
-        if (!system::scan_policy(configuration, manual, policy, policy_error))
+        if (unreadable("/data/shadowmount/config.ini", configured) ||
+            unreadable("/data/shadowmount/manual.lst", listed))
+            hui::sys::log("[STORE] storage policy error=Existing configuration is unreadable; "
+                          "refusing default paths");
+        else if (!system::scan_policy(configuration, manual, policy, policy_error))
             hui::sys::log("[STORE] storage policy error=%s", policy_error.c_str());
         else
         {
+            scan_policy = policy;
+            can_scan = true;
             hui::sys::log("[STORE] storage config=%d manual=%d roots=%zu entries=%zu depth=%u",
                           configured, listed, policy.roots.size(), policy.manual.size(),
                           policy.depth);
+#ifdef STORE_DEVELOPMENT
             for (const auto &path : policy.roots)
             {
                 if (control_.cancelled.load())
@@ -151,9 +168,9 @@ void Service::run()
                     static_cast<unsigned long long>(probe.available), probe.renamed, work_safe,
                     probe.error.c_str());
             }
+#endif
         }
     }
-#endif
     catalog::Snapshot snapshot;
     std::string error;
     if (client.cached(snapshot, error))
@@ -188,6 +205,27 @@ void Service::run()
                       static_cast<unsigned long long>(snapshot.manifest.sequence),
                       snapshot.entries.size());
         publish(std::move(result));
+    }
+    if (!control_.cancelled.load())
+    {
+        Update installed;
+        installed.kind = Update::Kind::inventory;
+        if (can_scan)
+            installed.installed =
+                system::scan_installed(scan_policy, root_ + "/receipts", control_.cancelled);
+        else
+        {
+            installed.installed.complete = false;
+            installed.installed.errors.push_back("Installed apps could not be inspected with the "
+                                                 "current permissions or scan configuration.");
+        }
+        hui::sys::log("[STORE] inventory complete=%d apps=%zu errors=%zu",
+                      installed.installed.complete, installed.installed.apps.size(),
+                      installed.installed.errors.size());
+        for (std::size_t i = 0; i < std::min<std::size_t>(3, installed.installed.errors.size());
+             ++i)
+            hui::sys::log("[STORE] inventory error=%s", installed.installed.errors[i].c_str());
+        publish(std::move(installed));
     }
     while (!control_.cancelled.load())
     {

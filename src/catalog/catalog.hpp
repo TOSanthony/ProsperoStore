@@ -42,6 +42,14 @@ struct Manifest
     bool verifies(std::string_view path, std::string_view body) const;
 };
 
+struct Receipt
+{
+    std::string id, location, content_version, release_tag, digest, installed_at;
+};
+
+bool parse_installed(std::string_view body, Entry &out, std::string &error);
+bool parse_receipt(std::string_view body, Receipt &out, std::string &error);
+
 using PublicKey = std::array<std::uint8_t, 32>;
 std::array<PublicKey, 2> public_keys();
 bool verify_manifest(std::string_view body, std::string_view signature, std::uint64_t highest,

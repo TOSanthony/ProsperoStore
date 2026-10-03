@@ -45,7 +45,7 @@ struct Json
 {
     std::vector<char> pool;
     std::unique_ptr<yyjson_doc, decltype(&yyjson_doc_free)> doc{nullptr, yyjson_doc_free};
-    yyjson_val *read(std::string_view body, std::size_t limit)
+    yyjson_val *read(std::string_view body, std::size_t limit, unsigned expected_schema = 3)
     {
         if (body.empty() || body.size() > limit)
             return nullptr;
@@ -59,7 +59,9 @@ struct Json
             return nullptr;
         auto *root = yyjson_doc_get_root(doc.get());
         auto *schema = yyjson_obj_get(root, "schema");
-        return yyjson_is_obj(root) && yyjson_is_uint(schema) && yyjson_get_uint(schema) == 3 &&
+        return yyjson_is_obj(root) &&
+                       (expected_schema == 0 ||
+                        (yyjson_is_uint(schema) && yyjson_get_uint(schema) == expected_schema)) &&
                        unique_members(root)
                    ? root
                    : nullptr;
@@ -303,6 +305,57 @@ bool parse_detail(std::string_view body, std::string_view expected, Entry &out, 
     auto *root = json.read(body, kDetailLimit);
     Entry candidate;
     if (!root || !read_entry(root, candidate, true) || candidate.id != expected)
+        return false;
+    out = std::move(candidate);
+    error.clear();
+    return true;
+}
+
+bool parse_installed(std::string_view body, Entry &out, std::string &error)
+{
+    error = "Installed app metadata is invalid";
+    Json json;
+    auto *root = json.read(body, kDetailLimit, 0);
+    Entry candidate;
+    if (!root || !field(root, "titleId", candidate.id, 9, true) || !title_id(candidate.id) ||
+        !field(root, "contentVersion", candidate.content_version, 10, true) ||
+        !version(candidate.content_version))
+        return false;
+    auto *localized = yyjson_obj_get(root, "localizedParameters");
+    if (localized && !yyjson_is_obj(localized))
+        return false;
+    std::string language;
+    if (!field(localized, "defaultLanguage", language, 32))
+        return false;
+    auto *preferred = yyjson_obj_get(localized, language.empty() ? "en-US" : language.c_str());
+    if (!preferred)
+        preferred = yyjson_obj_get(localized, "en-US");
+    if (preferred && !yyjson_is_obj(preferred))
+        return false;
+    if (!field(preferred, "titleName", candidate.name, 256))
+        return false;
+    if (candidate.name.empty())
+        candidate.name = candidate.id;
+    out = std::move(candidate);
+    error.clear();
+    return true;
+}
+
+bool parse_receipt(std::string_view body, Receipt &out, std::string &error)
+{
+    error = "The installation receipt is invalid";
+    Json json;
+    auto *root = json.read(body, 16 * 1024, 1);
+    Receipt candidate;
+    std::array<std::uint8_t, 32> digest{};
+    if (!root || !field(root, "titleId", candidate.id, 9, true) || !title_id(candidate.id) ||
+        !field(root, "location", candidate.location, 1023, true) ||
+        !field(root, "contentVersion", candidate.content_version, 10, true) ||
+        !version(candidate.content_version) ||
+        !field(root, "releaseTag", candidate.release_tag, 128, true) ||
+        !field(root, "sha256", candidate.digest, 64, true) ||
+        !hex_bytes(candidate.digest, digest) ||
+        !field(root, "installedAt", candidate.installed_at, 40, true))
         return false;
     out = std::move(candidate);
     error.clear();

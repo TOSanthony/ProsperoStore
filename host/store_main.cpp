@@ -114,10 +114,41 @@ static void check_search_and_sort()
     assert(screen.pending_search);
 }
 
+static void check_installed_sections()
+{
+    store::Screen screen;
+    store::App app;
+    app.title_id = "PPSA99010";
+    app.name = "Example";
+    app.available_version = "02.000.000";
+    screen.set_catalog({app}, "verified", true);
+    store::system::Inventory inventory;
+    store::system::InstalledApp installed;
+    installed.id = app.title_id;
+    installed.name = app.name;
+    installed.version = "01.000.000";
+    installed.path = "/data/homebrew/" + app.title_id;
+    installed.managed = true;
+    inventory.apps.push_back(installed);
+    screen.set_inventory(inventory);
+    hui::InputFrame section;
+    section.pressed = hui::action_bit(hui::Action::page_next);
+    hui::ui::Feedback feedback;
+    for (int index = 0; index < 5; ++index)
+        screen.update(section, 1.0f / 60.0f, feedback);
+    assert(screen.artwork() == std::vector<std::string>{app.title_id});
+    screen.update(section, 1.0f / 60.0f, feedback);
+    assert(screen.artwork() == std::vector<std::string>{app.title_id});
+    inventory.apps.front().managed = false;
+    screen.set_inventory(inventory);
+    assert(screen.artwork().empty());
+}
+
 int main(int argc, char **argv)
 {
     check_artwork_requests();
     check_search_and_sort();
+    check_installed_sections();
     if (argc < 3 || argc > 5)
         return 2;
     const auto get_display = reinterpret_cast<PFNEGLGETPLATFORMDISPLAYEXTPROC>(
@@ -161,9 +192,12 @@ int main(int argc, char **argv)
             }
             std::vector<store::App> apps;
             for (const auto &entry : snapshot.entries)
+            {
                 apps.push_back({entry.id, entry.name, entry.author, entry.description, entry.kind,
                                 entry.version, entry.status == "coming_soon" ? "Coming soon" : "",
                                 0, entry.released, entry.updated});
+                apps.back().available_version = entry.content_version;
+            }
             screen.set_catalog(std::move(apps), "Verified catalog");
             store::catalog::Icons icons(std::string(argv[3]) + "/icons");
             store::net::Control control;
@@ -198,6 +232,36 @@ int main(int argc, char **argv)
                 sort.pressed = hui::action_bit(hui::Action::r3);
                 screen.update(sort, 1.0f / 60.0f, feedback);
                 screen.update(sort, 1.0f / 60.0f, feedback);
+            }
+            else if (mode == "installed" || mode == "updates" || mode == "local-detail")
+            {
+                store::system::Inventory inventory;
+                inventory.apps = {
+                    {"PPSA99001", "ProsperoRadio", "01.000.000", "/data/homebrew/PPSA99001", "",
+                     false, true, false},
+                    {"PPSA99002", "ProsperoLight", "01.000.000", "/data/homebrew/PPSA99002",
+                     "Installed outside ProsperoStore. Not managed by this app.", false, false,
+                     false},
+                    {"PPSA99980", "Example local app", "01.000.001", "/mnt/ext1/homebrew/PPSA99980",
+                     "Installed outside ProsperoStore. Not managed by this app.", false, false,
+                     false},
+                    {"", "Example.ffpkg", "", "/mnt/ext1/homebrew/Example.ffpkg",
+                     "Image installed outside ProsperoStore. Not managed by this app.", true, false,
+                     false}};
+                screen.set_inventory(std::move(inventory));
+                screen.set_status("Installed library preview");
+                hui::InputFrame section;
+                section.pressed = hui::action_bit(hui::Action::page_next);
+                for (int index = 0; index < (mode == "updates" ? 6 : 5); ++index)
+                    screen.update(section, 1.0f / 60.0f, feedback);
+                if (mode == "local-detail")
+                {
+                    screen.set_query("Example local");
+                    hui::InputFrame open;
+                    open.pressed = hui::action_bit(hui::Action::confirm);
+                    screen.update(open, 1.0f / 60.0f, feedback);
+                    assert(screen.pending_detail.empty());
+                }
             }
             else if (mode == "detail" || mode == "detail-error" || mode == "detail-end")
             {
