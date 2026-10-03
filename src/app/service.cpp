@@ -263,7 +263,8 @@ void Service::load_icons()
             else if (online)
                 failed_icons.insert(key);
         }
-        hui::sys::sleep_us(100000);
+        if (entry.id.empty())
+            hui::sys::sleep_us(10000);
     }
 }
 } // namespace store
