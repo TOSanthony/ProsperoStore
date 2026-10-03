@@ -158,6 +158,25 @@ the compact milestone index; those local evidence paths are not GitHub downloads
    artifacts can't be installed. USB locations are offered when ShadowMountPlus
    scans them, but only internal storage has carried a real install.
 5. A first-run check, languages, a soak test and a release remain open.
+6. The console limits an app's own writes: after a few hundred megabytes the
+   store's process is held to about 2 MB/s and each file it creates or removes
+   takes 90 to 150 ms (measured 2026-10-03 with the development request
+   `fsbench`; a RetroArch unpack took 402 s whatever the number of threads). A
+   process started through the payload loader is not limited (1 GB at a steady
+   6 ms per file). The heavy file work is therefore done by the file worker,
+   `helper/main.cpp`, built as `store-worker.elf` and sent to the loader on
+   port 9021 for each job: it saves the download, unpacks, and removes folders,
+   and only inside `<drive>/prosperostore`. The store keeps every decision,
+   the checks, the journal and the swap, and does the work itself when no
+   worker can be started. Measured on the console with Kodi (64 MB, 2,688
+   files): unpack 24 to 26 s (54 s throttled), removal 19 to 20 s (309 s
+   throttled), the same on back-to-back runs. An update through the worker is
+   covered by the host tests only.
+7. Open, high priority: the test console stopped with a kernel panic at the
+   store's normal exit after about a dozen sessions in one day (2026-10-03).
+   Suspected cause, not proven: the elevation helper puts the system's root
+   folder into the process's root and jail entries without taking a reference,
+   so every exit of the elevated store gives back two references it never held.
 
 ## Remaining work under PLAN.md
 
