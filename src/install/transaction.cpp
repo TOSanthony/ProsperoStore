@@ -618,6 +618,15 @@ Result recover(const Environment &environment)
     std::string version;
     if (journal.state == "staging")
         return close();
+    if (id == environment.self && journal.state == "swap" && !environment.self_version.empty() &&
+        environment.self_version != journal.content_version)
+    {
+        // Still the old store, started from the folder that was moved aside:
+        // everything waits for the new one.
+        result.ok = true;
+        result.restart = true;
+        return result;
+    }
     if (journal.state == "activate")
     {
         // The staged folder is gone exactly when the rename put it in place.

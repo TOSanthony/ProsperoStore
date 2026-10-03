@@ -19,6 +19,9 @@ code from features qualified on the console.
 | Archive layouts | The app is the one folder in the ZIP that holds `sce_sys/param.json` and `eboot.bin`: at the top, in a folder named after the title, or up to three folders deep. What lies outside it is never unpacked. All fifteen ZIP releases in the catalog on 2026-10-03 fit (three different layouts). |
 | Running titles | A running title has a folder `<TITLEID>_<n>` in `/mnt/sandbox`; the store lists that folder every two seconds. A running app's update and uninstall are refused with "Close it first", checked again right before its folder is touched. If the folder can't be listed, nothing installed is changed. |
 | Installer worker | Only when elevated. One transaction at a time on its own worker, a queue of up to 16, journal recovery before the first job, an inventory rescan after each, and a result notice. The product page's button installs into `/data/homebrew`, shows the phase and a progress bar, and cancels. Uninstall asks first; closing the store during a job asks too. A job shows on the app's card and in the top bar. |
+| Queue, Settings, About | Options opens a panel with three tabs (L1/R1). **Queue**: the running job with its progress, what waits behind it, Cross cancels, and what finished since the store was opened; Square opens it directly. **Settings**: install location (the folders ShadowMountPlus scans that exist on this console, with free space), the check for a newer store, sounds, vibration, and the store's own version; kept in `/data/prosperostore/settings.txt`, written by a worker. **About**: what the store is, how it keeps installs safe, the notice about developers' responsibility, where its files are, credits. |
+| The store's own update | From its own page (Settings leads there). The new version is downloaded, checked and unpacked like any app, then the store's running folder is swapped for it; the old folder is kept until the new store starts and finishes the job. The console may start the old store once more right after the swap (ShadowMountPlus remounts the folder some seconds later): that old store leaves everything alone and asks to be restarted again. |
+| Hand-installed apps | An app that was installed by hand, is listed in the catalog and sits in a scanned folder named after its title can be handed over from its page ("Manage with ProsperoStore", after a question that says an update replaces the whole folder). Only a receipt is written. From then on it is updated and uninstalled like any other. |
 | Update notice | Once per launch, after the catalog refresh, the boilerplate's update-check decision code runs over the store's own HTTPS for `PPSA99000`. A newer listed version shows a top-right notice for ten seconds. Unknown shows nothing. |
 | Catalog trust | Ed25519 verification of the catalog manifest, SHA-256 verification of catalog documents, bounded JSON parsing, schema checks, sequence rollback protection, and verified offline cache. |
 | HTTPS | Elevated PacBrew curl/OpenSSL with certificate verification using the console CA list, URL/redirect restrictions, bounded responses, cancellation, and connection reuse. |
@@ -119,9 +122,21 @@ local SDK cache are included in this source snapshot.
     when the 1000 were set).
   - Texture cost on the frame: create about 1.0 ms, new pixels 0.9 ms, delete 0.02 ms.
 
-The native keyboard, an update refused because the app is running, and a power
-cut during a transaction have not been exercised on a console (the last two are
-covered by host tests).
+  - **The store's own update** (second console): a build one version up was put on
+    the console as an archive; the running store swapped its own folder and kept
+    running at 60 Hz; ShadowMountPlus logged the source as removed and remounted
+    the new folder about a minute later; the next start finished the job
+    (receipt written, old folder removed). The start right after the swap still
+    ran the old store, which led to the guard described above (host-tested).
+  - **Hand-over**: ProsperoRadio, installed by hand, was taken over (a receipt
+    and nothing else), then the receipt was removed again.
+  - The system keyboard was opened by a scripted request and closed at quit
+    without trouble; typing in it has not been tried.
+
+An update refused because the app is running, and a power cut during a
+transaction, have not been exercised on a console (both are covered by host
+tests). After an update ShadowMountPlus needs up to about a minute to remount
+the app's folder; the notice says to give the console half a minute.
 
 Raw build logs, screenshots, console captures, and generated packages remain
 local in ignored `build/`, `results/`, and `dist/` directories. `PLAN.md` contains
@@ -138,13 +153,11 @@ the compact milestone index; those local evidence paths are not GitHub downloads
    cause was work on the frame around pictures and an unbuffered log on `/data`.
 3. Installed scans run after catalog refresh attempts, so network failures can
    delay initial library discovery. Local-only entries currently use placeholders.
-4. Still missing around installs: a queue screen (the queue itself works and
-   shows on cards and in the top bar), location selection (new installs go to
-   `/data/homebrew`), and self-update (the store refuses to change its own
-   folder; a newer listed store is announced by the notice). The home screen's
-   title name comes from the console's database and is not changed by an update.
-5. Settings/location selection, first-run notices, localization, full accessibility
-   and polish review, interruption tests, and release soak testing remain open.
+4. The home screen's title name comes from the console's database and is not
+   changed by an update (icon, background and `param.json` copies are). Image
+   artifacts can't be installed. USB locations are offered when ShadowMountPlus
+   scans them, but only internal storage has carried a real install.
+5. A first-run check, languages, a soak test and a release remain open.
 
 ## Remaining work under PLAN.md
 
@@ -153,11 +166,11 @@ the compact milestone index; those local evidence paths are not GitHub downloads
 | M1 | Production location selection and read-only/unavailable-drive gates. |
 | M2 | Real artifact verification, bounded download streaming, retry/resume qualification. |
 | M3 | Native keyboard, latest artwork/cache behavior, offline browsing, and performance qualification. |
-| M4 | Done on a console except a queue screen. |
+| M4 | Done on a console. |
 | M5 | Update, uninstall and the running-title guard are done. Remaining: image handling, stale-receipt cleanup, recall actions. |
-| M6 | Self-update gate and workflow. |
+| M6 | Done on a console from a test archive; a real one needs the store's first release in the catalog. |
 | M7 | Journal recovery, interruption simulation at each mutation, removed-drive and network-failure handling. |
-| M8 | Settings, languages, notices, and final interface polish. |
+| M8 | Settings, About and its notice are done. Remaining: first-run check, languages. |
 | M9 | Adoption of the shared update-check kit by another Prospero app. |
 | M10 | Full review, soak tests, release packaging/tagging, and catalog publication. |
 

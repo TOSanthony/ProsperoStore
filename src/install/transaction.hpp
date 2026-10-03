@@ -32,6 +32,10 @@ struct Environment
 {
     std::string root; // The store's own state: receipts and the journal.
     std::string self; // The store's title: never changed through these paths.
+    // The version of the store that is running. After the store swapped its own
+    // folder, the console may start the old one once more (it keeps the old
+    // folder mounted for a while): that old store must not finish the update.
+    std::string self_version;
     system::ScanPolicy policy;
     Fetch fetch;
     // 0: not running, 1: running, anything else: unknown. Unset means unknown,

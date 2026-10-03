@@ -706,7 +706,13 @@ void check_self_update(const fs::path &base)
     f.environment.self = "PPSA99000";
     assert(!f.apply(f.request("01.000.001")).ok);
     f.environment.self = kId;
+    // The console may start the old store once more: it leaves everything alone.
+    f.environment.self_version = "01.000.001";
+    const auto early = install::recover(f.environment);
+    assert(early.ok && early.restart && tree(f.work / "backup" / kId) == v1);
+    assert(fs::exists(f.state / "journal.json") && tree(f.target()) == v2);
     // The next start finishes: receipt written, the old folder gone.
+    f.environment.self_version = "01.000.002";
     const auto recovered = install::recover(f.environment);
     assert(recovered.ok && recovered.operation == "update" && f.settled());
     assert(tree(f.target()) == v2 && f.managed() == "01.000.002");

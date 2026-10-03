@@ -267,6 +267,7 @@ void Service::run_installer()
     {
         environment.root = root_;
         environment.self = "PPSA99000";
+        environment.self_version = version_;
         environment.fetch = [](const std::string &url, std::uint64_t limit, const net::Sink &sink,
                                net::Control &control)
         {
@@ -341,6 +342,20 @@ void Service::run_installer()
                       recovered.operation.c_str(), recovered.error.c_str());
         if (!recovered.ok)
             broken = recovered.error;
+        else if (recovered.restart)
+        {
+            // The console started the old store once more after its update.
+            broken = "ProsperoStore is finishing its own update. Close it and open it again.";
+            Update notice;
+            notice.kind = Update::Kind::job;
+            notice.entry.id = environment.self;
+            notice.ok = true;
+            notice.restart = true;
+            notice.message = "ProsperoStore was updated";
+            notice.detail = "The console is still switching to the new version. Close "
+                            "ProsperoStore and open it again in a moment.";
+            publish(std::move(notice));
+        }
         else if (!recovered.operation.empty())
         {
             Update notice;
@@ -438,7 +453,8 @@ void Service::run_installer()
                           : result.operation == "adopt"
                               ? "ProsperoStore will offer its updates from now on."
                           : result.operation == "update"
-                              ? "The new version is in place."
+                              ? "The new version is in place. Give the console half a minute "
+                                "before starting it."
                               : "ShadowMountPlus will add it to your home screen in a moment.";
         }
         else
