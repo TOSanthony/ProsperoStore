@@ -207,6 +207,20 @@ try:
     if not passed:
         raise RuntimeError("Startup or teardown criterion failed; inspect saved evidence")
 finally:
+    if result["classification"] != "no-run" and "healthy" not in result:
+        try:
+            if console is None:
+                console = transport.Console(args.host, 2121, raw_self=True)
+            names = console.names("/mnt/sandbox")
+            result["closed"] = names is not None and not any(
+                name.startswith(title + "_") for name in names)
+            lifecycle = console.read("/data/shadowmount/debug.log") or b""
+            (args.results / "shadowmount.log").write_text("\n".join(
+                line for line in lifecycle.decode(errors="replace").splitlines() if title in line))
+            result["healthy"] = all(transport.port_open(args.host, port) for port in (2121, 3232, 9021))
+        except Exception as health_error:
+            result["healthy"] = False
+            result["health_error"] = str(health_error)
     if console:
         console.close()
     done.set()

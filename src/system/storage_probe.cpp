@@ -24,15 +24,19 @@ namespace store::system
 {
 namespace
 {
-int directory(const std::string &path)
+int directory(const std::string &path, std::string *error = nullptr)
 {
     if (!clean_absolute_path(path))
     {
         errno = EINVAL;
         return -1;
     }
-    int fd = open("/", O_RDONLY | O_DIRECTORY);
-    std::size_t start = 1;
+    const auto drive = drive_root(path);
+    const auto base = drive.empty() ? std::string("/") : drive;
+    int fd = open(base.c_str(), O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
+    if (fd < 0 && error)
+        *error = "open " + base + ": " + std::strerror(errno);
+    std::size_t start = base == "/" ? 1 : base.size() + 1;
     while (fd >= 0 && start < path.size())
     {
         const auto slash = path.find('/', start);
@@ -43,6 +47,8 @@ int directory(const std::string &path)
         const int next = store_openat(fd, part.c_str(), O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
 #endif
         const int saved = errno;
+        if (next < 0 && error)
+            *error = "openat " + part + ": " + std::strerror(saved);
         close(fd);
         errno = saved;
         fd = next;
@@ -57,10 +63,11 @@ int directory(const std::string &path)
 StorageProbe probe_storage(const std::string &root)
 {
     StorageProbe result;
-    const int fd = directory(root);
+    const int fd = directory(root, &result.error);
     if (fd < 0)
     {
-        result.error = std::strerror(errno);
+        if (result.error.empty())
+            result.error = std::strerror(errno);
         return result;
     }
     struct statfs filesystem
