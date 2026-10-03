@@ -19,17 +19,17 @@ std::uint32_t next_codepoint(std::string_view text, std::size_t *index)
     const unsigned char lead = byte(i);
     int length = 1;
     std::uint32_t value = lead;
-    if (lead >= 0xf0 && lead < 0xf8)
+    if (lead >= 0xf0 && lead <= 0xf4)
     {
         length = 4;
         value = lead & 0x07u;
     }
-    else if (lead >= 0xe0)
+    else if (lead >= 0xe0 && lead <= 0xef)
     {
         length = 3;
         value = lead & 0x0fu;
     }
-    else if (lead >= 0xc0)
+    else if (lead >= 0xc2 && lead <= 0xdf)
     {
         length = 2;
         value = lead & 0x1fu;
@@ -55,6 +55,12 @@ std::uint32_t next_codepoint(std::string_view text, std::size_t *index)
         value = (value << 6) | (continuation & 0x3fu);
     }
     *index = i + static_cast<std::size_t>(length);
+    const std::uint32_t minimum = length == 2   ? 0x80u
+                                  : length == 3 ? 0x800u
+                                  : length == 4 ? 0x10000u
+                                                : 0u;
+    if (value < minimum || value > 0x10ffffu || (value >= 0xd800u && value <= 0xdfffu))
+        return 0xfffd;
     return value;
 }
 

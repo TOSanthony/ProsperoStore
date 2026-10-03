@@ -2,7 +2,7 @@
 # Copyright (C) 2026 BlackBearReloaded
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-APP_DEFINITIONS := GL_GLEXT_PROTOTYPES=1 STORE_NATIVE_CURL=1
+APP_DEFINITIONS := GL_GLEXT_PROTOTYPES=1 STORE_NATIVE_CURL=1 HUI_EXTERNAL_LOG=1
 PACBREW_PACKAGES := libcurl
 APP_INCLUDE_PATHS := src .deps/ps5-opengl/current/include
 APP_STATIC_ARCHIVES := .deps/ps5-opengl/libps5opengl-group.a

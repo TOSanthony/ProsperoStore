@@ -14,7 +14,10 @@
 
 extern int sceKernelUsleep(uint32_t microseconds);
 
-/* The log goes into the title's own storage (a sandbox has no /data). While
+#ifndef HUI_EXTERNAL_LOG
+/* Apps with their own elevated log destination define HUI_EXTERNAL_LOG so
+ * this constructor cannot create a second, sandbox-local log before main.
+ * The default log goes into the title's own storage (a sandbox has no /data). While
  * the title runs, FTP reads it at
  * /mnt/sandbox/<TITLE_ID>_000/download0/hui/dev/app.log. */
 #define HUI_PARENT_DIR "/download0/hui"
@@ -38,6 +41,7 @@ __attribute__((constructor)) static void hui_open_log(void)
     if (stream != NULL)
         setvbuf(stream, NULL, _IONBF, 0);
 }
+#endif
 
 /* Returning from main or calling exit() crashes a native title; stay alive
  * until the shell closes the title. */

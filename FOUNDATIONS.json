@@ -116,7 +116,7 @@
   },
   {
     "repository": "https://github.com/blackbearreloaded/ps5-homebrew-ui",
-    "commit": "0f7b27179faeded8257ab8972932bb9146ada72b",
+    "commit": "eabe9986347523107c446c84dcc3183e5578cbdf",
     "files": {
       "assets/audio/music/first-light.ogg": "7329a7fcfcce3d144837723e5797f07df1703052972623a05df52b8c9b457b75",
       "assets/audio/music/open-strings.ogg": "98847200e3bbeca384aa15fb46476057e3ecb2ba0390b07c148bcb3edb34b036",
@@ -228,7 +228,7 @@
       "src/gfx/canvas.hpp": "96127fe0d4c03389da99f93cc0e38813e149994a14c5eb091520b2810a50bb2b",
       "src/gfx/draw_list.cpp": "6c06871fef1421e676e301ed70812c0e0a625ba2da50073b3d422e7aa9a78ea8",
       "src/gfx/draw_list.hpp": "8c19ec93966fe03f61f7ffdb701a39a1fb011436742949453a4801173478ee9f",
-      "src/gfx/font.cpp": "f08aa1875f113f7620b3475f954b22ec9540de2d244a12c0424ffae6b3f01f0f",
+      "src/gfx/font.cpp": "7c2b2b440a8d947a9690a37e283295076a1e3ca15d58966f2f478eadd1de348e",
       "src/gfx/font.hpp": "763ab052f73920f7dd3370c843b27c278bc23f6fb47aea21b942b781bfa136c3",
       "src/gfx/font_format.hpp": "d8beee75b7c823bbe16a93258e65a67cb565d178c2b4dd9f241bea731d277484",
       "src/gfx/gl_batch.cpp": "604fa86264c901a77cb488b0e8ea741928e3d57024bab306394ba10777dd5fcb",
@@ -248,7 +248,7 @@
       "src/platform/ps5/system.cpp": "d0af2c05dd6f983d9cda2e4e88c347d58601f4f94695497a6c14f245a200bd97",
       "src/platform/ps5/system.hpp": "b36e029d45c9a4feca3aade44d756577d2a8148a3584e7d706e22d80b47565c2",
       "src/runtime/app_heap.c": "1f9f4647da43e6a403629d03884d218b5045e38c27667c690840462b9a862031",
-      "src/runtime/runtime_shims.c": "71d0e4deb66b3976aa7565ad04294740f6792d72a582824adf736d9811d97884",
+      "src/runtime/runtime_shims.c": "61eff2c96ae80e550ffe991e48391f73635687ae652686b4e6b843b991b2433d",
       "src/third_party/stb/LICENSE": "bebfe904b14301657e4e5d655c811d51fd31b97c455b9cc2d8600d6bac6cff63",
       "src/third_party/stb/UPSTREAM": "18aaec007332957398c764ac4452497449e73023bfa95597db78bbd1bcc8222b",
       "src/third_party/stb/stb_vorbis.inc": "4c7cb2ff1f7011e9d67950446b7eb9ca044f2e464d76bfbb0b84dd2e23e65636",
