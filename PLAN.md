@@ -909,6 +909,8 @@ To be confirmed and listed in `THIRD_PARTY_NOTICES.md` when each is added.
 - 2026-10-02 | M1 | 785b4d9 | PS5 6.02 | failed: _openat EINVAL; M.2 BFS readable, clean exit, healthy | results/m1-storage-root | use direct-open component checks
 - 2026-10-02 | M1 filesystem | 3afd238 | PS5 6.02 | passed: internal nullfs and M.2 BFS create/rename/cleanup, configured scan roots, signed online catalog; clean exit, healthy | results/m1-storage-direct | read-only gate and production location selection remain
 - 2026-10-02 | M3 artwork | b3ac1fb | PS5 6.02 | incomplete: 12 icons loaded, recurring ~1.15 s frame stalls; shell switched to ProsperoLight before requested exit, final health check failed | results/m3-native-artwork-idle | investigate synchronous driver profile output; repeat lifecycle only on an idle console
+- 2026-10-02 | M3 search/sort | db73b0c | host | partial-pass: search, sorting, square artwork snapshots and native build | build/search-final-build.log | qualify system keyboard on console
+- 2026-10-02 | M3 performance control | 59a8868 | PS5 6.02 | inconclusive: launch rejected 0x80940033, no current-run startup; services healthy | results/m3-profile-control | diagnose registration before comparison
 
 | Repository | Role |
 | --- | --- |

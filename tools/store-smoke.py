@@ -161,7 +161,7 @@ try:
     (args.results / "launch.log").write_bytes(launched.stdout + launched.stderr)
     if launched.returncode:
         raise RuntimeError("Exact-title launch helper failed")
-    print("Candidate verified and launched; observing 60 seconds", flush=True)
+    print("Candidate verified; launch request sent, observing 60 seconds", flush=True)
     log = b""
     for _ in range(12):
         time.sleep(5)
@@ -171,7 +171,7 @@ try:
         crash = console.read(log_root + "/crash-latest.txt")
         names = console.names("/mnt/sandbox")
         if names is None or not any(name.startswith(title + "_") for name in names):
-            raise RuntimeError("Candidate stopped before the requested exit; inspect evidence")
+            raise RuntimeError("Candidate is not running after the launch request; inspect evidence")
         if crash:
             (args.results / "crash.txt").write_bytes(crash)
         console.close()
