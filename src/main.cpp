@@ -128,6 +128,16 @@ int main()
     }
     store::Service service(elevated ? storage_root : "",
                            read_content_version(app_root + "/sce_sys/param.json"));
+#ifdef STORE_INSTALLER
+    // The installer has not been qualified on a console yet: development builds only.
+    service.installer = elevated;
+    const char *installer_reason = "This console didn't grant permission to write, so nothing "
+                                   "can be installed.";
+#else
+    const char *installer_reason = "Installing is not switched on in this build.";
+#endif
+    // No running-app check yet (plan D9), so updates and uninstalls stay refused.
+    screen.set_installer(service.installer, false, installer_reason, "/data/homebrew");
     if (!service.start())
         screen.set_status("The catalog service could not start");
     if (elevation_status != elevation::Status::ok)
@@ -190,6 +200,8 @@ int main()
                 screen.set_inventory(std::move(update.installed));
             else if (update.kind == store::Update::Kind::notice)
                 screen.notify(std::move(update.message), std::move(update.detail));
+            else if (update.kind == store::Update::Kind::job)
+                screen.finish_job(update.ok, std::move(update.message), std::move(update.detail));
             else if (update.kind == store::Update::Kind::icon)
             {
                 if (update.generation == catalog_generation &&
@@ -244,6 +256,20 @@ int main()
         }
         if (!screen.pending_detail.empty() && service.request_detail(screen.pending_detail))
             screen.pending_detail.clear();
+        // The page's request goes to the installer; one refused by a busy lock is asked again.
+        if (auto &order = screen.pending_order; order.kind != store::Order::Kind::none)
+        {
+            const bool accepted = order.kind == store::Order::Kind::install
+                                      ? service.request_install(order.entry, order.location)
+                                  : order.kind == store::Order::Kind::uninstall
+                                      ? service.request_uninstall(order.id, order.location)
+                                      : service.cancel_job(order.id);
+            if (accepted || !service.installer)
+                order = {};
+        }
+        if (store::JobView view; service.job(view))
+            screen.set_activity({view.id, static_cast<int>(view.phase), view.done, view.total,
+                                 std::move(view.waiting)});
         const auto frame = input.update(std::span(samples.data(), count), now);
         const bool keyboard_owns_input = keyboard_active || screen.pending_search;
         if (screen.pending_search && !frame.is_held(Action::north))

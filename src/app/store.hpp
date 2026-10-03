@@ -7,6 +7,7 @@
 #include "gfx/renderer.hpp"
 #include "catalog/catalog.hpp"
 #include "system/inventory.hpp"
+#include "ui/components/dialog.hpp"
 #include "ui/components/text_view.hpp"
 #include "ui/components/toast.hpp"
 #include "ui/motion.hpp"
@@ -36,6 +37,29 @@ struct App
     bool local_only = false;
 };
 
+// What the page asks the installer to do. The frame loop hands it to the
+// service and clears it once it has been accepted.
+struct Order
+{
+    enum class Kind
+    {
+        none,
+        install, // or update: the engine decides from what is on disk
+        uninstall,
+        cancel
+    } kind = Kind::none;
+    catalog::Entry entry; // install: the app's verified detail record
+    std::string id, location;
+};
+// What the installer is doing right now, as the page shows it.
+struct Activity
+{
+    std::string id; // empty when idle
+    int phase = 0;  // install::Phase
+    std::uint64_t done = 0, total = 0;
+    std::vector<std::string> waiting;
+};
+
 // The layout follows the UI library's "Storefront" design: a featured banner,
 // section chips, a grid of cards and a product page. The colours are those of
 // "Glass Orchard" as the Aurora Shelf design shows it.
@@ -56,6 +80,16 @@ class Screen
     }
     // A floating notice in the top-right corner; it leaves after ten seconds.
     void notify(std::string title, std::string body);
+    // Whether this build and this console can install (reason says why not),
+    // whether running apps can be told apart (updates and uninstalls need it),
+    // and the scanned folder new apps go to.
+    void set_installer(bool available, bool guard, std::string reason, std::string location);
+    void set_activity(Activity activity)
+    {
+        activity_ = std::move(activity);
+    }
+    void finish_job(bool ok, std::string title, std::string body);
+    Order pending_order;
     std::vector<std::string> artwork() const;
     void set_query(std::string query);
     const std::string &query() const
@@ -95,6 +129,19 @@ class Screen
         std::string title, author;
     };
 
+    // What the page can say about an app on this console, and its one next step.
+    struct Offer
+    {
+        std::string headline, note, label, reason;
+        Order::Kind primary = Order::Kind::none;
+        bool armed = false;     // the button can be pressed now
+        bool uninstall = false; // Square uninstalls (the primary is Update)
+        bool busy = false;      // a transaction for this app is running or queued
+        int tone = 0;           // 0 ink, 1 accent, 2 installed
+        float progress = -1.0f; // 0..1 while a measurable phase runs
+    };
+    Offer offer(const App &app) const;
+    void ask_uninstall(const App &app, hui::ui::Feedback &feedback);
     bool in_section(const App &app, int section) const;
     void rebuild();
     void refresh_detail();
@@ -129,6 +176,11 @@ class Screen
     hui::ui::Theme theme_;
     hui::ui::TextView article_;
     hui::ui::ToastStack toasts_;
+    hui::ui::Dialog dialog_;
+    Activity activity_;
+    bool installer_ = false, guard_ = false;
+    std::string installer_reason_ = "Installing is not switched on in this build";
+    std::string install_location_;
     hui::gfx::DrawList scene_, overlay_;
     std::vector<App> apps_;
     std::vector<std::size_t> visible_, featured_;

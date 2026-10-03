@@ -4,6 +4,7 @@
 
 #include "app/store.hpp"
 #include "core/save_file.hpp"
+#include "install/transaction.hpp"
 #include "ui/glyphs.hpp"
 #include "ui/components/data_common.hpp"
 
@@ -170,6 +171,7 @@ Screen::Screen() : theme_(orchard_theme())
     article_.style.focus_ring = false;
     article_.style.padding = 4;
     article_.set_bounds({kInfoX - 4.0f, 392.0f, kInfoW + 8.0f, 500.0f});
+    dialog_.style.theme = theme_;
     toasts_.style.theme = theme_;
     toasts_.style.frosted = true;
     toasts_.style.duration = 10.0f;
@@ -710,7 +712,51 @@ void Screen::update_home(const InputFrame &input, ui::Feedback &feedback)
 
 void Screen::update_page(const InputFrame &input, ui::Feedback &feedback)
 {
-    if (input.is_pressed(Action::back))
+    const App &shown = *focused();
+    const auto parent = [](const std::string &path)
+    { return path.substr(0, path.find_last_of('/')); };
+    if (dialog_.is_open())
+    {
+        // The question takes every input until it is answered.
+        if (dialog_.handle(input, feedback) == ui::Event::activated && dialog_.choice() == 1 &&
+            !shown.installed.empty())
+        {
+            pending_order.kind = Order::Kind::uninstall;
+            pending_order.id = shown.title_id;
+            pending_order.location = parent(shown.installed.front().path);
+        }
+        return;
+    }
+    const Offer state = offer(shown);
+    if (input.is_pressed(Action::confirm) && state.primary != Order::Kind::none)
+    {
+        if (!state.armed)
+        {
+            // The line under the button already says why.
+            feedback.play(audio::Cue::error, 1.0f, 0.0f, 0.6f);
+            feedback.rumble(0.25f, 0.05f);
+            nudge_.trigger();
+        }
+        else if (state.primary == Order::Kind::uninstall)
+            ask_uninstall(shown, feedback);
+        else
+        {
+            press_.trigger();
+            feedback.play(audio::Cue::select);
+            pending_order.kind = state.primary;
+            pending_order.id = shown.title_id;
+            if (state.primary == Order::Kind::install)
+            {
+                pending_order.entry = *shown.detail;
+                pending_order.location = shown.installed.empty()
+                                             ? install_location_
+                                             : parent(shown.installed.front().path);
+            }
+        }
+    }
+    else if (input.is_pressed(Action::west) && state.uninstall && installer_ && guard_)
+        ask_uninstall(shown, feedback);
+    else if (input.is_pressed(Action::back))
     {
         details_ = false;
         feedback.play(audio::Cue::back);
@@ -771,6 +817,7 @@ void Screen::update(const InputFrame &input, float dt, ui::Feedback &feedback)
     }
     article_.set_active(details_);
     article_.update(dt);
+    dialog_.update(dt);
     toasts_.update(dt, feedback);
 }
 
@@ -1071,6 +1118,140 @@ void Screen::draw_grid(const ui::Fonts &fonts)
 
 // ---- drawing: the product page ----------------------------------------------
 
+void Screen::set_installer(bool available, bool guard, std::string reason, std::string location)
+{
+    installer_ = available;
+    guard_ = guard;
+    installer_reason_ = std::move(reason);
+    install_location_ = std::move(location);
+}
+
+void Screen::finish_job(bool ok, std::string title, std::string body)
+{
+    const bool cancelled = title.ends_with(": cancelled");
+    toasts_.push(ok          ? ui::StatusKind::success
+                 : cancelled ? ui::StatusKind::info
+                             : ui::StatusKind::danger,
+                 std::move(title), std::move(body), 10.0f);
+}
+
+Screen::Offer Screen::offer(const App &app) const
+{
+    Offer out;
+    const system::InstalledApp *installed = app.installed.empty() ? nullptr : &app.installed[0];
+    const bool soon = app.catalog_badge == "Coming soon";
+    const bool image = app.detail && !app.detail->format.empty() && app.detail->format != "zip";
+    const auto megabytes = [](std::uint64_t bytes)
+    { return ui::format_value(static_cast<double>(bytes)) + "B"; };
+
+    // A transaction for this app comes first: what it is doing, and Cancel.
+    const bool waiting = std::find(activity_.waiting.begin(), activity_.waiting.end(),
+                                   app.title_id) != activity_.waiting.end();
+    if (activity_.id == app.title_id || waiting)
+    {
+        using Phase = install::Phase;
+        const auto phase = waiting ? Phase::idle : static_cast<Phase>(activity_.phase);
+        out.busy = true;
+        out.tone = 1;
+        out.headline = phase == Phase::downloading  ? "Downloading"
+                       : phase == Phase::verifying  ? "Verifying"
+                       : phase == Phase::unpacking  ? "Unpacking"
+                       : phase == Phase::activating ? "Finishing"
+                       : phase == Phase::removing   ? "Removing"
+                                                    : "Waiting";
+        const bool measured =
+            (phase == Phase::downloading || phase == Phase::unpacking) && activity_.total > 0;
+        if (measured)
+        {
+            out.progress = tween::clamp01(static_cast<float>(activity_.done) /
+                                          static_cast<float>(activity_.total));
+            out.note = megabytes(activity_.done) + " of " + megabytes(activity_.total);
+        }
+        else
+            out.note = waiting ? "Queued behind another app" : "One moment";
+        // Once the folder is being put in place there is nothing left to cancel.
+        if (phase != Phase::activating && phase != Phase::removing)
+        {
+            out.label = "Cancel";
+            out.primary = Order::Kind::cancel;
+            out.armed = true;
+        }
+        out.reason = "The app's folder is only changed once everything is verified and unpacked.";
+        return out;
+    }
+
+    if (installed && app.badge == "Update")
+    {
+        out.headline = "Update";
+        out.note = installed->version + "  \xE2\x86\x92  " + app.available_version;
+        out.label = "Update";
+        out.primary = Order::Kind::install;
+        out.uninstall = true;
+        out.tone = 1;
+    }
+    else if (installed)
+    {
+        out.headline = "Installed";
+        out.note =
+            installed->version.empty() ? "Installed as an image" : "Version " + installed->version;
+        out.tone = 2;
+        if (installed->managed)
+        {
+            out.label = "Uninstall";
+            out.primary = Order::Kind::uninstall;
+        }
+        else
+            out.reason = installed->reason;
+    }
+    else if (soon)
+    {
+        out.headline = "Coming soon";
+        out.note = "No release has been published yet";
+        out.reason = "It will appear here when it is released";
+    }
+    else if (image)
+    {
+        out.headline = "Not installable";
+        out.note = "Published as a disk image";
+        out.reason = "Can't be installed by this version of ProsperoStore";
+    }
+    else if (!app.local_only)
+    {
+        out.headline = "Ready";
+        out.note = app.detail && app.detail->size ? megabytes(app.detail->size) + " download"
+                                                  : "Verified by the signed catalog";
+        out.label = "Install";
+        out.primary = Order::Kind::install;
+    }
+    if (out.primary == Order::Kind::none)
+        return out;
+    // Why the button rests, or what pressing it does.
+    const bool changes = installed != nullptr; // an update or an uninstall
+    if (!installer_)
+        out.reason = installer_reason_;
+    else if (changes && !guard_)
+        out.reason = "Needs the running-app check, which this build doesn't have yet.";
+    else if (out.primary == Order::Kind::install && !app.detail)
+        out.reason = "Waiting for the app's verified details.";
+    else
+    {
+        out.armed = true;
+        out.reason = out.primary == Order::Kind::uninstall
+                         ? "Removes the app's folder. Its saved data stays on the console."
+                         : "Checked against the signed catalog before anything is installed.";
+    }
+    return out;
+}
+
+void Screen::ask_uninstall(const App &app, ui::Feedback &feedback)
+{
+    dialog_.open({ui::StatusKind::warning,
+                  "Uninstall " + app.name + "?",
+                  "The app's folder is removed from this console. Its saved data stays.",
+                  {{"Cancel"}, {"Uninstall", ui::ButtonKind::primary, true}}},
+                 feedback);
+}
+
 void Screen::draw_action_box(const ui::Fonts &fonts, std::uint32_t glass, const App &app,
                              float content)
 {
@@ -1083,76 +1264,55 @@ void Screen::draw_action_box(const ui::Fonts &fonts, std::uint32_t glass, const 
     list.rounded_rect(box, 30, gfx::mix(kPanel, kLeaf, 0.12f).with_alpha(0.6f));
     list.bordered_rect(box, 30, kClear, 1.5f, kInk.with_alpha(0.2f));
 
-    // What can be said about this app on this console, and the one thing to do next.
-    const system::InstalledApp *installed = app.installed.empty() ? nullptr : &app.installed[0];
-    const bool soon = app.catalog_badge == "Coming soon";
-    const bool image = app.detail && !app.detail->format.empty() && app.detail->format != "zip";
-    std::string headline, note, action;
-    Color tone = kInk;
-    if (installed && app.badge == "Update")
-    {
-        headline = "Update";
-        note = installed->version + "  \xE2\x86\x92  " + app.available_version;
-        action = "Update";
-        tone = kAccent;
-    }
-    else if (installed)
-    {
-        headline = "Installed";
-        note = installed->managed           ? "Version " + installed->version
-               : installed->version.empty() ? "Installed as an image"
-                                            : "Version " + installed->version;
-        action = installed->managed ? "Uninstall" : "";
-        tone = kOwned;
-    }
-    else if (soon)
-    {
-        headline = "Coming soon";
-        note = "No release has been published yet";
-    }
-    else if (image)
-    {
-        headline = "Not installable";
-        note = "Published as a disk image";
-    }
-    else
-    {
-        headline = "Ready";
-        note = app.detail && app.detail->size
-                   ? ui::format_value(static_cast<double>(app.detail->size)) + "B download"
-                   : "Verified by the signed catalog";
-        action = "Install";
-    }
+    const Offer state = offer(app);
+    const Color tone = state.tone == 1 ? kAccent : state.tone == 2 ? kOwned : kInk;
     const float x = box.x + 32.0f;
     ui::text(list, fonts.semibold, "ON THIS CONSOLE", x, box.y + 52.0f, 16, kInk.with_alpha(0.55f),
              gfx::Align::left, 3.5f);
     float cursor = x;
-    if (installed && app.badge != "Update")
+    if (state.tone == 2)
     {
         draw_check(list, x + 20.0f, box.y + 113.0f, 34.0f, tone);
         cursor += 52.0f;
     }
-    ui::text(list, fonts.display, headline, cursor, box.y + 130.0f, 48, tone);
-    ui::text(list, fonts.regular, fonts.regular.font->fit(note, 21, box.w - 64.0f), x,
+    ui::text(list, fonts.display, fonts.display.font->fit(state.headline, 48, box.w - 64.0f),
+             cursor, box.y + 130.0f, 48, tone);
+    ui::text(list, fonts.regular, fonts.regular.font->fit(state.note, 21, box.w - 64.0f), x,
              box.y + 172.0f, 21, kInk.with_alpha(0.62f));
+    if (state.progress >= 0.0f)
+    {
+        const Rect track{x, box.y + 188.0f, box.w - 64.0f, 6.0f};
+        list.rounded_rect(track, 3, kInk.with_alpha(0.16f));
+        list.rounded_rect({track.x, track.y, std::max(6.0f, track.w * state.progress), track.h}, 3,
+                          kAccent);
+    }
 
-    // The primary button. Until the installer is switched on in this build it
-    // rests, and the line under it says so plainly.
+    // The primary button: filled when it can be pressed, at rest when it
+    // can't, and the line under it always says why.
     Rect button = kActionButton;
     button.y += box.y - kActionBox.y;
-    std::string reason = installed && !installed->managed ? installed->reason
-                         : image ? "Can't be installed by this version of ProsperoStore"
-                         : soon  ? "It will appear here when it is released"
-                                 : "Installing is not switched on in this development build";
-    if (!action.empty())
+    button.x += ui::shake(nudge_.value, time_, 10.0f) * (details_ ? 1.0f : 0.0f);
+    if (!state.label.empty())
     {
-        list.bordered_rect(button, kButtonRadius, kAccent.with_alpha(0.1f), 2.0f,
-                           kAccent.with_alpha(0.55f));
-        ui::text(list, fonts.semibold, action, button.cx(), centred(button.cy(), 28), 28,
-                 kAccent.with_alpha(0.7f), gfx::Align::center);
+        list.push_transform(1.0f - 0.035f * press_.value, button.cx(), button.cy(), 0, 0);
+        if (state.armed && !state.busy)
+        {
+            list.glow(button, kButtonRadius, 22,
+                      kAccent.with_alpha(0.2f + 0.1f * ui::breathe(time_)));
+            list.rounded_rect(button, kButtonRadius, kAccent);
+        }
+        else
+            list.bordered_rect(button, kButtonRadius, kAccent.with_alpha(0.1f), 2.0f,
+                               kAccent.with_alpha(state.armed ? 1.0f : 0.55f));
+        ui::text(list, fonts.semibold, state.label, button.cx(), centred(button.cy(), 28), 28,
+                 state.armed && !state.busy ? kOnAccent
+                                            : kAccent.with_alpha(state.armed ? 1.0f : 0.7f),
+                 gfx::Align::center);
+        list.pop_transform();
     }
-    ui::paragraph(list, fonts.regular, reason, x, button.y + (action.empty() ? 30.0f : 118.0f), 20,
-                  box.w - 64.0f, 28, kInk.with_alpha(0.62f), 3);
+    ui::paragraph(list, fonts.regular, state.reason, x,
+                  button.y + (state.label.empty() ? 30.0f : 118.0f), 20, box.w - 64.0f, 28,
+                  kInk.with_alpha(0.62f), 2);
     ui::paragraph(list, fonts.regular,
                   "Apps are provided by their developers. Check the release notes for required "
                   "payloads or extra setup.",
@@ -1250,9 +1410,18 @@ void Screen::draw(gfx::Renderer &renderer, const ui::Fonts &fonts)
                              {ui::Button::right_stick, "Sort"},
                              {ui::Button::l1, "Sections", ui::Button::r1},
                              {ui::Button::circle, "Close"}};
-    const ui::Hint detail[] = {{ui::Button::dpad, "Scroll"},
-                               {ui::Button::triangle, "Refresh"},
-                               {ui::Button::circle, "Back"}};
+    // The page's row names the one thing Cross does for this app, when it can.
+    const Offer state = focused() ? offer(*focused()) : Offer{};
+    ui::Hint detail[5];
+    int details = 0;
+    if (state.armed)
+        detail[details++] = {ui::Button::cross, state.label.c_str()};
+    if (state.uninstall && installer_ && guard_ && !state.busy)
+        detail[details++] = {ui::Button::square, "Uninstall"};
+    detail[details++] = {ui::Button::dpad, "Scroll"};
+    if (focused() && !focused()->local_only)
+        detail[details++] = {ui::Button::triangle, "Refresh"};
+    detail[details++] = {ui::Button::circle, "Back"};
     // A hint row leaves as the next layer arrives, so two are never legible at once.
     scene_.push_opacity(1.0f - tween::clamp01(page * 3.0f));
     ui::draw_hints(scene_, fonts, glyphs, home + (visible_.empty() ? 1 : 0),
@@ -1263,13 +1432,12 @@ void Screen::draw(gfx::Renderer &renderer, const ui::Fonts &fonts)
     draw_page(fonts, glass);
     if (page > 0.004f)
     {
-        const bool local = focused() && focused()->local_only;
         overlay_.push_opacity(tween::clamp01((page - 0.4f) / 0.6f));
-        ui::draw_hints(overlay_, fonts, glyphs, local ? detail + 2 : detail, local ? 1 : 3, kRight,
-                       true);
+        ui::draw_hints(overlay_, fonts, glyphs, detail, details, kRight, true);
         overlay_.pop_opacity();
     }
     ui::Canvas canvas{overlay_, fonts, glass, time_};
+    dialog_.draw(canvas);
     toasts_.draw(canvas);
 
     // Glass Orchard as the Aurora Shelf paints it: the cover's dark and mid

@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "app/service.hpp"
 #include "catalog/icons.hpp"
+#include "third_party/miniz/miniz.h"
 #include <atomic>
 #include <cassert>
 #include <chrono>
@@ -112,7 +113,114 @@ Response fetch(const std::string &url, Purpose, std::size_t, std::string &body, 
     result.status = 200;
     return result;
 }
+Response get(const std::string &, Purpose, std::uint64_t, const Sink &, Control &,
+             const std::string &)
+{
+    Response failure;
+    failure.error = "The test has no network";
+    return failure;
+}
 } // namespace store::net
+
+// The installer through the service: one worker, a queue, progress the frame
+// can read without waiting, and a result for every request.
+static void check_installer()
+{
+    namespace fs = std::filesystem;
+    char path[] = "/tmp/prospero-installer-XXXXXX";
+    assert(mkdtemp(path));
+    const fs::path root(path);
+    fs::create_directories(root / "apps");
+    const std::string id = "PPSA99500", location = (root / "apps").string();
+    // The smallest valid app archive.
+    mz_zip_archive archive{};
+    assert(mz_zip_writer_init_heap(&archive, 0, 0));
+    const std::string program(300000, 'p'),
+        param = "{\"titleId\":\"" + id + "\",\"contentVersion\":\"01.000.001\"}";
+    assert(mz_zip_writer_add_mem(&archive, (id + "/eboot.bin").c_str(), program.data(),
+                                 program.size(), 6));
+    assert(mz_zip_writer_add_mem(&archive, (id + "/sce_sys/param.json").c_str(), param.data(),
+                                 param.size(), 6));
+    void *bytes = nullptr;
+    std::size_t size = 0;
+    assert(mz_zip_writer_finalize_heap_archive(&archive, &bytes, &size));
+    const std::string artifact(static_cast<const char *>(bytes), size);
+    mz_free(bytes);
+    mz_zip_writer_end(&archive);
+
+    std::atomic<bool> hold{false};
+    store::install::Environment environment;
+    environment.root = (root / "state").string();
+    environment.work = (root / "work").string();
+    environment.self = "PPSA99000";
+    environment.policy.roots = {location};
+    environment.fetch = [&](const std::string &, std::uint64_t, const store::net::Sink &sink,
+                            store::net::Control &control)
+    {
+        store::net::Response response;
+        sink(std::string_view(artifact).substr(0, artifact.size() / 2));
+        while (hold && !control.cancelled)
+            std::this_thread::sleep_for(5ms);
+        if (control.cancelled || !sink(std::string_view(artifact).substr(artifact.size() / 2)))
+            response.error = "Cancelled";
+        else
+            response.status = 200;
+        return response;
+    };
+    store::catalog::Entry entry;
+    entry.id = id;
+    entry.name = "Example";
+    entry.status = "available";
+    entry.format = "zip";
+    entry.version = "v1";
+    entry.content_version = "01.000.001";
+    entry.artifact = "https://github.com/example/app/releases/download/v1/" + id + ".zip";
+    entry.digest = store::catalog::sha256(artifact);
+    entry.size = artifact.size();
+
+    store::Service service("");
+    assert(!service.request_install(entry, location)); // No installer: nothing is queued.
+    service.installer = true;
+    service.installer_environment = environment;
+    refresh_ready = true;
+    assert(service.start());
+    const auto ask = [&](const auto &request)
+    {
+        const auto deadline = std::chrono::steady_clock::now() + 5s;
+        while (!request() && std::chrono::steady_clock::now() < deadline)
+            std::this_thread::sleep_for(1ms);
+    };
+    // A held download shows its progress, and a cancel leaves nothing behind.
+    hold = true;
+    ask([&] { return service.request_install(entry, location); });
+    store::JobView view;
+    const auto deadline = std::chrono::steady_clock::now() + 5s;
+    while (std::chrono::steady_clock::now() < deadline &&
+           !(service.job(view) && view.id == id && view.done > 0))
+        std::this_thread::sleep_for(1ms);
+    assert(view.id == id && view.phase == store::install::Phase::downloading);
+    assert(view.done == artifact.size() / 2 && view.total == artifact.size());
+    ask([&] { return service.cancel_job(id); });
+    auto done = next(service, store::Update::Kind::job);
+    assert(!done.ok && done.entry.id == id && done.message == "Example: cancelled");
+    assert(!fs::exists(root / "apps" / id) && !fs::exists(root / "state/journal.json"));
+    // The next request is not cancelled by the previous one's cancel.
+    hold = false;
+    ask([&] { return service.request_install(entry, location); });
+    done = next(service, store::Update::Kind::job);
+    assert(done.ok && done.message == "Example installed");
+    assert(fs::file_size(root / "apps" / id / "eboot.bin") == program.size());
+    assert(fs::exists(root / "state/receipts" / (id + ".json")));
+    // Without a running-app check an uninstall is refused, and says so.
+    ask([&] { return service.request_uninstall(id, location); });
+    done = next(service, store::Update::Kind::job);
+    assert(!done.ok && done.detail.find("running") != std::string::npos);
+    assert(fs::exists(root / "apps" / id / "eboot.bin"));
+    assert(service.job(view) && view.id.empty() && view.waiting.empty());
+    service.stop();
+    fs::remove_all(root);
+}
+
 int main()
 {
     char path[] = "/tmp/prospero-service-XXXXXX";
@@ -171,4 +279,5 @@ int main()
     service.stop();
     assert(std::chrono::steady_clock::now() - before < 1s);
     std::filesystem::remove_all(root);
+    check_installer();
 }

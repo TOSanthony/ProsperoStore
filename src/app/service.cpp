@@ -31,18 +31,35 @@ bool Service::start()
         icons_started_ = pthread_create(&icon_thread_, nullptr, icon_entry, this) == 0;
     if (started_ && !icons_started_)
         stop();
+    if (started_ && installer)
+    {
+        const bool created = pthread_create(&install_thread_, nullptr, install_entry, this) == 0;
+        std::lock_guard lock(mutex_);
+        installer_started_ = created;
+    }
     return started_;
 }
 void Service::stop()
 {
     control_.cancel();
     icon_control_.cancel();
+    bool joining = false;
+    {
+        // Under the lock, so a job starting now can't clear the cancellation.
+        std::lock_guard lock(mutex_);
+        job_control_.cancel();
+        joining = installer_started_;
+        installer_started_ = false;
+    }
     if (started_)
         pthread_join(thread_, nullptr);
     if (icons_started_)
         pthread_join(icon_thread_, nullptr);
+    if (joining)
+        pthread_join(install_thread_, nullptr);
     control_.connection.reset();
     icon_control_.connection.reset();
+    job_control_.connection.reset();
     icons_started_ = false;
     started_ = false;
 }
@@ -84,6 +101,7 @@ void Service::publish(Update update)
                 if (update.kind == Update::Kind::catalog)
                 {
                     entries_ = update.snapshot.entries;
+                    versions_ = update.snapshot.versions;
                     update.generation = ++generation_;
                     online_ = update.snapshot.online;
                 }
@@ -105,6 +123,214 @@ void *Service::entry(void *self)
     static_cast<Service *>(self)->run();
     return nullptr;
 }
+
+// What ShadowMountPlus scans on this console, from its own configuration.
+// An existing configuration that can't be read is never replaced by defaults.
+bool Service::load_policy(system::ScanPolicy &out) const
+{
+    if (installer_environment)
+    {
+        out = installer_environment->policy;
+        return true;
+    }
+    if (root_ != "/data/prosperostore")
+        return false;
+    std::string configuration, manual, policy_error;
+    const bool configured =
+        hui::save::read_file("/data/shadowmount/config.ini", &configuration, 256 * 1024);
+    const bool listed = hui::save::read_file("/data/shadowmount/manual.lst", &manual, 256 * 1024);
+    const auto unreadable = [](const char *path, bool read)
+    {
+        struct stat info
+        {
+        };
+        return !read && (lstat(path, &info) == 0 || errno != ENOENT);
+    };
+    system::ScanPolicy policy;
+    if (unreadable("/data/shadowmount/config.ini", configured) ||
+        unreadable("/data/shadowmount/manual.lst", listed))
+    {
+        hui::sys::log("[STORE] storage policy error=Existing configuration is unreadable; "
+                      "refusing default paths");
+        return false;
+    }
+    if (!system::scan_policy(configuration, manual, policy, policy_error))
+    {
+        hui::sys::log("[STORE] storage policy error=%s", policy_error.c_str());
+        return false;
+    }
+    hui::sys::log("[STORE] storage config=%d manual=%d roots=%zu entries=%zu depth=%u", configured,
+                  listed, policy.roots.size(), policy.manual.size(), policy.depth);
+    out = std::move(policy);
+    return true;
+}
+
+bool Service::request_install(const catalog::Entry &entry, const std::string &location)
+{
+    std::unique_lock lock(mutex_, std::try_to_lock);
+    if (!lock.owns_lock() || !installer_started_ || jobs_.size() >= 16)
+        return false;
+    const auto same = [&](const Job &job) { return job.entry.id == entry.id; };
+    if (job_id_ != entry.id && std::none_of(jobs_.begin(), jobs_.end(), same))
+        jobs_.push_back({false, entry, location});
+    return true;
+}
+
+bool Service::request_uninstall(const std::string &id, const std::string &location)
+{
+    catalog::Entry entry;
+    entry.id = id;
+    std::unique_lock lock(mutex_, std::try_to_lock);
+    if (!lock.owns_lock() || !installer_started_ || jobs_.size() >= 16)
+        return false;
+    const auto same = [&](const Job &job) { return job.entry.id == id; };
+    if (job_id_ != id && std::none_of(jobs_.begin(), jobs_.end(), same))
+        jobs_.push_back({true, std::move(entry), location});
+    return true;
+}
+
+bool Service::cancel_job(const std::string &id)
+{
+    std::unique_lock lock(mutex_, std::try_to_lock);
+    if (!lock.owns_lock())
+        return false;
+    std::erase_if(jobs_, [&](const Job &job) { return job.entry.id == id; });
+    if (job_id_ == id)
+        job_control_.cancelled = true; // The transfer and the unpacking both watch it.
+    return true;
+}
+
+bool Service::job(JobView &view)
+{
+    std::unique_lock lock(mutex_, std::try_to_lock);
+    if (!lock.owns_lock())
+        return false;
+    view.id = job_id_;
+    view.phase = static_cast<install::Phase>(progress_.phase.load());
+    view.done = progress_.done.load();
+    view.total = progress_.total.load();
+    view.waiting.clear();
+    for (const auto &job : jobs_)
+        view.waiting.push_back(job.entry.id);
+    return true;
+}
+
+void *Service::install_entry(void *self)
+{
+    static_cast<Service *>(self)->run_installer();
+    return nullptr;
+}
+
+void Service::run_installer()
+{
+    install::Environment environment;
+    if (installer_environment)
+        environment = *installer_environment;
+    else
+    {
+        environment.root = root_;
+        environment.self = "PPSA99000";
+        environment.fetch = [](const std::string &url, std::uint64_t limit, const net::Sink &sink,
+                               net::Control &control)
+        { return net::get(url, net::Purpose::artifact, limit, sink, control); };
+        // The running check is the owner's to supply (plan D9). Until it is
+        // set here, every update and uninstall is refused as "unknown".
+    }
+    std::string broken;
+    if (environment.root.empty() || !hui::save::ensure_directory(environment.root) ||
+        (!installer_environment && !load_policy(environment.policy)))
+        broken = "Installing is unavailable: the install locations couldn't be read";
+    const auto rescan = [&]
+    {
+        Update installed;
+        installed.kind = Update::Kind::inventory;
+        installed.installed = system::scan_installed(
+            environment.policy, environment.root + "/receipts", control_.cancelled);
+        publish(std::move(installed));
+    };
+    if (broken.empty())
+    {
+        // Before anything else: finish or undo what was interrupted last time.
+        const auto recovered = install::recover(environment);
+        hui::sys::log("[STORE] recovery ok=%d operation=%s error=%s", recovered.ok,
+                      recovered.operation.c_str(), recovered.error.c_str());
+        if (!recovered.ok)
+            broken = recovered.error;
+        else if (!recovered.operation.empty())
+        {
+            Update notice;
+            notice.kind = Update::Kind::notice;
+            notice.message = "ProsperoStore recovered";
+            notice.detail = "An interrupted " + recovered.operation + " was cleaned up.";
+            publish(std::move(notice));
+            rescan();
+        }
+    }
+    while (!control_.cancelled.load())
+    {
+        Job job;
+        std::string minimum;
+        {
+            std::lock_guard lock(mutex_);
+            if (!jobs_.empty())
+            {
+                job = std::move(jobs_.front());
+                jobs_.pop_front();
+                job_id_ = job.entry.id;
+                const auto listed = versions_.find(job_id_);
+                minimum = listed == versions_.end() ? std::string{} : listed->second;
+                // A cancel belongs to the job it was asked for, never to the next one.
+                job_control_.cancelled = control_.cancelled.load();
+                progress_.phase = static_cast<int>(install::Phase::idle);
+                progress_.done = 0;
+                progress_.total = 0;
+            }
+        }
+        if (job.entry.id.empty())
+        {
+            hui::sys::sleep_us(50000);
+            continue;
+        }
+        install::Result result;
+        if (!broken.empty())
+            result.error = broken;
+        else if (job.uninstall)
+            result = install::uninstall(environment, job.entry.id, job.location, progress_);
+        else
+            result = install::apply(environment, {job.entry, job.location, minimum}, job_control_,
+                                    progress_);
+        hui::sys::log("[STORE] job id=%s operation=%s ok=%d version=%s error=%s",
+                      job.entry.id.c_str(), result.operation.c_str(), result.ok,
+                      result.version.c_str(), result.error.c_str());
+        Update done;
+        done.kind = Update::Kind::job;
+        done.entry.id = job.entry.id;
+        done.ok = result.ok;
+        const auto &name = job.entry.name.empty() ? job.entry.id : job.entry.name;
+        if (result.ok)
+        {
+            done.message = name + (result.operation == "uninstall" ? " uninstalled"
+                                   : result.operation == "update"  ? " updated"
+                                                                   : " installed");
+            done.detail = result.operation == "uninstall"
+                              ? "Its saved data was left in place."
+                              : "ShadowMountPlus will add it to your home screen in a moment.";
+        }
+        else
+        {
+            done.message = name + (result.error == "Cancelled" ? ": cancelled" : ": not changed");
+            done.detail = result.error == "Cancelled" ? "Nothing was installed." : result.error;
+        }
+        if (broken.empty())
+            rescan();
+        {
+            std::lock_guard lock(mutex_);
+            job_id_.clear();
+            progress_.phase = static_cast<int>(install::Phase::idle);
+        }
+        publish(std::move(done));
+    }
+}
 void Service::run()
 {
 #ifdef STORE_SANDBOX_CONTROL
@@ -124,55 +350,25 @@ void Service::run()
     }
     catalog::Client client(root_.empty() ? "" : root_ + "/cache");
     system::ScanPolicy scan_policy;
-    bool can_scan = false;
-    if (root_ == "/data/prosperostore")
-    {
-        std::string configuration, manual, policy_error;
-        const bool configured =
-            hui::save::read_file("/data/shadowmount/config.ini", &configuration, 256 * 1024);
-        const bool listed =
-            hui::save::read_file("/data/shadowmount/manual.lst", &manual, 256 * 1024);
-        const auto unreadable = [](const char *path, bool read)
-        {
-            struct stat info
-            {
-            };
-            return !read && (lstat(path, &info) == 0 || errno != ENOENT);
-        };
-        system::ScanPolicy policy;
-        if (unreadable("/data/shadowmount/config.ini", configured) ||
-            unreadable("/data/shadowmount/manual.lst", listed))
-            hui::sys::log("[STORE] storage policy error=Existing configuration is unreadable; "
-                          "refusing default paths");
-        else if (!system::scan_policy(configuration, manual, policy, policy_error))
-            hui::sys::log("[STORE] storage policy error=%s", policy_error.c_str());
-        else
-        {
-            scan_policy = policy;
-            can_scan = true;
-            hui::sys::log("[STORE] storage config=%d manual=%d roots=%zu entries=%zu depth=%u",
-                          configured, listed, policy.roots.size(), policy.manual.size(),
-                          policy.depth);
+    const bool can_scan = load_policy(scan_policy);
 #ifdef STORE_DEVELOPMENT
-            for (const auto &path : policy.roots)
-            {
-                if (control_.cancelled.load())
-                    break;
-                const auto drive = system::drive_root(path);
-                if (drive.empty())
-                    continue;
-                const auto probe = system::probe_storage(path);
-                const bool work_safe = system::work_path_unscanned(
-                    policy, drive + "/prosperostore/staging/transaction/PPSA99000");
-                hui::sys::log(
-                    "[STORE] storage path=%s fs=%s available=%llu rename=%d work-safe=%d error=%s",
-                    path.c_str(), probe.filesystem.c_str(),
-                    static_cast<unsigned long long>(probe.available), probe.renamed, work_safe,
-                    probe.error.c_str());
-            }
-#endif
-        }
+    for (const auto &path : scan_policy.roots)
+    {
+        if (!can_scan || control_.cancelled.load())
+            break;
+        const auto drive = system::drive_root(path);
+        if (drive.empty())
+            continue;
+        const auto probe = system::probe_storage(path);
+        const bool work_safe =
+            system::work_path_unscanned(scan_policy, drive + "/prosperostore/staging/PPSA99000");
+        hui::sys::log(
+            "[STORE] storage path=%s fs=%s available=%llu rename=%d work-safe=%d error=%s",
+            path.c_str(), probe.filesystem.c_str(),
+            static_cast<unsigned long long>(probe.available), probe.renamed, work_safe,
+            probe.error.c_str());
     }
+#endif
     catalog::Snapshot snapshot;
     std::string error;
     if (client.cached(snapshot, error))

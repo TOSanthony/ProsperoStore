@@ -945,6 +945,7 @@ To be confirmed and listed in `THIRD_PARTY_NOTICES.md` when each is added.
 - 2026-10-02 | M3 startup | 59a8868 | PS5 6.02 | partial-pass: catalog, icons, own exit, healthy; controller rejected before a later launch, so launch attribution unresolved | results/m3-launch-context | require controller acknowledgement
 - 2026-10-02 | M4 engine | (this commit) | host | partial-pass: verified download, archive rules, space checks, install/update/uninstall, journal recovery with a cut at every step, fuzzing; sanitized tests, native build | build/store-test.log | installer worker, queue and screens; console install
 - 2026-10-02 | M8 look, notice | (this commit) | host | partial-pass: Storefront layout in Glass Orchard colours, coming-soon picture, update notice; snapshots reviewed, tests, native build | build/snapshots | console frame time with the aurora backdrop and glass
+- 2026-10-02 | M4 installer | (this commit) | host | partial-pass: installer worker, queue, progress, cancel, recovery at start, page actions and uninstall confirmation in development builds; service test, snapshots, native build | build/store-test.log | first install on a console with a test title; running check (D9)
 
 | Repository | Role |
 | --- | --- |

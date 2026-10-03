@@ -288,8 +288,18 @@ int main(int argc, char **argv)
                     assert(screen.pending_detail.empty());
                 }
             }
-            else if (mode == "detail" || mode == "detail-error" || mode == "detail-end")
+            else if (mode == "detail" || mode == "detail-error" || mode == "detail-end" ||
+                     mode == "detail-armed" || mode == "detail-progress" || mode == "confirm")
             {
+                if (mode == "detail-armed" || mode == "detail-progress" || mode == "confirm")
+                    screen.set_installer(true, true, "", "/data/homebrew");
+                if (mode == "confirm")
+                {
+                    store::system::Inventory inventory;
+                    inventory.apps = {{"PPSA99001", "ProsperoRadio", "01.000.000",
+                                       "/data/homebrew/PPSA99001", "", false, true, false}};
+                    screen.set_inventory(std::move(inventory));
+                }
                 screen.set_query("radio");
                 hui::InputFrame open;
                 open.pressed = hui::action_bit(hui::Action::confirm);
@@ -314,6 +324,25 @@ int main(int argc, char **argv)
                     assert(texture);
                     textures.push_back(texture);
                     screen.set_qr(entry.id, texture, qr.width);
+                    if (mode == "detail-progress")
+                        screen.set_activity({entry.id, 1, entry.size * 2 / 5, entry.size, {}});
+                    if (mode == "detail-armed")
+                    {
+                        // Cross asks for the install of exactly this verified record.
+                        screen.update(open, 1.0f / 60.0f, feedback);
+                        assert(screen.pending_order.kind == store::Order::Kind::install);
+                        assert(screen.pending_order.entry.digest == entry.digest);
+                        assert(screen.pending_order.location == "/data/homebrew");
+                        screen.pending_order = {};
+                    }
+                    if (mode == "confirm")
+                    {
+                        // Square asks first; nothing is ordered until the answer.
+                        hui::InputFrame square;
+                        square.pressed = hui::action_bit(hui::Action::west);
+                        screen.update(square, 1.0f / 60.0f, feedback);
+                        assert(screen.pending_order.kind == store::Order::Kind::none);
+                    }
                 }
             }
             else
