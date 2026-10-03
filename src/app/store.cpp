@@ -206,6 +206,13 @@ void Screen::set_icon(const std::string &id, std::uint32_t texture)
             grid_.item(static_cast<int>(i)).texture = texture;
 }
 
+void Screen::set_qr(std::string id, std::uint32_t texture, int width)
+{
+    qr_id_ = std::move(id);
+    qr_texture_ = texture;
+    qr_width_ = width;
+}
+
 std::vector<std::string> Screen::artwork() const
 {
     std::vector<std::string> wanted;
@@ -296,6 +303,16 @@ void Screen::draw(gfx::Renderer &renderer, const ui::Fonts &fonts)
         paint.panel({96, 190, 540, 540});
         if (app.icon != 0)
             scene_.image(app.icon, {128, 222, 476, 476}, gfx::kFullUv, gfx::Color::rgb(0xffffff));
+        if (qr_texture_ != 0 && qr_id_ == app.title_id)
+        {
+            const float side = static_cast<float>(qr_width_);
+            scene_.image(qr_texture_, {112, 758, side, side}, gfx::kFullUv,
+                         gfx::Color::rgb(0xffffff));
+            ui::paragraph(scene_, fonts.regular, "Scan for release notes and source", 300, 795, 24,
+                          310, 34, paint.page_text(), 3);
+            ui::text(scene_, fonts.regular, "homebrew.page/app/" + app.title_id, 112, 950, 24,
+                     paint.page_text_muted());
+        }
         paint.heading(ui::fit_label(paint, app.name, 64, 1080), 704, 280, 64, paint.page_text());
         ui::text(scene_, fonts.regular, ui::fit_label(paint, app.author, 28, 1080), 704, 333, 28,
                  paint.page_text_muted());

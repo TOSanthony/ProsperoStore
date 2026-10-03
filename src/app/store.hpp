@@ -40,6 +40,7 @@ class Screen
     void set_detail(const catalog::Entry &entry);
     void set_detail_error(const std::string &id, std::string message);
     void set_icon(const std::string &id, std::uint32_t texture);
+    void set_qr(std::string id, std::uint32_t texture, int width);
     std::vector<std::string> artwork() const;
     void set_query(std::string query);
     const std::string &query() const
@@ -74,6 +75,9 @@ class Screen
     bool details_ = false;
     bool quit_ = false;
     std::string query_;
+    std::string qr_id_;
+    std::uint32_t qr_texture_ = 0;
+    int qr_width_ = 0;
     enum class Sort
     {
         name,

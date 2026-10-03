@@ -4,6 +4,7 @@
 
 #include "app/service.hpp"
 #include "core/save_file.hpp"
+#include "core/qr.hpp"
 #include "platform/ps5/system.hpp"
 #include "system/locations.hpp"
 #include "system/storage_probe.hpp"
@@ -222,7 +223,16 @@ void Service::run()
             }
             else
                 result.entry.id = id;
+            const bool verified_detail = result.kind == Update::Kind::detail;
             publish(std::move(result));
+            if (verified_detail)
+            {
+                Update qr;
+                qr.kind = Update::Kind::qr;
+                qr.entry.id = id;
+                if (hui::encode_qr("https://homebrew.page/app/" + id + "/", qr.image))
+                    publish(std::move(qr));
+            }
         }
         hui::sys::sleep_us(100000);
     }

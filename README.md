@@ -30,3 +30,7 @@ app with Cross. Triangle opens system-keyboard search by name or developer;
 press R3 to cycle name, newest release, and recently updated sorting. Clear
 the search text to show the full section again. Circle goes back or closes
 the store. Native keyboard integration still awaits console qualification.
+
+App pages show verified metadata, full-size artwork, and a scrolling article.
+Use the D-pad to scroll and Triangle to retry or refresh details. Scan the QR
+code for the app's page, release notes, and source repository.

@@ -125,6 +125,7 @@ int main()
     sys::log("[STORE] interactive width=%d height=%d", display.width(), display.height());
     bool first_swap = true;
     std::map<std::string, std::uint32_t> textures;
+    std::uint32_t qr_texture = 0;
     std::vector<std::string> wanted_icons, requested_icons;
     std::uint64_t catalog_generation = 0;
     std::vector<store::Update> updates;
@@ -200,6 +201,18 @@ int main()
                         previous = texture;
                         screen.set_icon(update.entry.id, texture);
                     }
+                }
+            }
+            else if (update.kind == store::Update::Kind::qr)
+            {
+                const auto texture = renderer.batch().create_texture(
+                    update.image.width, update.image.height, update.image.rgba.data());
+                if (texture)
+                {
+                    if (qr_texture)
+                        glDeleteTextures(1, &qr_texture);
+                    qr_texture = texture;
+                    screen.set_qr(update.entry.id, texture, update.image.width);
                 }
             }
             else if (!update.entry.id.empty())
@@ -286,6 +299,8 @@ int main()
         pthread_join(request_thread, nullptr);
     audio.stop();
     pad.close();
+    if (qr_texture)
+        glDeleteTextures(1, &qr_texture);
     for (const auto &[id, texture] : textures)
     {
         (void)id;

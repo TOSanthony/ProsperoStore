@@ -137,8 +137,8 @@ int main()
     }
     assert(received.size() == ids.size() && downloads == 15);
     assert(service.request_detail("PPSA99000"));
-    const auto detail = next(service, store::Update::Kind::detail);
-    assert(detail.entry.id == "PPSA99000" && detail.image.width == 1 && downloads == 16);
+    const auto qr = next(service, store::Update::Kind::qr);
+    assert(qr.entry.id == "PPSA99000" && qr.image.width >= 116 && downloads == 16);
     assert(service.request_detail("PPSA99000"));
     assert(next(service, store::Update::Kind::detail).image.width == 1 && downloads == 16);
     assert(service.request_detail("PPSA99001"));

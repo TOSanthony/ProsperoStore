@@ -17,6 +17,7 @@ struct Update
         catalog,
         detail,
         icon,
+        qr,
         error
     } kind = Kind::error;
     catalog::Snapshot snapshot;

@@ -119,7 +119,7 @@
   },
   {
     "repository": "https://github.com/blackbearreloaded/ps5-homebrew-ui",
-    "commit": "eabe9986347523107c446c84dcc3183e5578cbdf",
+    "commit": "3cb6db940035614f86cabd87ebf6e21b14ff694e",
     "files": {
       "assets/audio/music/first-light.ogg": "7329a7fcfcce3d144837723e5797f07df1703052972623a05df52b8c9b457b75",
       "assets/audio/music/open-strings.ogg": "98847200e3bbeca384aa15fb46476057e3ecb2ba0390b07c148bcb3edb34b036",
@@ -441,7 +441,12 @@
       "third_party/stb/stb_image.h": "594c2fe35d49488b4382dbfaec8f98366defca819d916ac95becf3e75f4200b3",
       "src/platform/ps5/ime.cpp": "36de323b231ab334fb6043dc483f0072c3520baadbc7d5d20b2360646c412153",
       "src/platform/ps5/ime.hpp": "a1eb842605189a8667c2b918f794e02d76bbdc74fe3cef856caba0f50ebc70be",
-      "src/platform/ps5/ime_abi.hpp": "6f65e52e2c2822a5ea8f1077155d7f1897a39e30afbb06fbfa8778b3c4172932"
+      "src/platform/ps5/ime_abi.hpp": "6f65e52e2c2822a5ea8f1077155d7f1897a39e30afbb06fbfa8778b3c4172932",
+      "src/core/qr.cpp": "2a0b294ab4908d09554cd7a58aced2a02c2638d0160c5517c124e2515d1bcb71",
+      "src/core/qr.hpp": "385fb7e6eb380022619baaf65b9e9ade6a4f1f0f381a573433fbbe035711431f",
+      "src/third_party/qrcodegen/qrcodegen.c": "300eff07ee25baaa7578f20284411638154716379437391e7e689c0e6ce81403",
+      "src/third_party/qrcodegen/qrcodegen.h": "e82df4bff37d18b5863b9e7486fe6bda1b6cda8c3b9ecebfec473907265cb589",
+      "third_party/qrcodegen/SOURCE.json": "8c71dc716a28f5b9d3242110824efaaeff89483d9994413f90c125091c01f6f7"
     }
   }
 ]

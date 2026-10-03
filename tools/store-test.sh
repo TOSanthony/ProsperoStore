@@ -20,7 +20,7 @@ clang++ -std=c++20 "${flags[@]}" -DSTORE_NATIVE_PATH_WALK=1 -Wall -Wextra -Wpeda
     "$root/src/system/locations.cpp" -o "$build/storage-native-path-test"
 ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 "$build/storage-native-path-test"
 objects=()
-for name in monocypher/monocypher monocypher/monocypher-ed25519 yyjson/yyjson; do
+for name in monocypher/monocypher monocypher/monocypher-ed25519 yyjson/yyjson qrcodegen/qrcodegen; do
     object="$build/${name//\//_}.o"
     clang -std=c11 "${flags[@]}" -c "$root/src/third_party/$name.c" -o "$object"
     objects+=("$object")
@@ -45,6 +45,7 @@ clang++ -std=c++20 "${flags[@]}" -Wall -Wextra -Wpedantic -Werror -I"$root/src" 
 ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 "$build/icons-test"
 clang++ -std=c++20 "${flags[@]}" -Wall -Wextra -Wpedantic -Werror -I"$root/src" \
     "$root/tests/store_service_test.cpp" "$root/src/app/service.cpp" \
+    "$root/src/core/qr.cpp" \
     "$root/src/catalog/icons.cpp" "$root/src/catalog/catalog.cpp" \
     "$root/src/core/image.cpp" "$root/src/core/save_file.cpp" "$root/host/platform_host.cpp" \
     "${objects[@]}" -pthread -o "$build/service-test"

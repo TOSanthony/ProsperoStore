@@ -15,6 +15,7 @@ vendored files:
 | miniz 3.0.2 | ZIP inspection and extraction | MIT |
 | PicoSHA2 | SHA-256 | MIT |
 | stb_image (UI foundation) | Bounded PNG decode | MIT or public domain, full license in third_party/stb/stb_image.h |
+| Project Nayuki QR Code generator v1.8.0 (UI foundation) | QR app links | MIT, full license in assets/licenses/qrcodegen.txt |
 
 Host previews use the host's Mesa/EGL and libcurl. Elevated console HTTPS
 statically links the following PacBrew v0.40.2 libraries. Sandboxed browsing

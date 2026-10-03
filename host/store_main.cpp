@@ -5,6 +5,7 @@
 #include "app/store.hpp"
 #include "catalog/client.hpp"
 #include "catalog/icons.hpp"
+#include "core/qr.hpp"
 #include "gfx/gl_program.hpp"
 
 #include <EGL/egl.h>
@@ -217,6 +218,13 @@ int main(int argc, char **argv)
                     assert(client.cached(snapshot, error));
                     assert(client.detail(snapshot, screen.pending_detail, entry, control, error));
                     screen.set_detail(entry);
+                    hui::Image qr;
+                    assert(hui::encode_qr("https://homebrew.page/app/" + entry.id + "/", qr));
+                    const auto texture =
+                        renderer.batch().create_texture(qr.width, qr.height, qr.rgba.data());
+                    assert(texture);
+                    textures.push_back(texture);
+                    screen.set_qr(entry.id, texture, qr.width);
                 }
             }
             else
