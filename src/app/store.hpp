@@ -36,6 +36,7 @@ struct App
     std::vector<system::InstalledApp> installed = {};
     bool local_only = false;
     std::uint32_t art = 0; // the full-size picture, once the page has asked for it
+    std::string folded_name = {}, folded_author = {}; // for sorting and search
 };
 
 // What the page asks the installer to do. The frame loop hands it to the
@@ -105,6 +106,8 @@ class Screen
     bool open_app(const std::string &id);
     void remote_install(const std::string &id);
     bool remote_uninstall(const std::string &id);
+    // Fills the catalog with copies up to count apps, to measure a large one.
+    void stress(std::size_t count);
     Order pending_order;
     std::vector<std::string> artwork() const;
     void set_query(std::string query);
@@ -149,6 +152,7 @@ class Screen
     struct Fit
     {
         std::string title, author;
+        bool ready = false;
     };
 
     // What the page can say about an app on this console, and its one next step.
@@ -191,6 +195,8 @@ class Screen
     void draw_banner(const hui::ui::Fonts &fonts);
     void draw_chips(const hui::ui::Fonts &fonts);
     void draw_card(const hui::ui::Fonts &fonts, int index, unsigned layers);
+    void rows_in_view(float scroll, int &first, int &last) const;
+    const App *busy_app(float &progress, const char *&phase) const;
     void draw_grid(const hui::ui::Fonts &fonts);
     void draw_page(const hui::ui::Fonts &fonts, std::uint32_t glass);
     void draw_action_box(const hui::ui::Fonts &fonts, std::uint32_t glass, const App &app,
@@ -203,6 +209,15 @@ class Screen
     Activity activity_;
     std::vector<std::string> running_;
     std::string auto_order_;
+    enum class Ask
+    {
+        none,
+        uninstall,
+        quit
+    } ask_ = Ask::none;
+    std::string ask_id_;
+    bool fresh_catalog_ = false;
+    std::vector<hui::tween::Spring> appear_;
     bool installer_ = false, guard_ = false;
     std::string installer_reason_ = "Installing is not switched on in this build";
     std::string install_location_;

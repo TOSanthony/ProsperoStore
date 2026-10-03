@@ -217,8 +217,8 @@ void Screen::rebuild()
     for (std::size_t i = 0; i < apps_.size(); ++i)
     {
         const App &app = apps_[i];
-        if (!query.empty() && folded(app.name).find(query) == std::string::npos &&
-            folded(app.author).find(query) == std::string::npos)
+        if (!query.empty() && app.folded_name.find(query) == std::string::npos &&
+            app.folded_author.find(query) == std::string::npos)
             continue;
         for (int section = 0; section < kSections; ++section)
             counts_[section] += in_section(app, section) ? 1 : 0;
@@ -234,8 +234,8 @@ void Screen::rebuild()
                              return a.released > b.released;
                          if (sort_ == Sort::updated && a.updated != b.updated)
                              return a.updated > b.updated;
-                         const auto a_name = folded(a.name), b_name = folded(b.name);
-                         return a_name == b_name ? a.title_id < b.title_id : a_name < b_name;
+                         return a.folded_name == b.folded_name ? a.title_id < b.title_id
+                                                               : a.folded_name < b.folded_name;
                      });
     // The banner features the newest releases.
     featured_.clear();
@@ -256,7 +256,44 @@ void Screen::rebuild()
     if (zone_ == Zone::banner && !banner_shown())
         zone_ = count ? Zone::grid : Zone::chips;
     lift_.resize(apps_.size());
+    appear_.resize(apps_.size());
     fits_stale_ = true;
+}
+
+// The cards whose rows are on screen at this scroll, and one row beyond.
+void Screen::rows_in_view(float scroll, int &first, int &last) const
+{
+    const int count = static_cast<int>(visible_.size());
+    const float top = scroll + kPageTop - grid_top() - kRowPitch;
+    const float bottom = scroll + kHeight - grid_top() + kRowPitch;
+    first = std::clamp(static_cast<int>(std::floor(top / kRowPitch)) * kColumns, 0, count);
+    last = std::clamp((static_cast<int>(std::floor(bottom / kRowPitch)) + 1) * kColumns, 0, count);
+}
+
+void Screen::stress(std::size_t count)
+{
+    std::vector<App> apps;
+    for (const auto &app : apps_)
+        if (!app.local_only)
+            apps.push_back(app);
+    const std::size_t real = apps.size();
+    for (std::size_t i = 0; real && apps.size() < count; ++i)
+    {
+        App copy = apps[i % real];
+        const auto number = std::to_string(10000 + i);
+        copy.title_id = "PPSA" + number;
+        copy.name += " " + number.substr(1);
+        copy.badge = copy.catalog_badge;
+        copy.installed.clear();
+        apps.push_back(std::move(copy));
+    }
+    const auto icons = apps;
+    set_catalog(std::move(apps), status_, catalog_current_);
+    for (const auto &app : icons)
+    {
+        set_icon(app.title_id, app.icon);
+        set_art(app.title_id, app.art);
+    }
 }
 
 const App *Screen::focused() const
@@ -293,7 +330,10 @@ void Screen::set_catalog(std::vector<App> apps, std::string status, bool current
     {
         app.catalog_badge = app.badge;
         app.installed.clear();
+        app.folded_name = folded(app.name);
+        app.folded_author = folded(app.author);
     }
+    fresh_catalog_ = true;
     for (const auto &installed : inventory_.apps)
     {
         const auto id = installed.id.empty() ? "local:" + installed.path : installed.id;
@@ -306,6 +346,8 @@ void Screen::set_catalog(std::vector<App> apps, std::string status, bool current
             local.name = installed.name;
             local.author = installed.image ? "Installed image" : "Installed app";
             local.local_only = true;
+            local.folded_name = folded(local.name);
+            local.folded_author = folded(local.author);
             apps_.push_back(std::move(local));
             found = apps_.end() - 1;
         }
@@ -433,9 +475,13 @@ void Screen::refresh_detail()
 
 void Screen::set_icon(const std::string &id, std::uint32_t texture)
 {
-    for (auto &app : apps_)
-        if (app.title_id == id)
-            app.icon = texture;
+    for (std::size_t i = 0; i < apps_.size(); ++i)
+        if (apps_[i].title_id == id)
+        {
+            apps_[i].icon = texture;
+            if (texture && fresh_catalog_ && i < appear_.size())
+                appear_[i].snap(1.0f);
+        }
 }
 
 void Screen::set_art(const std::string &id, std::uint32_t texture)
@@ -472,12 +518,12 @@ std::vector<std::string> Screen::artwork() const
         return wanted;
     wanted.reserve(16);
     // The rows on screen and one beyond each edge, then the banner's title.
-    const float scroll = scroll_.target;
-    for (int k = 0; k < static_cast<int>(visible_.size()) && wanted.size() < 15; ++k)
+    int begin = 0, end = 0;
+    rows_in_view(scroll_.target, begin, end);
+    for (int k = begin; k < end && wanted.size() < 15; ++k)
     {
         const App &app = apps_[visible_[static_cast<std::size_t>(k)]];
-        const float y = card_rect(k).y - scroll;
-        if (k != focus_ && !app.local_only && y + kCardH > -kRowPitch && y < kHeight + kRowPitch)
+        if (k != focus_ && !app.local_only)
             wanted.push_back(app.title_id);
     }
     if (banner_shown())
@@ -726,6 +772,17 @@ void Screen::update_home(const InputFrame &input, ui::Feedback &feedback)
         // Back has one step to take first: from deep in the grid to its top.
         if (zone_ == Zone::grid && focus_ >= kColumns)
             focus_ %= kColumns;
+        else if (!activity_.id.empty() || !activity_.waiting.empty())
+        {
+            ask_ = Ask::quit;
+            dialog_.open({ui::StatusKind::warning,
+                          "Close ProsperoStore?",
+                          "An app is still being installed. Closing now cancels it; nothing "
+                          "half-installed is left behind.",
+                          {{"Keep installing"}, {"Close", ui::ButtonKind::primary, true}}},
+                         feedback);
+            return;
+        }
         else
             quit_ = true;
         feedback.play(audio::Cue::back);
@@ -735,20 +792,6 @@ void Screen::update_home(const InputFrame &input, ui::Feedback &feedback)
 void Screen::update_page(const InputFrame &input, ui::Feedback &feedback)
 {
     const App &shown = *focused();
-    const auto parent = [](const std::string &path)
-    { return path.substr(0, path.find_last_of('/')); };
-    if (dialog_.is_open())
-    {
-        // The question takes every input until it is answered.
-        if (dialog_.handle(input, feedback) == ui::Event::activated && dialog_.choice() == 1 &&
-            !shown.installed.empty())
-        {
-            pending_order.kind = Order::Kind::uninstall;
-            pending_order.id = shown.title_id;
-            pending_order.location = parent(shown.installed.front().path);
-        }
-        return;
-    }
     const Offer state = offer(shown);
     if (input.is_pressed(Action::confirm) && state.primary != Order::Kind::none)
     {
@@ -765,15 +808,7 @@ void Screen::update_page(const InputFrame &input, ui::Feedback &feedback)
         {
             press_.trigger();
             feedback.play(audio::Cue::select);
-            pending_order.kind = state.primary;
-            pending_order.id = shown.title_id;
-            if (state.primary == Order::Kind::install)
-            {
-                pending_order.entry = *shown.detail;
-                pending_order.location = shown.installed.empty()
-                                             ? install_location_
-                                             : parent(shown.installed.front().path);
-            }
+            order(shown, state.primary);
         }
     }
     else if (input.is_pressed(Action::west) && state.uninstall && installer_ && guard_)
@@ -808,7 +843,21 @@ void Screen::update(const InputFrame &input, float dt, ui::Feedback &feedback)
             auto_order_.clear();
         }
     }
-    if (details_ && focused())
+    fresh_catalog_ = false;
+    if (dialog_.is_open())
+    {
+        // The question takes every input until it is answered.
+        if (dialog_.handle(input, feedback) == ui::Event::activated && dialog_.choice() == 1)
+        {
+            if (ask_ == Ask::quit)
+                quit_ = true;
+            else
+                for (const auto &app : apps_)
+                    if (app.title_id == ask_id_ && !app.installed.empty())
+                        order(app, Order::Kind::uninstall);
+        }
+    }
+    else if (details_ && focused())
         update_page(input, feedback);
     else
     {
@@ -842,10 +891,16 @@ void Screen::update(const InputFrame &input, float dt, ui::Feedback &feedback)
     chip_pill_.update(dt, 18.0f);
     nudge_.update(dt, 9.0f);
     press_.update(dt, 7.0f);
+    const App *lifted = zone_ == Zone::grid ? focused() : nullptr;
     for (std::size_t i = 0; i < lift_.size(); ++i)
     {
-        lift_[i].target = zone_ == Zone::grid && focused() == &apps_[i] ? 1.0f : 0.0f;
-        lift_[i].update(dt, 16.0f);
+        lift_[i].target = lifted == &apps_[i] ? 1.0f : 0.0f;
+        if (!lift_[i].settled())
+            lift_[i].update(dt, 16.0f);
+        // A picture fades in over the plate that stood in for it.
+        appear_[i].target = art(apps_[i]) ? 1.0f : 0.0f;
+        if (!appear_[i].settled())
+            appear_[i].update(dt, 9.0f);
     }
     article_.set_active(details_);
     article_.update(dt);
@@ -860,10 +915,7 @@ void Screen::layout(const ui::Fonts &fonts)
 {
     if (fits_stale_)
     {
-        fits_.clear();
-        for (const auto &app : apps_)
-            fits_.push_back({fonts.semibold.font->fit(app.name, 24, kCardW - 20.0f),
-                             fonts.regular.font->fit(app.author, 20, kCardW - 20.0f)});
+        fits_.assign(apps_.size(), {});
         fits_stale_ = false;
     }
     float x = kMargin + ui::button_width(ui::Button::l1, 30) + 16.0f;
@@ -885,6 +937,31 @@ void Screen::layout(const ui::Fonts &fonts)
     }
 }
 
+// The app the installer is working on, for the top bar.
+const App *Screen::busy_app(float &progress, const char *&phase) const
+{
+    if (activity_.id.empty())
+        return nullptr;
+    for (const auto &app : apps_)
+        if (app.title_id == activity_.id)
+        {
+            using Phase = install::Phase;
+            const auto now = static_cast<Phase>(activity_.phase);
+            phase = now == Phase::downloading ? "Downloading"
+                    : now == Phase::verifying ? "Verifying"
+                    : now == Phase::unpacking ? "Unpacking"
+                    : now == Phase::removing  ? "Removing"
+                                              : "Installing";
+            const bool measured =
+                (now == Phase::downloading || now == Phase::unpacking) && activity_.total > 0;
+            progress = measured ? tween::clamp01(static_cast<float>(activity_.done) /
+                                                 static_cast<float>(activity_.total))
+                                : -1.0f;
+            return &app;
+        }
+    return nullptr;
+}
+
 void Screen::draw_top_bar(const ui::Fonts &fonts)
 {
     auto &list = scene_;
@@ -899,8 +976,24 @@ void Screen::draw_top_bar(const ui::Fonts &fonts)
                                  22, kInk.with_alpha(0.62f));
     ui::text(list, fonts.semibold, "homebrew.page", x + 22.0f + words, centred(kTopY, 22), 22,
              kAccent);
-    ui::text(list, fonts.regular, fonts.regular.font->fit(status_, 22, 900.0f), kRight,
-             centred(kTopY, 22), 22, kInk.with_alpha(0.62f), gfx::Align::right);
+    float progress = -1.0f;
+    const char *phase = "";
+    if (const App *busy = busy_app(progress, phase))
+    {
+        // A transaction is running: a turning arc, what it is doing, and to whom.
+        std::string line = std::string(phase) + " " + busy->name;
+        if (progress >= 0.0f)
+            line += "  " + std::to_string(static_cast<int>(progress * 100.0f)) + "%";
+        const float width =
+            ui::text(list, fonts.semibold, fonts.semibold.font->fit(line, 22, 760.0f), kRight,
+                     centred(kTopY, 22), 22, kInk, gfx::Align::right);
+        const float cx = kRight - width - 28.0f;
+        list.ring(cx, kTopY, 12.0f, 3.0f, kInk.with_alpha(0.16f));
+        list.arc(cx, kTopY, 12.0f, 3.0f, time_ * 4.0f, 1.9f, kAccent);
+    }
+    else
+        ui::text(list, fonts.regular, fonts.regular.font->fit(status_, 22, 900.0f), kRight,
+                 centred(kTopY, 22), 22, kInk.with_alpha(0.62f), gfx::Align::right);
 }
 
 void Screen::draw_banner(const ui::Fonts &fonts)
@@ -1044,6 +1137,10 @@ void Screen::draw_card(const ui::Fonts &fonts, int k, unsigned layers)
     auto &list = scene_;
     const std::size_t index = visible_[static_cast<std::size_t>(k)];
     const App &app = apps_[index];
+    // Fitting allocates: once per card, the first time it is drawn.
+    if (auto &fit = fits_[index]; !fit.ready)
+        fit = {fonts.semibold.font->fit(app.name, 24, kCardW - 20.0f),
+               fonts.regular.font->fit(app.author, 20, kCardW - 20.0f), true};
     const float lift = lift_[index].value;
     const float in = swap_.running ? tween::stagger(swap_.elapsed, k, 0.02f, 0.25f) : 1.0f;
     const float shake = k == focus_ && zone_ == Zone::grid ? ui::shake(nudge_.value, time_) : 0.0f;
@@ -1052,24 +1149,42 @@ void Screen::draw_card(const ui::Fonts &fonts, int k, unsigned layers)
     const Rect cover{r.x, r.y, r.w, kCoverH};
     const float top = in * fade_at(cover.y + 1.0f), foot = in * fade_at(cover.y + cover.h);
     const float light = 0.86f + 0.14f * lift; // resting covers sit back a little
-    if (const auto texture = art(app))
-    {
-        if (layers & kImages)
-            list.image_gradient(texture, cover, gfx::kFullUv, Color{light, light, light, top},
-                                Color{light, light, light, foot}, kCardRadius);
-    }
-    else if (layers & kShapes)
+    const float shown = appear_[index].value, plate = 1.0f - shown;
+    if (const auto texture = art(app); texture && (layers & kImages))
+        list.image_gradient(texture, cover, gfx::kFullUv, Color{light, light, light, top * shown},
+                            Color{light, light, light, foot * shown}, kCardRadius);
+    if (plate > 0.01f && (layers & kShapes))
     {
         // No picture yet: a quiet plate with the store's diamond.
-        list.gradient_rect(cover, kCardRadius, kInk.with_alpha(0.07f * top),
-                           kMid.with_alpha(0.16f * foot));
+        list.gradient_rect(cover, kCardRadius, kInk.with_alpha(0.07f * top * plate),
+                           kMid.with_alpha(0.16f * foot * plate));
         list.rotated_rect({cover.cx() - 22.0f, cover.cy() - 22.0f, 44.0f, 44.0f}, 9.0f, 0.7854f,
-                          kInk.with_alpha(0.12f * std::min(top, foot)));
+                          kInk.with_alpha(0.12f * std::min(top, foot) * plate));
+    }
+    // A transaction for this app shows on its card: what, and how far.
+    const bool queued = std::find(activity_.waiting.begin(), activity_.waiting.end(),
+                                  app.title_id) != activity_.waiting.end();
+    const bool working = activity_.id == app.title_id;
+    if ((working || queued) && foot > 0.01f)
+    {
+        const Offer state = offer(app);
+        if (layers & kShapes)
+        {
+            const Rect track{cover.x + 12.0f, cover.y + cover.h - 20.0f, cover.w - 24.0f, 8.0f};
+            list.rounded_rect(track, 4, kBlack.with_alpha(0.55f * foot));
+            if (state.progress >= 0.0f)
+                list.rounded_rect(
+                    {track.x, track.y, std::max(8.0f, track.w * state.progress), 8.0f}, 4,
+                    kAccent.with_alpha(foot));
+        }
+        pill(list, fonts, state.headline, r.x + 10.0f, r.y + 28.0f, 34.0f, kAccent, kOnAccent,
+             in * fade_at(r.y + 26.0f), layers);
     }
     const float marks = in * fade_at(r.y + 26.0f);
     // The rocket picture already says "coming soon".
     const bool said = !app.icon && coming_soon_art_ && app.catalog_badge == "Coming soon";
-    if (const auto state = mark(app); state.word && marks > 0.01f && !(said && !state.loud))
+    if (const auto state = mark(app);
+        state.word && marks > 0.01f && !(said && !state.loud) && !working && !queued)
         pill(list, fonts, state.word, r.x + 10.0f, r.y + 28.0f, 34.0f,
              state.loud ? kAccent : kBlack.with_alpha(0.62f), state.loud ? kOnAccent : kInk, marks,
              layers);
@@ -1101,8 +1216,10 @@ void Screen::draw_grid(const ui::Fonts &fonts)
     const int count = static_cast<int>(visible_.size());
     const int focused = zone_ == Zone::grid && count > 0 ? focus_ : -1;
     list.push_clip(window);
+    int begin = 0, end = 0;
+    rows_in_view(scroll_.value, begin, end);
     for (const unsigned layer : {kImages, kShapes, kSemibold, kRegular})
-        for (int k = 0; k < count; ++k)
+        for (int k = begin; k < end; ++k)
             if (k != focused) // that one is drawn last, on top of its neighbours
                 draw_card(fonts, k, layer);
     if (count == 0)
@@ -1359,6 +1476,8 @@ Screen::Offer Screen::offer(const App &app) const
 
 void Screen::ask_uninstall(const App &app, ui::Feedback &feedback)
 {
+    ask_ = Ask::uninstall;
+    ask_id_ = app.title_id;
     dialog_.open({ui::StatusKind::warning,
                   "Uninstall " + app.name + "?",
                   "The app's folder is removed from this console. Its saved data stays.",

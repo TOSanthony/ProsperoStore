@@ -167,6 +167,7 @@ int main()
         std::uint32_t icon = 0, large = 0, code = 0;
         int code_width = 0;
         std::string hash;
+        std::uint64_t seen = 0; // the last frame it was on screen
     };
     std::map<std::string, Art> textures;
     std::map<std::string, std::string> hashes; // the current catalog's icon hashes
@@ -176,6 +177,44 @@ int main()
             if (*texture)
                 glDeleteTextures(1, texture);
         art = {};
+    };
+    // A catalog of a thousand apps must not hold a thousand pictures: each
+    // kind has a budget, and past it the picture that has been off screen
+    // longest gives its texture to the new one. Giving a texture new pixels
+    // costs about a millisecond on the console; nothing is created or deleted.
+    std::size_t icon_budget = 160; // 256 x 256: about 42 MB
+    constexpr std::size_t kLargeBudget = 12, kCodeBudget = 12;
+    std::uint64_t frame_number = 0;
+    const auto place = [&](std::uint32_t Art::*slot, std::size_t budget, const std::string &id,
+                           const Image &image) -> std::uint32_t
+    {
+        std::size_t used = 0;
+        Art *victim = nullptr;
+        const std::string *victim_id = nullptr;
+        for (auto &[other, art] : textures)
+            if (art.*slot)
+            {
+                ++used;
+                if (other != id && art.seen + 120 < frame_number &&
+                    (!victim || art.seen < victim->seen))
+                {
+                    victim = &art;
+                    victim_id = &other;
+                }
+            }
+        if (used < budget || !victim)
+            return renderer.batch().create_texture(image.width, image.height, image.rgba.data());
+        const std::uint32_t texture = victim->*slot;
+        victim->*slot = 0;
+        if (slot == &Art::icon)
+            screen.set_icon(*victim_id, 0);
+        else if (slot == &Art::large)
+            screen.set_art(*victim_id, 0);
+        glBindTexture(GL_TEXTURE_2D, texture);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, image.width, image.height, 0, GL_RGBA,
+                     GL_UNSIGNED_BYTE, image.rgba.data());
+        return texture;
     };
     std::vector<std::string> requested_icons;
     std::uint64_t catalog_generation = 0;
@@ -262,8 +301,8 @@ int main()
                 {
                     auto &art = textures[update.entry.id];
                     art.hash = listed->second;
-                    art.icon = renderer.batch().create_texture(
-                        update.image.width, update.image.height, update.image.rgba.data());
+                    art.seen = frame_number;
+                    art.icon = place(&Art::icon, icon_budget, update.entry.id, update.image);
                     screen.set_icon(update.entry.id, art.icon);
                 }
             }
@@ -276,8 +315,8 @@ int main()
                 {
                     auto &art = textures[update.entry.id];
                     art.hash = listed->second;
-                    art.large = renderer.batch().create_texture(
-                        update.image.width, update.image.height, update.image.rgba.data());
+                    art.seen = frame_number;
+                    art.large = place(&Art::large, kLargeBudget, update.entry.id, update.image);
                     screen.set_art(update.entry.id, art.large);
                 }
             }
@@ -287,8 +326,8 @@ int main()
                 auto &art = textures[update.entry.id];
                 if (!art.code)
                 {
-                    art.code = renderer.batch().create_texture(
-                        update.image.width, update.image.height, update.image.rgba.data());
+                    art.seen = frame_number;
+                    art.code = place(&Art::code, kCodeBudget, update.entry.id, update.image);
                     art.code_width = update.image.width;
                     if (const auto listed = hashes.find(update.entry.id); listed != hashes.end())
                         art.hash = listed->second;
@@ -359,6 +398,10 @@ int main()
             }
             else if (verb == "texbench")
                 bench_step = 0;
+            else if (verb == "stress")
+                screen.stress(static_cast<std::size_t>(std::atoll(argument.c_str())));
+            else if (verb == "pool")
+                icon_budget = static_cast<std::size_t>(std::max(4LL, std::atoll(argument.c_str())));
         }
         if (now < tour_until && now >= tour_next)
         {
@@ -429,9 +472,15 @@ int main()
             keyboard_active = state == ps5::Ime::State::open;
         }
         screen.update(keyboard_owns_input ? InputFrame{} : frame, dt, feedback);
-        // What is on screen first, then the rest of the catalog, sixteen at a time.
+        // What is on screen first; then, when the whole catalog fits the
+        // budget, the rest of it, sixteen at a time.
+        ++frame_number;
+        const auto on_screen = screen.artwork();
+        for (const auto &id : on_screen)
+            if (const auto found = textures.find(id); found != textures.end())
+                found->second.seen = frame_number;
         std::vector<std::string> missing;
-        for (const auto &id : screen.artwork_backlog())
+        for (const auto &id : hashes.size() <= icon_budget ? screen.artwork_backlog() : on_screen)
         {
             const auto found = textures.find(id);
             if (missing.size() < 16 && hashes.contains(id) &&

@@ -573,6 +573,9 @@ void Service::load_icons()
     catalog::Icons artwork(root_.empty() ? "" : root_ + "/cache/icons");
     std::set<std::string> failed_icons;
     std::uint64_t failure_generation = 0;
+    // A picture just delivered is asked for again until the frame loop has
+    // uploaded it: it is not read and decoded a second time for that.
+    std::map<std::string, std::int64_t> delivered;
     while (!icon_control_.cancelled.load())
     {
         catalog::Entry entry;
@@ -598,6 +601,13 @@ void Service::load_icons()
             failure_generation = generation;
         }
         const auto key = catalog::Icons::key(entry);
+        const auto moment = hui::sys::monotonic_us();
+        const auto stamp = key + "#" + std::to_string(generation);
+        if (const auto last = delivered.find(stamp);
+            last != delivered.end() && moment - last->second < 1500000)
+            continue;
+        if (delivered.size() > 4096)
+            delivered.clear();
         if (!key.empty() && !failed_icons.contains(key))
         {
             Update result;
@@ -625,7 +635,10 @@ void Service::load_icons()
                 static_cast<unsigned long long>((hui::sys::monotonic_us() - started) / 1000));
 #endif
             if (loaded)
+            {
+                delivered[stamp] = moment;
                 publish(std::move(result));
+            }
             else if (online)
                 failed_icons.insert(key);
         }
