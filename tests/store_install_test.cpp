@@ -151,13 +151,51 @@ void check_archives(const fs::path &root)
 
     assert(refused("not a zip"));
     assert(refused(zip(good).substr(0, zip(good).size() / 2)));
-    assert(refused(zip(app("01.000.001", "PPSA99501")))); // Another title's folder.
+    // What lies outside the app's folder is ignored, whatever it is called.
     auto files = good;
-    files.push_back({"PPSA99501/extra.txt", "second top-level folder"});
+    files.push_back({"README.md", "beside the folder"});
+    files.push_back({"other/../escape.txt", "never unpacked"});
+    put(file, zip(files));
+    assert(install::inspect_archive(file, kId, info, error) && info.files == 3);
+    assert(install::extract_archive(file, kId, out, cancelled, written, error));
+    assert(tree(out) == expected_tree(good) && install::remove_tree(out));
+    // The app at the top of the archive, and inside a release folder.
+    for (const std::string &wrap :
+         {std::string(), "Release-1.0/" + kId + "/", std::string("Release-1.0/")})
+    {
+        files.clear();
+        for (auto [name, data] : good)
+            if (name.size() > kId.size() + 1)
+                files.push_back({wrap + name.substr(kId.size() + 1), data});
+        files.push_back({wrap.empty() ? "notes.txt" : "notes.txt", "loose"});
+        put(file, zip(files));
+        written = 0;
+        assert(install::inspect_archive(file, kId, info, error));
+        assert(install::extract_archive(file, kId, out, cancelled, written, error));
+        if (wrap.empty()) // Everything at the top belongs to the app, the note too.
+            assert(get(fs::path(out) / "notes.txt") == "loose" && info.files == 4);
+        else
+            assert(tree(out) == expected_tree(good) && info.files == 3);
+        assert(install::remove_tree(out));
+    }
+    // Of two apps side by side the one named after the title is taken; two
+    // that are both strangers can't be told apart; a nested copy is not the app.
+    files = good;
+    for (const auto &[name, data] : app("01.000.001", "PPSA99501"))
+        files.push_back({name, data});
+    put(file, zip(files));
+    assert(install::inspect_archive(file, kId, info, error) && info.files == 3);
+    files = app("01.000.001", "PPSA99501");
+    for (const auto &[name, data] : app("01.000.001", "PPSA99502"))
+        files.push_back({name, data});
     assert(refused(zip(files)));
     files = good;
-    files.push_back({"loose.txt", "outside the folder"});
-    assert(refused(zip(files)));
+    files.push_back({kId + "/data/sample/sce_sys/param.json", "{}"});
+    put(file, zip(files));
+    assert(install::inspect_archive(file, kId, info, error) && info.files == 4);
+    files = good;
+    files.erase(files.begin() + 1);
+    assert(refused(zip(files))); // No eboot.bin.
     files = good;
     files.push_back({kId + "/../escape.txt", "parent path"});
     assert(refused(zip(files)));
@@ -251,6 +289,7 @@ struct Fixture
         environment.root = state.string();
         environment.self = "PPSA99000";
         environment.work = work.string();
+        environment.registered = (root / "user").string();
         environment.policy.roots = {location.string()};
         environment.now = [] { return std::string("2026-10-02T00:00:00Z"); };
         environment.wait = [](unsigned, const std::atomic<bool> &) {};
@@ -366,8 +405,17 @@ void check_transactions(const fs::path &base)
     assert(tree(f.target()) == v1 && f.managed() == "01.000.001" && f.settled());
     f.environment.running = [&f](const std::string &) { return f.running; };
     f.running = 0;
+    // The console's own copies of the app's sce_sys, as made at registration.
+    fs::create_directories(f.root / "user/appmeta" / kId);
+    fs::create_directories(f.root / "user/app" / kId / "sce_sys");
+    put(f.root / "user/appmeta" / kId / "param.json", "old");
+    put(f.root / "user/app" / kId / "sce_sys/param.json", "old");
+    put(f.root / "user/app" / kId / "icon0.png", "old icon");
     result = f.apply(request);
     assert(result.ok && result.operation == "update" && result.version == "01.000.002");
+    assert(get(f.root / "user/appmeta" / kId / "param.json") == metadata(kId, "01.000.002"));
+    assert(get(f.root / "user/app" / kId / "sce_sys/param.json") == metadata(kId, "01.000.002"));
+    assert(get(f.root / "user/app" / kId / "icon0.png") == "old icon"); // The app ships none.
     assert(tree(f.target()) == v2 && f.managed() == "01.000.002" && f.settled());
 
     // A listing that claims a newer version than the file holds is not an update.
@@ -461,7 +509,7 @@ void check_transactions(const fs::path &base)
     changed = request;
     changed.entry.size -= 1; // The transport's limit is the listed size.
     assert(!f.apply(changed).ok && !fs::exists(f.target()) && f.settled());
-    // A listed, correctly hashed archive that isn't a valid app.
+    // A listed, correctly hashed archive that holds another title's app.
     changed = request;
     f.artifact = zip(app("01.000.001", "PPSA99501"));
     changed.entry.digest = catalog::sha256(f.artifact);

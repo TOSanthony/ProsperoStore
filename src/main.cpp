@@ -23,7 +23,9 @@
 #include <cstdio>
 #include <cstring>
 #include <pthread.h>
+#include <cstdlib>
 #include <map>
+#include <mutex>
 #include <GL/glcorearb.h>
 
 namespace
@@ -32,6 +34,9 @@ std::atomic<bool> quit{false};
 std::string request_path;
 std::string handled_path;
 std::string run_token;
+// Requests of a scripted run, handed from the reader thread to the frame loop.
+std::mutex remote_guard;
+std::vector<std::pair<std::string, std::string>> remote_requests;
 
 void *development_requests(void *)
 {
@@ -47,11 +52,19 @@ void *development_requests(void *)
             std::string handled;
             hui::save::read_file(handled_path, &handled, 64);
             if (std::sscanf(request.c_str(), "%15s %63s %63s", verb, argument, token) == 3 &&
-                handled != token && std::strcmp(verb, "quit") == 0 &&
-                hui::save::write_atomic(handled_path, token).empty())
+                handled != token && hui::save::write_atomic(handled_path, token).empty())
             {
-                hui::sys::log("[STORE] remote clean exit token=%s", token);
-                quit.store(true);
+                if (std::strcmp(verb, "quit") == 0)
+                {
+                    hui::sys::log("[STORE] remote clean exit token=%s", token);
+                    quit.store(true);
+                }
+                else
+                {
+                    hui::sys::log("[STORE] remote request %s %s token=%s", verb, argument, token);
+                    std::lock_guard lock(remote_guard);
+                    remote_requests.emplace_back(verb, argument);
+                }
             }
         }
         hui::sys::sleep_us(250000);
@@ -136,7 +149,6 @@ int main()
 #else
     const char *installer_reason = "Installing is not switched on in this build.";
 #endif
-    // No running-app check yet (plan D9), so updates and uninstalls stay refused.
     screen.set_installer(service.installer, false, installer_reason, "/data/homebrew");
     if (!service.start())
         screen.set_status("The catalog service could not start");
@@ -168,6 +180,10 @@ int main()
     std::vector<std::string> requested_icons;
     std::uint64_t catalog_generation = 0;
     std::vector<store::Update> updates;
+    [[maybe_unused]] const char *note = "", *previous_note = "";
+    [[maybe_unused]] std::int64_t tour_until = 0, tour_next = 0;
+    [[maybe_unused]] unsigned tour_step = 0;
+    [[maybe_unused]] int bench_step = -1;
     ps5::Ime keyboard;
     bool keyboard_active = false;
     while (!quit.load() && !screen.wants_quit())
@@ -186,6 +202,12 @@ int main()
         {
             auto update = std::move(updates.front());
             updates.erase(updates.begin());
+            note = update.kind == store::Update::Kind::catalog     ? "catalog"
+                   : update.kind == store::Update::Kind::icon      ? "icon"
+                   : update.kind == store::Update::Kind::detail    ? "detail"
+                   : update.kind == store::Update::Kind::qr        ? "code"
+                   : update.kind == store::Update::Kind::inventory ? "inventory"
+                                                                   : "update";
             if (update.kind == store::Update::Kind::catalog)
             {
                 requested_icons.clear();
@@ -291,10 +313,100 @@ int main()
             if (accepted || !service.installer)
                 order = {};
         }
+        {
+            std::vector<std::string> running;
+            bool known = false;
+            if (service.running(running, known))
+                screen.set_running(std::move(running), known);
+        }
         if (store::JobView view; service.job(view))
             screen.set_activity({view.id, static_cast<int>(view.phase), view.done, view.total,
                                  std::move(view.waiting)});
-        const auto frame = input.update(std::span(samples.data(), count), now);
+        auto frame = input.update(std::span(samples.data(), count), now);
+#ifdef STORE_DEVELOPMENT
+        // A scripted run: requests become what a player would do, and a tour
+        // moves the focus the way a hand on the D-pad does.
+        {
+            std::pair<std::string, std::string> request;
+            {
+                std::unique_lock lock(remote_guard, std::try_to_lock);
+                if (lock.owns_lock() && !remote_requests.empty())
+                {
+                    request = std::move(remote_requests.front());
+                    remote_requests.erase(remote_requests.begin());
+                }
+            }
+            const auto &[verb, argument] = request;
+            if (verb == "open")
+                sys::log("[STORE] remote open %s found=%d", argument.c_str(),
+                         screen.open_app(argument));
+            else if (verb == "install")
+                screen.remote_install(argument);
+            else if (verb == "uninstall")
+                sys::log("[STORE] remote uninstall %s accepted=%d", argument.c_str(),
+                         screen.remote_uninstall(argument));
+            else if (verb == "cancel")
+            {
+                screen.pending_order = {};
+                screen.pending_order.kind = store::Order::Kind::cancel;
+                screen.pending_order.id = argument;
+            }
+            else if (verb == "tour")
+            {
+                tour_until = now + std::atoll(argument.c_str()) * 1000000;
+                tour_step = 0;
+                tour_next = now;
+            }
+            else if (verb == "texbench")
+                bench_step = 0;
+        }
+        if (now < tour_until && now >= tour_next)
+        {
+            // Across a row, down, back across, down; a page opened and closed
+            // now and then; back to the top when the grid ends.
+            static constexpr char kPath[] = "rrrrdlllldrrrrXBdllllduuuuu";
+            const char step = kPath[tour_step++ % (sizeof(kPath) - 1)];
+            frame = {};
+            if (step == 'X')
+                frame.pressed = action_bit(Action::confirm);
+            else if (step == 'B')
+                frame.pressed = action_bit(Action::back);
+            else
+                frame.nav = step == 'r'   ? Direction::right
+                            : step == 'l' ? Direction::left
+                            : step == 'd' ? Direction::down
+                                          : Direction::up;
+            tour_next = now + (step == 'X' ? 1500000 : 170000);
+            note = "tour";
+        }
+        if (bench_step >= 0)
+        {
+            // What does a texture cost on the frame? Eight of each, one per frame.
+            static std::vector<std::uint8_t> pixels(256 * 256 * 4, 0x80);
+            static std::uint32_t made[8]{};
+            const auto started = sys::monotonic_us();
+            const int index = bench_step % 8;
+            const char *what = "create";
+            if (bench_step < 8)
+                made[index] = renderer.batch().create_texture(256, 256, pixels.data());
+            else if (bench_step < 16)
+            {
+                what = "update";
+                glBindTexture(GL_TEXTURE_2D, made[index]);
+                glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 256, 256, GL_RGBA, GL_UNSIGNED_BYTE,
+                                pixels.data());
+            }
+            else
+            {
+                what = "delete";
+                glDeleteTextures(1, &made[index]);
+            }
+            sys::log("[STORE] texbench %s %d call_us=%lld", what, index,
+                     static_cast<long long>(sys::monotonic_us() - started));
+            note = what;
+            bench_step = bench_step == 23 ? -1 : bench_step + 1;
+        }
+#endif
         const bool keyboard_owns_input = keyboard_active || screen.pending_search;
         if (screen.pending_search && !frame.is_held(Action::north))
         {
@@ -348,6 +460,13 @@ int main()
             first_swap = false;
         }
         stats.add(ms);
+#ifdef STORE_DEVELOPMENT
+        // A late frame is named with what the frame before it did.
+        if (ms > 25.0 && !first_swap)
+            sys::log("[STORE] hitch ms=%.1f after=%s", ms, previous_note);
+        previous_note = note;
+        note = "";
+#endif
         if (stats.count() == 600)
         {
             char report[256]{};

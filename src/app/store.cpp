@@ -798,6 +798,16 @@ void Screen::update_page(const InputFrame &input, ui::Feedback &feedback)
 void Screen::update(const InputFrame &input, float dt, ui::Feedback &feedback)
 {
     time_ += dt;
+    // A scripted install presses the button as soon as it can be pressed.
+    if (!auto_order_.empty() && details_ && focused() && focused()->title_id == auto_order_)
+    {
+        const Offer state = offer(*focused());
+        if (state.armed && !state.busy && state.primary == Order::Kind::install)
+        {
+            order(*focused(), Order::Kind::install);
+            auto_order_.clear();
+        }
+    }
     if (details_ && focused())
         update_page(input, feedback);
     else
@@ -1159,6 +1169,57 @@ void Screen::draw_grid(const ui::Fonts &fonts)
 
 // ---- drawing: the product page ----------------------------------------------
 
+void Screen::order(const App &app, Order::Kind kind)
+{
+    pending_order = {};
+    pending_order.kind = kind;
+    pending_order.id = app.title_id;
+    if (!app.installed.empty())
+    {
+        const auto &path = app.installed.front().path;
+        pending_order.location = path.substr(0, path.find_last_of('/'));
+    }
+    else
+        pending_order.location = install_location_;
+    if (kind == Order::Kind::install && app.detail)
+        pending_order.entry = *app.detail;
+}
+
+bool Screen::open_app(const std::string &id)
+{
+    section_ = 0;
+    query_.clear();
+    rebuild();
+    for (std::size_t k = 0; k < visible_.size(); ++k)
+        if (apps_[visible_[k]].title_id == id)
+        {
+            focus_ = static_cast<int>(k);
+            zone_ = Zone::grid;
+            details_ = true;
+            pending_detail = id;
+            refresh_detail();
+            return true;
+        }
+    return false;
+}
+
+void Screen::remote_install(const std::string &id)
+{
+    if (open_app(id))
+        auto_order_ = id;
+}
+
+bool Screen::remote_uninstall(const std::string &id)
+{
+    for (const auto &app : apps_)
+        if (app.title_id == id && !app.installed.empty() && offer(app).armed)
+        {
+            order(app, Order::Kind::uninstall);
+            return true;
+        }
+    return false;
+}
+
 void Screen::set_installer(bool available, bool guard, std::string reason, std::string location)
 {
     installer_ = available;
@@ -1266,6 +1327,11 @@ Screen::Offer Screen::offer(const App &app) const
     }
     if (out.primary == Order::Kind::none)
         return out;
+    if (installed && std::find(running_.begin(), running_.end(), app.title_id) != running_.end())
+    {
+        out.reason = app.name + " is running. Close it first.";
+        return out;
+    }
     // Why the button rests, or what pressing it does.
     const bool changes = installed != nullptr; // an update or an uninstall
     if (!installer_)

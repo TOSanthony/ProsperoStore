@@ -4,6 +4,7 @@
 #pragma once
 #include <cstddef>
 #include <string>
+#include <vector>
 
 namespace store::install
 {
@@ -21,6 +22,11 @@ bool make_directory(const std::string &path);
 bool sync_directory(const std::string &path);
 // Regular file of at most limit bytes, opened without following a link.
 bool read_small(const std::string &path, std::size_t limit, std::string &body);
+// Copies a regular file (never through a link) to a temporary name beside
+// the destination, then renames it over the destination.
+bool copy_file(const std::string &from, const std::string &to);
+// The names of the regular files directly in a folder; at most limit of them.
+bool list_files(const std::string &folder, std::size_t limit, std::vector<std::string> &names);
 // Removes a file or a whole folder without following links. True when nothing
 // is left at path, including when nothing was there.
 bool remove_tree(const std::string &path);

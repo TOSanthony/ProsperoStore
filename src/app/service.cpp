@@ -7,6 +7,7 @@
 #include "core/qr.hpp"
 #include "platform/ps5/system.hpp"
 #include "system/locations.hpp"
+#include "system/running.hpp"
 #include "system/storage_probe.hpp"
 #include "catalog/icons.hpp"
 #include "../../examples/update-check/update_check.h"
@@ -215,6 +216,16 @@ bool Service::job(JobView &view)
     return true;
 }
 
+bool Service::running(std::vector<std::string> &ids, bool &known)
+{
+    std::unique_lock lock(mutex_, std::try_to_lock);
+    if (!lock.owns_lock())
+        return false;
+    ids = running_;
+    known = running_known_;
+    return true;
+}
+
 void *Service::install_entry(void *self)
 {
     static_cast<Service *>(self)->run_installer();
@@ -233,8 +244,7 @@ void Service::run_installer()
         environment.fetch = [](const std::string &url, std::uint64_t limit, const net::Sink &sink,
                                net::Control &control)
         { return net::get(url, net::Purpose::artifact, limit, sink, control); };
-        // The running check is the owner's to supply (plan D9). Until it is
-        // set here, every update and uninstall is refused as "unknown".
+        environment.running = [](const std::string &id) { return system::title_running(id); };
     }
     std::string broken;
     if (environment.root.empty() || !hui::save::ensure_directory(environment.root) ||
@@ -266,6 +276,15 @@ void Service::run_installer()
             rescan();
         }
     }
+    unsigned idle = 0;
+    const auto entries_snapshot = [&]
+    {
+        std::vector<std::string> ids;
+        std::lock_guard lock(mutex_);
+        for (const auto &entry : entries_)
+            ids.push_back(entry.id);
+        return ids;
+    };
     while (!control_.cancelled.load())
     {
         Job job;
@@ -288,6 +307,28 @@ void Service::run_installer()
         }
         if (job.entry.id.empty())
         {
+            // Idle: keep the list of running titles fresh for the screens.
+            if (++idle % 40 == 1)
+            {
+                std::vector<std::string> ids;
+                const bool known = installer_environment ? true : system::running_titles(ids);
+                if (installer_environment && installer_environment->running)
+                    for (const auto &entry : entries_snapshot())
+                        if (installer_environment->running(entry) == 1)
+                            ids.push_back(entry);
+                std::lock_guard lock(mutex_);
+#ifdef STORE_DEVELOPMENT
+                if (ids != running_ || known != running_known_)
+                {
+                    std::string list;
+                    for (const auto &id : ids)
+                        list += (list.empty() ? "" : ",") + id;
+                    hui::sys::log("[STORE] running known=%d titles=%s", known, list.c_str());
+                }
+#endif
+                running_ = std::move(ids);
+                running_known_ = known;
+            }
             hui::sys::sleep_us(50000);
             continue;
         }

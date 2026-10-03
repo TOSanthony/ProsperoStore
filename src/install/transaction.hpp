@@ -41,6 +41,11 @@ struct Environment
     std::function<bool(const std::string &directory, std::uint64_t &bytes)> space;
     std::function<std::string()> now;
     std::function<void(unsigned seconds, const std::atomic<bool> &cancelled)> wait;
+    // Where the console keeps the copies of an app's sce_sys it made when the
+    // app was first registered (<registered>/app/<TITLEID>/sce_sys and
+    // <registered>/appmeta/<TITLEID>). They are refreshed after an update, so a
+    // new icon, name or background reaches the home screen.
+    std::string registered = "/user";
     // Tests only. Work folder instead of <drive>/prosperostore, and a hook
     // that returns true to stop dead at a named step, as a power cut would.
     std::string work;

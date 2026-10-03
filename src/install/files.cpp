@@ -4,6 +4,7 @@
 #include "install/files.hpp"
 #include <cerrno>
 #include <cstdint>
+#include <cstdio>
 #include <dirent.h>
 #include <fcntl.h>
 #include <memory>
@@ -112,6 +113,75 @@ bool read_small(const std::string &path, std::size_t limit, std::string &body)
     if (ok)
         body = std::move(bytes);
     return ok;
+}
+
+bool copy_file(const std::string &from, const std::string &to)
+{
+    const int source = open(from.c_str(), O_RDONLY | O_NOFOLLOW);
+    struct stat info
+    {
+    };
+    if (source < 0 || fstat(source, &info) != 0 || !S_ISREG(info.st_mode))
+    {
+        if (source >= 0)
+            close(source);
+        return false;
+    }
+    const std::string temporary = to + ".store-new";
+    unlink(temporary.c_str());
+    const int target = open(temporary.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0644);
+    bool ok = target >= 0;
+    std::vector<char> buffer(256 * 1024);
+    while (ok)
+    {
+        const auto count = read(source, buffer.data(), buffer.size());
+        if (count < 0 && errno == EINTR)
+            continue;
+        if (count <= 0)
+        {
+            ok = count == 0;
+            break;
+        }
+        for (ssize_t done = 0; ok && done < count;)
+        {
+            const auto wrote =
+                write(target, buffer.data() + done, static_cast<std::size_t>(count - done));
+            if (wrote < 0 && errno == EINTR)
+                continue;
+            ok = wrote > 0;
+            done += wrote > 0 ? wrote : 0;
+        }
+    }
+    close(source);
+    if (target >= 0)
+    {
+        ok = fsync(target) == 0 && ok;
+        ok = close(target) == 0 && ok;
+    }
+    ok = ok && rename(temporary.c_str(), to.c_str()) == 0;
+    if (!ok)
+        unlink(temporary.c_str());
+    return ok;
+}
+
+bool list_files(const std::string &folder, std::size_t limit, std::vector<std::string> &names)
+{
+    std::unique_ptr<DIR, decltype(&closedir)> directory(opendir(folder.c_str()), closedir);
+    if (!directory)
+        return false;
+    for (;;)
+    {
+        errno = 0;
+        const auto *entry = readdir(directory.get());
+        if (!entry)
+            return errno == 0;
+        const std::string name = entry->d_name;
+        if (name == "." || name == ".." || kind(folder + "/" + name) != Kind::file)
+            continue;
+        if (names.size() >= limit)
+            return false;
+        names.push_back(name);
+    }
 }
 
 bool remove_tree(const std::string &path)

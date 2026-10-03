@@ -70,6 +70,9 @@ class Service
     bool request_uninstall(const std::string &id, const std::string &location);
     bool cancel_job(const std::string &id);
     bool job(JobView &view);
+    // The titles running now, refreshed every two seconds by the installer's
+    // worker. known is false while the console's sandbox folder can't be listed.
+    bool running(std::vector<std::string> &ids, bool &known);
 
   private:
     struct Job
@@ -105,6 +108,8 @@ class Service
     std::map<std::string, std::string> versions_;
     std::deque<Job> jobs_;
     std::string job_id_;
+    std::vector<std::string> running_;
+    bool running_known_ = false;
     install::Progress progress_;
     std::uint64_t generation_ = 0;
     bool online_ = false;

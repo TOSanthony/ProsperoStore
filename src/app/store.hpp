@@ -94,6 +94,17 @@ class Screen
         activity_ = std::move(activity);
     }
     void finish_job(bool ok, std::string title, std::string body);
+    // The titles running now; known is false when that can't be told, and
+    // then nothing installed is changed.
+    void set_running(std::vector<std::string> ids, bool known)
+    {
+        running_ = std::move(ids);
+        guard_ = known;
+    }
+    // Scripted runs: what a player would do with the controller.
+    bool open_app(const std::string &id);
+    void remote_install(const std::string &id);
+    bool remote_uninstall(const std::string &id);
     Order pending_order;
     std::vector<std::string> artwork() const;
     void set_query(std::string query);
@@ -153,6 +164,7 @@ class Screen
     };
     Offer offer(const App &app) const;
     void ask_uninstall(const App &app, hui::ui::Feedback &feedback);
+    void order(const App &app, Order::Kind kind);
     bool in_section(const App &app, int section) const;
     void rebuild();
     void refresh_detail();
@@ -189,6 +201,8 @@ class Screen
     hui::ui::ToastStack toasts_;
     hui::ui::Dialog dialog_;
     Activity activity_;
+    std::vector<std::string> running_;
+    std::string auto_order_;
     bool installer_ = false, guard_ = false;
     std::string installer_reason_ = "Installing is not switched on in this build";
     std::string install_location_;

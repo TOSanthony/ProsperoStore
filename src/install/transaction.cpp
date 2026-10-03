@@ -257,6 +257,27 @@ bool download(const Environment &environment, const catalog::Entry &entry, const
     return false;
 }
 
+// ShadowMountPlus copies an app's sce_sys once, when it first registers the
+// title. After an update the store brings those copies up to date itself.
+// Best effort: the app is installed whether or not this works.
+void refresh_registered(const Environment &environment, const std::string &id,
+                        const std::string &target)
+{
+    if (environment.registered.empty())
+        return;
+    const std::string source = target + "/sce_sys";
+    std::vector<std::string> names;
+    if (!list_files(source, 64, names))
+        return;
+    const std::string app = environment.registered + "/app/" + id;
+    for (const auto &folder : {environment.registered + "/appmeta/" + id, app + "/sce_sys"})
+        if (kind(folder) == Kind::directory)
+            for (const auto &name : names)
+                copy_file(source + "/" + name, folder + "/" + name);
+    if (kind(app + "/icon0.png") == Kind::file)
+        copy_file(source + "/icon0.png", app + "/icon0.png");
+}
+
 int running(const Environment &environment, const std::string &id)
 {
     return environment.running ? environment.running(id) : -1;
@@ -444,6 +465,8 @@ Result apply(const Environment &environment, const Request &request, net::Contro
     STORE_STEP("recorded");
     if (update && !remove_tree(paths.backup))
         return fail("Updated, but the previous version is still being removed.");
+    if (update)
+        refresh_registered(environment, id, paths.target);
     STORE_STEP("cleaned");
     if (!clear_journal(environment, paths))
         return fail("Installed, but the transaction could not be closed.");
@@ -580,6 +603,7 @@ Result recover(const Environment &environment)
         {
             if (!record() || !remove_tree(paths.backup))
                 return fail("An interrupted update could not be finished");
+            refresh_registered(environment, id, paths.target);
             result.version = version;
             return close();
         }

@@ -4,6 +4,7 @@
 #include "install/archive.hpp"
 #include "install/files.hpp"
 #include "third_party/miniz/miniz.h"
+#include <algorithm>
 #include <cerrno>
 #include <cstdlib>
 #include <cstring>
@@ -153,18 +154,59 @@ bool list(Reader &reader, std::string_view title, std::vector<Entry> &entries, A
         error = "The archive is empty or has too many entries";
         return false;
     }
-    const std::string prefix = std::string(title) + "/";
-    std::set<std::string> seen;
-    bool metadata = false;
+    error = "The archive isn't a valid app";
+    // First the names: developers pack the app's folder in different ways
+    // (at the top, inside a folder named after the title, inside a release
+    // folder, beside a README). The app is the folder that holds
+    // sce_sys/param.json; everything outside it is left in the archive.
+    std::vector<std::string> names(count);
     std::vector<char> buffer(kArchivePath + 2);
+    constexpr std::string_view kMetadata = "sce_sys/param.json";
+    std::string prefix;
+    int best = -1;
+    bool ambiguous = false;
     for (mz_uint index = 0; index < count; ++index)
     {
-        error = "The archive isn't a valid app";
         const mz_uint length = mz_zip_reader_get_filename(zip, index, nullptr, 0);
         if (length < 2 || length - 1 > kArchivePath)
             return false;
         mz_zip_reader_get_filename(zip, index, buffer.data(), static_cast<mz_uint>(buffer.size()));
-        std::string name(buffer.data(), length - 1);
+        names[index].assign(buffer.data(), length - 1);
+        const std::string_view name = names[index];
+        if (!name.ends_with(kMetadata) ||
+            (name.size() > kMetadata.size() && name[name.size() - kMetadata.size() - 1] != '/'))
+            continue;
+        const auto folder = name.substr(0, name.size() - kMetadata.size());
+        // The shallowest candidate wins; at the same depth, the folder named
+        // after the title; two equal candidates are refused.
+        const int depth = static_cast<int>(std::count(folder.begin(), folder.end(), '/'));
+        const bool named = folder.ends_with(std::string(title) + "/");
+        const int score = 4 * (8 - std::min(depth, 8)) + (named ? 1 : 0);
+        if (depth > 3 || score < best)
+            continue;
+        ambiguous = score == best;
+        best = score;
+        prefix = folder;
+    }
+    if (best < 0)
+    {
+        error = "The archive has no sce_sys/param.json";
+        return false;
+    }
+    if (ambiguous ||
+        !clean_relative(prefix.empty() ? std::string_view{}
+                                       : std::string_view(prefix).substr(0, prefix.size() - 1)))
+    {
+        error = "The archive holds more than one app, or an unsafe path";
+        return false;
+    }
+    std::set<std::string> seen;
+    bool program = false;
+    for (mz_uint index = 0; index < count; ++index)
+    {
+        std::string name = names[index];
+        if (!name.starts_with(prefix))
+            continue; // Not part of the app: never unpacked.
         mz_zip_archive_file_stat stat{};
         if (!mz_zip_reader_file_stat(zip, index, &stat) || !stat.m_is_supported ||
             stat.m_is_encrypted)
@@ -172,11 +214,6 @@ bool list(Reader &reader, std::string_view title, std::vector<Entry> &entries, A
         for (const unsigned char c : name)
             if (c < 32 || c == 127 || c == '\\')
                 return false;
-        if (!name.starts_with(prefix))
-        {
-            error = "The archive must hold one folder named after the app";
-            return false;
-        }
         Entry entry;
         entry.index = index;
         entry.directory = name.ends_with('/');
@@ -185,8 +222,12 @@ bool list(Reader &reader, std::string_view title, std::vector<Entry> &entries, A
         if (entry.directory)
             name.pop_back();
         entry.relative = name.size() > prefix.size() ? name.substr(prefix.size()) : std::string{};
-        if (!entry.directory && entry.relative.empty())
-            return false;
+        if (entry.relative.empty())
+        {
+            if (!entry.directory)
+                return false;
+            continue; // The app's folder itself.
+        }
         if (!clean_relative(entry.relative) || !seen.insert(entry.relative).second)
             return false;
         // Entries written on Unix carry a file type: only files and folders pass.
@@ -211,13 +252,13 @@ bool list(Reader &reader, std::string_view title, std::vector<Entry> &entries, A
                 return false;
             info.unpacked += entry.size;
             ++info.files;
-            metadata |= entry.relative == "sce_sys/param.json";
+            program |= entry.relative == "eboot.bin";
         }
         entries.push_back(std::move(entry));
     }
-    if (!metadata)
+    if (!program)
     {
-        error = "The archive has no sce_sys/param.json";
+        error = "The archive has no eboot.bin beside sce_sys";
         return false;
     }
     error.clear();
