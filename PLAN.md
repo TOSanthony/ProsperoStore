@@ -223,11 +223,17 @@ passes every line is the goal; a larger one that misses lines is not.
   it from there (Foundations).
 - Against `homebrew.page` (Cloudflare): `sceHttp` answered five API requests
   from a sandbox on 2026-10-02 in 71 to 154 ms each. **[proven]** The same
-  check over libcurl is being validated on a console (boilerplate
-  `docs/UPDATE_CHECK.md` records the result).
-- Non-blocking sockets matter for speed: with curl's sockets left blocking, an
-  11.8 MB download took about 43 s instead of about 10 s. **[proven]** in
-  ProsperoRadio; the `fcntl` wrap sets the console's `SO_NBIO` option.
+  five requests over libcurl, also from a sandbox, were answered in 147 to
+  193 ms each with the certificate verified. **[proven]** (boilerplate
+  `docs/UPDATE_CHECK.md`). libcurl from the elevated store against
+  `homebrew.page` is still to be shown (M2).
+- **Every curl handle must go through the boilerplate's
+  `console_curl_setup()`**, which sets the console's `SO_NBIO` option on each
+  socket. With the sockets left blocking, a request answered in 160 ms did not
+  return for 400 seconds, until the server closed the idle connection.
+  **[proven]** in the boilerplate's validation; the `fcntl` wrap alone was not
+  enough there. Blocking sockets also slow downloads: 11.8 MB took about 43 s
+  instead of about 10 s. **[proven]** in ProsperoRadio.
 - GitHub's release file host (a redirect from `github.com` to
   `release-assets.githubusercontent.com`) and a large release download through
   libcurl are **[assumed]** until M2. The redirect is followed only to that
