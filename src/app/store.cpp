@@ -17,15 +17,15 @@ Screen::Screen() : theme_(ui::themes()[0])
 {
     grid_.style.theme = theme_;
     grid_.style.columns = 5;
-    grid_.style.card.art_aspect = 1.5f;
+    grid_.style.card.art_aspect = 1.0f;
     grid_.style.card.title_size = 26;
     grid_.style.card.subtitle_size = 24;
     grid_.style.card.glow = true;
-    grid_.set_bounds({96, 570, 1728, 380});
+    grid_.set_bounds({96, 480, 1728, 470});
     tabs_.style.theme = theme_;
     tabs_.style.kind = ui::TabKind::underline;
     tabs_.style.on_page = true;
-    tabs_.set_bounds({96, 462, 1728, 64});
+    tabs_.set_bounds({96, 372, 1728, 64});
     tabs_.set_tabs({{"Discover", 0, false, 0},
                     {"Apps", 0, false, 1},
                     {"Games", 0, false, 2},
@@ -165,11 +165,9 @@ void Screen::draw(gfx::Renderer &renderer, const ui::Fonts &fonts)
     }
     else
     {
-        paint.heading("Your next discovery.", 96, 266, 76, paint.page_text());
-        ui::text(scene_, fonts.regular, "Independent apps. New possibilities.", 100, 325, 30,
+        paint.heading("Your next discovery.", 96, 236, 76, paint.page_text());
+        ui::text(scene_, fonts.regular, "Independent apps. New possibilities.", 100, 295, 30,
                  paint.page_text_muted());
-        ui::text(scene_, fonts.regular, "Made for your console. Curated by the community.", 100,
-                 379, 26, paint.page_text_muted());
         tabs_.draw(canvas);
         if (visible_.empty())
         {
