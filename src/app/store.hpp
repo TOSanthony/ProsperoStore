@@ -62,7 +62,7 @@ struct Activity
 
 // The layout follows the UI library's "Storefront" design: a featured banner,
 // section chips, a grid of cards and a product page. The colours are those of
-// "Glass Orchard" as the Aurora Shelf design shows it.
+// "Farlight" as the Aurora Shelf design shows it.
 class Screen
 {
   public:
@@ -98,6 +98,12 @@ class Screen
     }
     void set_status(std::string status)
     {
+        status_ = std::move(status);
+    }
+    // No catalog could be loaded: the loading animation gives way to the reason.
+    void catalog_failed(std::string status)
+    {
+        loading_ = false;
         status_ = std::move(status);
     }
     std::string pending_detail;
@@ -185,7 +191,7 @@ class Screen
     std::vector<App> apps_;
     std::vector<std::size_t> visible_, featured_;
     std::vector<Fit> fits_;
-    bool fits_stale_ = true, placed_ = false;
+    bool fits_stale_ = true, placed_ = false, loading_ = true;
     int counts_[kSections] = {};
     hui::gfx::Rect chips_[kSections] = {};
     std::string status_ = "Connecting to the catalog...";

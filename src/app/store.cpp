@@ -21,18 +21,18 @@ namespace
 using gfx::Color;
 using gfx::Rect;
 
-// ---- the design language: Storefront's shapes in Glass Orchard's colours ----
+// ---- the design language: Storefront's shapes in Farlight's colours ----
 
 const Color kWhite = Color::rgb(0xffffff);
 const Color kBlack = Color::rgb(0x000000);
 const Color kClear = Color::rgb(0x000000, 0.0f);
 const Color kInk = Color::rgb(0xf4efe6);      // warm white: all text
-const Color kOrchard = Color::rgb(0x1c2414);  // Glass Orchard: its dark,
-const Color kLeaf = Color::rgb(0x5f8f3a);     // ... its mid tone
-const Color kAccent = Color::rgb(0xe9f28b);   // ... and its light: calls to action
-const Color kOnAccent = Color::rgb(0x1b2410); // text on the accent
+const Color kDeep = Color::rgb(0x0e0f24);     // Farlight: its dark,
+const Color kMid = Color::rgb(0x42358f);      // ... its mid tone
+const Color kAccent = Color::rgb(0xffd166);   // ... and its light: calls to action
+const Color kOnAccent = Color::rgb(0x241a05); // text on the accent
 const Color kCoal = Color::rgb(0x0e0f12);
-const Color kPanel = gfx::mix(Color::rgb(0x202228), kOrchard, 0.5f);
+const Color kPanel = gfx::mix(Color::rgb(0x202228), kDeep, 0.5f);
 const Color kOwned = Color::rgb(0x8fdab2); // "this is installed"
 
 constexpr float kWidth = gfx::kVirtualWidth;
@@ -142,14 +142,14 @@ Mark mark(const App &app)
     return {};
 }
 
-ui::Theme orchard_theme()
+ui::Theme farlight_theme()
 {
     ui::Theme theme = ui::themes()[0];
     theme.page = kCoal;
     theme.page_text = kInk;
     theme.page_text_muted = kInk.with_alpha(0.62f);
     theme.surface = kPanel;
-    theme.surface_high = gfx::mix(kPanel, kLeaf, 0.18f);
+    theme.surface_high = gfx::mix(kPanel, kMid, 0.18f);
     theme.text = kInk;
     theme.text_muted = kInk.with_alpha(0.62f);
     theme.primary = kAccent;
@@ -162,7 +162,7 @@ ui::Theme orchard_theme()
 }
 } // namespace
 
-Screen::Screen() : theme_(orchard_theme())
+Screen::Screen() : theme_(farlight_theme())
 {
     article_.style.theme = theme_;
     article_.style.body_size = 26;
@@ -318,6 +318,7 @@ void Screen::set_catalog(std::vector<App> apps, std::string status, bool current
                             : "Installed";
         }
     status_ = std::move(status);
+    loading_ = loading_ && apps_.empty();
     rebuild();
     const auto found = std::find_if(visible_.begin(), visible_.end(),
                                     [&](auto index) { return apps_[index].title_id == previous; });
@@ -857,7 +858,7 @@ void Screen::draw_top_bar(const ui::Fonts &fonts)
 {
     auto &list = scene_;
     list.rotated_rect({kMargin + 2.0f, kTopY - 11.0f, 22.0f, 22.0f}, 5.0f, 0.7854f, kAccent);
-    list.rotated_rect({kMargin + 8.0f, kTopY - 5.0f, 10.0f, 10.0f}, 2.0f, 0.7854f, kOrchard);
+    list.rotated_rect({kMargin + 8.0f, kTopY - 5.0f, 10.0f, 10.0f}, 2.0f, 0.7854f, kDeep);
     ui::text(list, fonts.semibold, "PROSPEROSTORE", kMargin + 42.0f, centred(kTopY, 22), 22, kInk,
              gfx::Align::left, 5.0f);
     ui::text(list, fonts.regular, fonts.regular.font->fit(status_, 22, 1100.0f), kRight,
@@ -873,11 +874,11 @@ void Screen::draw_banner(const ui::Fonts &fonts)
     auto &list = scene_;
     const Rect b{kMargin, kBannerY - scroll_.value, kWidth - 2.0f * kMargin, kBannerH};
     const float fade = banner_fade_.running ? tween::smoothstep(banner_fade_.progress()) : 1.0f;
-    const Color tone = gfx::mix(kPanel, kOrchard, 0.5f);
+    const Color tone = gfx::mix(kPanel, kDeep, 0.5f);
 
     list.push_opacity(visible);
     list.shadow({b.x, b.y + 18.0f, b.w, b.h}, kBannerRadius, 44, kBlack.with_alpha(0.5f));
-    list.gradient_rect_h(b, kBannerRadius, tone, gfx::mix(tone, kLeaf, 0.45f));
+    list.gradient_rect_h(b, kBannerRadius, tone, gfx::mix(tone, kMid, 0.45f));
     list.bordered_rect(b, kBannerRadius, kClear, 1.5f, kInk.with_alpha(0.1f));
 
     // One featured title at an opacity, so two of them can cross-fade.
@@ -1021,9 +1022,9 @@ void Screen::draw_card(const ui::Fonts &fonts, int k, unsigned layers)
     }
     else if (layers & kShapes)
     {
-        // No picture yet: a quiet plate with the orchard's diamond.
+        // No picture yet: a quiet plate with the store's diamond.
         list.gradient_rect(cover, kCardRadius, kInk.with_alpha(0.07f * top),
-                           kLeaf.with_alpha(0.16f * foot));
+                           kMid.with_alpha(0.16f * foot));
         list.rotated_rect({cover.cx() - 22.0f, cover.cy() - 22.0f, 44.0f, 44.0f}, 9.0f, 0.7854f,
                           kInk.with_alpha(0.12f * std::min(top, foot)));
     }
@@ -1084,7 +1085,26 @@ void Screen::draw_grid(const ui::Fonts &fonts)
             : section_ == 6   ? "Updates for apps installed by ProsperoStore appear here."
             : apps_.empty()   ? "Verified apps will appear here when the catalog is ready."
                               : "Try another section.";
-        const float y = window.y + (kViewBottom - window.y) * 0.45f;
+        // While something is on its way an arc draws itself into a full
+        // circle, fades, and starts again a little further round.
+        const bool waiting =
+            library ? !inventory_ready_ : apps_.empty() && loading_ && query_.empty();
+        const float y = window.y + (kViewBottom - window.y) * (waiting ? 0.56f : 0.45f);
+        if (waiting)
+        {
+            constexpr float kTurn = 6.2831853f, kPeriod = 1.7f;
+            const float t = std::fmod(time_, kPeriod) / kPeriod;
+            const float sweep = kTurn * tween::cubic_in_out(t / 0.72f);
+            const float alpha = 1.0f - tween::smoothstep((t - 0.8f) / 0.2f);
+            const float start = std::floor(time_ / kPeriod) * 2.2f + time_ * 0.5f;
+            const float cx = 960.0f, cy = y - 118.0f, radius = 46.0f;
+            list.glow({cx - radius, cy - radius, radius * 2.0f, radius * 2.0f}, radius, 36,
+                      kAccent.with_alpha(0.1f + 0.08f * alpha * sweep / kTurn));
+            list.ring(cx, cy, radius, 6.0f, kInk.with_alpha(0.12f));
+            list.arc(cx, cy, radius, 6.0f, start, std::max(0.02f, sweep),
+                     kAccent.with_alpha(alpha));
+        }
+        title = waiting && !library ? "Loading the catalog" : title;
         ui::text(list, fonts.semibold, title, 960, y, 30, kInk.with_alpha(0.86f),
                  gfx::Align::center);
         ui::text(list, fonts.regular, note, 960, y + 42.0f, 24, kInk.with_alpha(0.6f),
@@ -1261,7 +1281,7 @@ void Screen::draw_action_box(const ui::Fonts &fonts, std::uint32_t glass, const 
     list.shadow({box.x, box.y + 20.0f, box.w, box.h}, 30, 50, kBlack.with_alpha(0.45f));
     // Frosted glass: the blurred screen, a tint, then a hairline of light.
     list.glass(glass, box, 30, kWhite);
-    list.rounded_rect(box, 30, gfx::mix(kPanel, kLeaf, 0.12f).with_alpha(0.6f));
+    list.rounded_rect(box, 30, gfx::mix(kPanel, kMid, 0.12f).with_alpha(0.6f));
     list.bordered_rect(box, 30, kClear, 1.5f, kInk.with_alpha(0.2f));
 
     const Offer state = offer(app);
@@ -1332,7 +1352,7 @@ void Screen::draw_page(const ui::Fonts &fonts, std::uint32_t glass)
     const Rect full{0, 0, kWidth, kHeight};
     const float veil = tween::clamp01(t * 1.7f);
     list.glass(glass, full, 0, kWhite.with_alpha(veil));
-    list.rounded_rect(full, 0, gfx::mix(kCoal, kOrchard, 0.4f).with_alpha(0.86f * veil));
+    list.rounded_rect(full, 0, gfx::mix(kCoal, kDeep, 0.4f).with_alpha(0.86f * veil));
     list.glow(kPreview.inset(60.0f), 60, 220, kAccent.with_alpha(0.08f * veil));
 
     // Everything but the cover fades in once the cover is well on its way.
@@ -1383,7 +1403,7 @@ void Screen::draw_page(const ui::Fonts &fonts, std::uint32_t glass)
         list.image(texture, cover, gfx::kFullUv, kWhite.with_alpha(alpha), radius);
     else
         list.gradient_rect(cover, radius, kInk.with_alpha(0.07f * alpha),
-                           kLeaf.with_alpha(0.2f * alpha));
+                           kMid.with_alpha(0.2f * alpha));
     list.bordered_rect(cover, radius, kClear, 1.5f, kInk.with_alpha(0.16f * alpha));
 }
 
@@ -1440,14 +1460,14 @@ void Screen::draw(gfx::Renderer &renderer, const ui::Fonts &fonts)
     dialog_.draw(canvas);
     toasts_.draw(canvas);
 
-    // Glass Orchard as the Aurora Shelf paints it: the cover's dark and mid
+    // Farlight as the Aurora Shelf paints it: the cover's dark and mid
     // tones as slow clouds, with a little of its light in the brightest one.
     gfx::BackdropSpec backdrop;
     backdrop.mode = gfx::BackdropMode::aurora;
-    backdrop.colors[0] = gfx::mix(kOrchard, Color::rgb(0x05060c), 0.35f);
-    backdrop.colors[1] = gfx::mix(kOrchard, kLeaf, 0.35f);
-    backdrop.colors[2] = kLeaf;
-    backdrop.colors[3] = gfx::mix(kLeaf, kAccent, 0.55f);
+    backdrop.colors[0] = gfx::mix(kDeep, Color::rgb(0x05060c), 0.35f);
+    backdrop.colors[1] = gfx::mix(kDeep, kMid, 0.35f);
+    backdrop.colors[2] = kMid;
+    backdrop.colors[3] = gfx::mix(kMid, kAccent, 0.55f);
     backdrop.time = time_;
     renderer.begin();
     renderer.backdrop(backdrop);

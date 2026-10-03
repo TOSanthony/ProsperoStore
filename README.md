@@ -38,7 +38,7 @@ App pages show verified metadata, full-size artwork, and a scrolling article.
 Use the D-pad to scroll and Triangle to retry or refresh details. Scan the QR
 code for the app's page, release notes, and source repository.
 
-The screens follow the UI library's Storefront design in the Glass Orchard
+The screens follow the UI library's Storefront design in the Farlight
 colours: a featured banner, section chips, a grid of cards and a product page.
 When the catalog lists a newer ProsperoStore, a notice appears in the top-right
 corner for ten seconds. The install engine (`src/install/`) is implemented and

@@ -252,7 +252,7 @@ int main()
             else if (!update.entry.id.empty())
                 screen.set_detail_error(update.entry.id, update.message);
             else
-                screen.set_status(update.message);
+                screen.catalog_failed(update.message);
         }
         if (!screen.pending_detail.empty() && service.request_detail(screen.pending_detail))
             screen.pending_detail.clear();

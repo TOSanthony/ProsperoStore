@@ -357,7 +357,7 @@ Made by the owner on 2026-10-02 unless marked as a default.
 | D30 | **In-app notice**: the website's disclaimer, shown at first start and in About. |
 | D31 | **Built on our two repositories.** The store is created from `ps5-native-app-boilerplate` and its interface comes from `ps5-homebrew-ui`. Nothing they provide is reimplemented or forked; what is missing is added to them first (see Foundations). |
 | D32 | **Extremely high quality, as checks.** A milestone is done only when it passes the quality bar; scope is cut before quality is. |
-| D33 | **The look.** The screens follow the UI library's Storefront design, in the Glass Orchard colours as its Aurora Shelf design shows them. A coming-soon app without artwork shows the rocket picture (`assets/images/coming-soon.png`). This answers open question 6. |
+| D33 | **The look.** The screens follow the UI library's Storefront design, in the Farlight colours as its Aurora Shelf design shows them (changed from Glass Orchard on 2026-10-03). Loading is shown by an arc completing its circle. A coming-soon app without artwork shows the rocket picture (`assets/images/coming-soon.png`). This answers open question 6. |
 | D34 | **The store's own update notice.** A newer listed ProsperoStore is announced by a floating notice in the top-right corner that stays for ten seconds, decided by the boilerplate's update check. |
 
 ---
