@@ -184,7 +184,26 @@ int main()
                 }
             }
             else if (update.kind == store::Update::Kind::detail)
+            {
                 screen.set_detail(update.entry);
+                if (!update.image.rgba.empty() &&
+                    std::find(wanted_icons.begin(), wanted_icons.end(), update.entry.id) !=
+                        wanted_icons.end())
+                {
+                    const auto texture = renderer.batch().create_texture(
+                        update.image.width, update.image.height, update.image.rgba.data());
+                    if (texture)
+                    {
+                        auto &previous = textures[update.entry.id];
+                        if (previous)
+                            glDeleteTextures(1, &previous);
+                        previous = texture;
+                        screen.set_icon(update.entry.id, texture);
+                    }
+                }
+            }
+            else if (!update.entry.id.empty())
+                screen.set_detail_error(update.entry.id, update.message);
             else
                 screen.set_status(update.message);
         }

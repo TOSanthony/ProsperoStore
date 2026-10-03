@@ -66,9 +66,17 @@ bool Client::refresh(Snapshot &out, net::Control &control, std::string &)
     out.online = true;
     return !control.cancelled;
 }
-bool Client::detail(const Snapshot &, const std::string &, Entry &, net::Control &, std::string &)
+bool Client::detail(const Snapshot &, const std::string &id, Entry &entry, net::Control &,
+                    std::string &error)
 {
-    return false;
+    if (id != "PPSA99000")
+    {
+        error = "offline";
+        return false;
+    }
+    entry = fixture().entries.front();
+    entry.large_icon = "https://homebrew.page/full/PPSA99000.png";
+    return true;
 }
 } // namespace store::catalog
 namespace store::net
@@ -128,6 +136,14 @@ int main()
         std::this_thread::sleep_for(5ms);
     }
     assert(received.size() == ids.size() && downloads == 15);
+    assert(service.request_detail("PPSA99000"));
+    const auto detail = next(service, store::Update::Kind::detail);
+    assert(detail.entry.id == "PPSA99000" && detail.image.width == 1 && downloads == 16);
+    assert(service.request_detail("PPSA99000"));
+    assert(next(service, store::Update::Kind::detail).image.width == 1 && downloads == 16);
+    assert(service.request_detail("PPSA99001"));
+    const auto failure = next(service, store::Update::Kind::error);
+    assert(failure.entry.id == "PPSA99001" && failure.message == "offline");
     assert(service.request_icons(ids));
     std::this_thread::sleep_for(1500ms);
     const auto before = std::chrono::steady_clock::now();

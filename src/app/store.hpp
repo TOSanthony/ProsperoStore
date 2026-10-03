@@ -8,9 +8,11 @@
 #include "catalog/catalog.hpp"
 #include "ui/components/grid.hpp"
 #include "ui/components/tabs.hpp"
+#include "ui/components/text_view.hpp"
 
 #include <string>
 #include <vector>
+#include <optional>
 
 namespace store
 {
@@ -26,6 +28,8 @@ struct App
     std::string badge;
     std::uint32_t icon = 0;
     std::string released, updated;
+    std::optional<catalog::Entry> detail = {};
+    std::string detail_error = {};
 };
 
 class Screen
@@ -34,6 +38,7 @@ class Screen
     Screen();
     void set_catalog(std::vector<App> apps, std::string status);
     void set_detail(const catalog::Entry &entry);
+    void set_detail_error(const std::string &id, std::string message);
     void set_icon(const std::string &id, std::uint32_t texture);
     std::vector<std::string> artwork() const;
     void set_query(std::string query);
@@ -56,9 +61,11 @@ class Screen
 
   private:
     void refresh_grid();
+    void refresh_detail();
     hui::ui::Theme theme_;
     hui::ui::GridView grid_;
     hui::ui::TabBar tabs_;
+    hui::ui::TextView article_;
     hui::gfx::DrawList scene_;
     std::vector<App> apps_;
     std::vector<std::size_t> visible_;

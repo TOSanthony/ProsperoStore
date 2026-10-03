@@ -203,7 +203,25 @@ void Service::run()
         {
             Update result;
             if (client.detail(snapshot, id, result.entry, control_, result.message))
+            {
                 result.kind = Update::Kind::detail;
+                if (!result.entry.large_icon.empty())
+                {
+                    auto artwork_entry = result.entry;
+                    artwork_entry.icon = artwork_entry.large_icon;
+                    catalog::Icons artwork(root_.empty() ? "" : root_ + "/cache/icons");
+                    if (!artwork.cached(artwork_entry, result.image) && snapshot.online)
+                    {
+                        std::string encoded;
+                        const auto response = net::fetch(artwork_entry.icon, net::Purpose::catalog,
+                                                         2u << 20, encoded, control_);
+                        if (response.ok())
+                            artwork.store(artwork_entry, encoded, result.image);
+                    }
+                }
+            }
+            else
+                result.entry.id = id;
             publish(std::move(result));
         }
         hui::sys::sleep_us(100000);
@@ -267,9 +285,10 @@ void Service::load_icons()
                 loaded = response.ok() && artwork.store(entry, encoded, result.image);
             }
 #ifdef STORE_DEVELOPMENT
-            hui::sys::log("[STORE] icon id=%s cached=%d loaded=%d elapsed_ms=%llu",
-                          entry.id.c_str(), cached, loaded,
-                          static_cast<unsigned long long>((hui::sys::monotonic_us() - started) / 1000));
+            hui::sys::log(
+                "[STORE] icon id=%s cached=%d loaded=%d elapsed_ms=%llu", entry.id.c_str(), cached,
+                loaded,
+                static_cast<unsigned long long>((hui::sys::monotonic_us() - started) / 1000));
 #endif
             if (loaded)
                 publish(std::move(result));

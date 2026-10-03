@@ -91,12 +91,15 @@ bool read_entry(yyjson_val *value, Entry &entry, bool detail)
         !field(value, "content_version", entry.content_version, 10) ||
         !field(value, "format", entry.format, 16) || !field(value, "icon_small", entry.icon, 512) ||
         !field(value, "icon_hash", entry.icon_hash, 64) ||
+        !field(value, "icon", entry.large_icon, 512) ||
         !field(value, "released", entry.released, 40) ||
         !field(value, "updated", entry.updated, 40))
         return false;
     if (entry.status != "available" && entry.status != "coming_soon")
         return false;
     if (!entry.icon.empty() && !api_url(entry.icon))
+        return false;
+    if (!entry.large_icon.empty() && !api_url(entry.large_icon))
         return false;
     if (!entry.content_version.empty() && !version(entry.content_version))
         return false;

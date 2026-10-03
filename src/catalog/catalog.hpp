@@ -29,7 +29,7 @@ bool hex_bytes(std::string_view text, std::span<std::uint8_t> bytes);
 struct Entry
 {
     std::string id, name, author, kind, status;
-    std::string version, content_version, format, icon, icon_hash, released, updated;
+    std::string version, content_version, format, icon, icon_hash, released, updated, large_icon;
     std::string description, license, source, page, artifact, digest, release_notes;
     std::uint64_t size = 0;
 };

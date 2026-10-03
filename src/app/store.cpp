@@ -5,6 +5,7 @@
 #include "app/store.hpp"
 #include "core/save_file.hpp"
 #include "ui/glyphs.hpp"
+#include "ui/components/data_common.hpp"
 
 #include <utility>
 #include <algorithm>
@@ -45,6 +46,10 @@ Screen::Screen() : theme_(ui::themes()[0])
                     {"Installed", 0, false, 5},
                     {"Updates", 0, false, 6}});
     tabs_.set_focused(false);
+    article_.style.theme = theme_;
+    article_.style.body_size = 28;
+    article_.style.footer = false;
+    article_.set_bounds({684, 364, 1140, 458});
 }
 
 void Screen::set_catalog(std::vector<App> apps, std::string status)
@@ -61,6 +66,11 @@ void Screen::set_catalog(std::vector<App> apps, std::string status)
         grid_.set_focus(static_cast<int>(found - visible_.begin()));
     else
         details_ = false;
+    if (details_)
+    {
+        refresh_detail();
+        pending_detail = previous;
+    }
 }
 
 void Screen::set_query(std::string query)
@@ -122,8 +132,68 @@ void Screen::set_detail(const catalog::Entry &entry)
         {
             app.description = entry.description;
             app.version = entry.version;
+            app.detail = entry;
+            app.detail_error.clear();
             break;
         }
+    if (details_ && !visible_.empty() &&
+        apps_[visible_[static_cast<std::size_t>(grid_.focus())]].title_id == entry.id)
+        refresh_detail();
+}
+
+void Screen::set_detail_error(const std::string &id, std::string message)
+{
+    for (auto &app : apps_)
+        if (app.title_id == id)
+            app.detail_error = message;
+    if (details_ && !visible_.empty() &&
+        apps_[visible_[static_cast<std::size_t>(grid_.focus())]].title_id == id)
+        refresh_detail();
+}
+
+void Screen::refresh_detail()
+{
+    const auto &app = apps_[visible_[static_cast<std::size_t>(grid_.focus())]];
+    using Block = ui::TextBlock;
+    std::vector<Block> blocks;
+    if (!app.detail_error.empty())
+        blocks.push_back(Block::paragraph("Details unavailable: " + app.detail_error));
+    if (app.detail)
+    {
+        const auto &entry = *app.detail;
+        blocks.push_back(Block::paragraph(entry.description.empty() ? "No description provided."
+                                                                    : entry.description));
+        blocks.push_back(Block::key_value("Kind", entry.kind));
+        blocks.push_back(
+            Block::key_value("Release", entry.version.empty() ? "Not released" : entry.version));
+        if (!entry.released.empty())
+            blocks.push_back(
+                Block::key_value("Released", entry.released.substr(0, entry.released.find('T'))));
+        if (entry.size != 0)
+            blocks.push_back(Block::key_value(
+                "Download", ui::format_value(static_cast<double>(entry.size)) + "B"));
+        blocks.push_back(
+            Block::key_value("License", entry.license.empty() ? "Not specified" : entry.license));
+        if (!entry.source.empty())
+        {
+            blocks.push_back(Block::heading("Source repository", 2));
+            blocks.push_back(Block::paragraph(entry.source));
+        }
+        if (!entry.page.empty())
+        {
+            blocks.push_back(Block::heading("App page", 2));
+            blocks.push_back(Block::paragraph(entry.page));
+        }
+        if (!entry.release_notes.empty())
+        {
+            blocks.push_back(Block::heading("Release notes", 2));
+            blocks.push_back(Block::paragraph(entry.release_notes));
+        }
+    }
+    else if (app.detail_error.empty())
+        blocks.push_back(Block::paragraph("Loading verified app details..."));
+    article_.set_content(std::move(blocks));
+    article_.scroll_to(0, true);
 }
 
 void Screen::set_icon(const std::string &id, std::uint32_t texture)
@@ -162,7 +232,15 @@ std::vector<std::string> Screen::artwork() const
 void Screen::update(const InputFrame &input, float dt, ui::Feedback &feedback)
 {
     time_ += dt;
-    if (!details_ && input.is_pressed(Action::north))
+    if (details_ && input.is_pressed(Action::north))
+    {
+        auto &app = apps_[visible_[static_cast<std::size_t>(grid_.focus())]];
+        app.detail_error.clear();
+        pending_detail = app.title_id;
+        refresh_detail();
+        feedback.play(audio::Cue::select);
+    }
+    else if (!details_ && input.is_pressed(Action::north))
     {
         pending_search = true;
         feedback.play(audio::Cue::select);
@@ -193,7 +271,12 @@ void Screen::update(const InputFrame &input, float dt, ui::Feedback &feedback)
     {
         details_ = true;
         pending_detail = apps_[visible_[static_cast<std::size_t>(grid_.focus())]].title_id;
+        refresh_detail();
     }
+    else if (details_)
+        article_.handle(input, feedback);
+    article_.set_active(details_);
+    article_.update(dt);
     grid_.set_active(!details_);
     grid_.update(dt);
     tabs_.update(dt);
@@ -205,8 +288,8 @@ void Screen::draw(gfx::Renderer &renderer, const ui::Fonts &fonts)
     ui::Canvas canvas{scene_, fonts, renderer.glass_texture(), time_};
     ui::Painter paint(scene_, fonts, theme_);
     paint.heading("ProsperoStore", 96, 106, 36, paint.page_text());
-    ui::text(scene_, fonts.regular, status_, 1824, 101, 24, paint.page_text_muted(),
-             gfx::Align::right);
+    ui::text(scene_, fonts.regular, ui::fit_label(paint, status_, 24, 1200), 1824, 101, 24,
+             paint.page_text_muted(), gfx::Align::right);
     if (details_ && !visible_.empty())
     {
         const App &app = apps_[visible_[static_cast<std::size_t>(grid_.focus())]];
@@ -214,14 +297,18 @@ void Screen::draw(gfx::Renderer &renderer, const ui::Fonts &fonts)
         if (app.icon != 0)
             scene_.image(app.icon, {128, 222, 476, 476}, gfx::kFullUv, gfx::Color::rgb(0xffffff));
         paint.heading(ui::fit_label(paint, app.name, 64, 1080), 704, 280, 64, paint.page_text());
-        ui::text(scene_, fonts.regular, app.author, 704, 333, 28, paint.page_text_muted());
-        ui::paragraph(scene_, fonts.regular,
-                      app.description.empty() ? "Loading app details..." : app.description, 704,
-                      407, 28, 1030, 40, paint.page_text(), 7);
-        paint.button({704, 770, 500, 72}, "Checking install requirements", ui::ButtonKind::primary,
-                     {1, 0, true});
-        ui::text(scene_, fonts.regular, "Apps are provided by their developers.", 704, 900, 24,
+        ui::text(scene_, fonts.regular, ui::fit_label(paint, app.author, 28, 1080), 704, 333, 28,
                  paint.page_text_muted());
+        article_.draw(canvas);
+        ui::text(scene_, fonts.regular,
+                 app.badge == "Coming soon"
+                     ? "Coming soon"
+                     : "Installation is not available in this development build.",
+                 704, 868, 24, paint.page_text_muted());
+        ui::paragraph(scene_, fonts.regular,
+                      "Apps are provided by their developers. Check the release notes for required "
+                      "payloads or extra setup.",
+                      704, 912, 24, 1080, 32, paint.page_text_muted(), 2);
     }
     else
     {
@@ -261,8 +348,10 @@ void Screen::draw(gfx::Renderer &renderer, const ui::Fonts &fonts)
                               {ui::Button::circle, details_ ? "Back" : "Close"}};
     if (details_)
     {
-        const ui::Hint back[] = {{ui::Button::circle, "Back"}};
-        ui::draw_hints(scene_, fonts, ui::GlyphStyle::dark(), back, 1, 96, false);
+        const ui::Hint back[] = {{ui::Button::dpad, "Scroll"},
+                                 {ui::Button::triangle, "Refresh details"},
+                                 {ui::Button::circle, "Back"}};
+        ui::draw_hints(scene_, fonts, ui::GlyphStyle::dark(), back, 3, 96, false);
     }
     else
         ui::draw_hints(scene_, fonts, ui::GlyphStyle::dark(), hints + (visible_.empty() ? 1 : 0),

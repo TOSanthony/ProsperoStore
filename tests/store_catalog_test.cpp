@@ -37,6 +37,14 @@ int main()
           R"({"schema":3,"apps":[{"titleid":"../../etc"}]})"})
         assert(!parse_index(bad, entries, error));
     assert(entries.size() == 1); // Failed refresh never replaces the last good catalog.
+    Entry detail;
+    const std::string full_icon =
+        R"({"schema":3,"titleid":"PPSA99000","name":"Store","kind":"app","status":"coming_soon","icon":"https://homebrew.page/icons/PPSA99000.png"})";
+    assert(parse_detail(full_icon, "PPSA99000", detail, error));
+    assert(detail.large_icon == "https://homebrew.page/icons/PPSA99000.png");
+    auto bad_icon = full_icon;
+    bad_icon.replace(bad_icon.find("https://homebrew.page"), 21, "https://untrusted.example");
+    assert(!parse_detail(bad_icon, "PPSA99000", detail, error));
     std::map<std::string, std::string> versions;
     assert(parse_versions(R"({"schema":3,"apps":{"PPSA99000":{"content_version":null}}})", versions,
                           error));

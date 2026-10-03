@@ -94,6 +94,23 @@ static void check_search_and_sort()
     search.pressed = hui::action_bit(hui::Action::north);
     screen.update(search, 1.0f / 60.0f, feedback);
     assert(screen.pending_search);
+    screen.pending_search = false;
+    hui::InputFrame open;
+    open.pressed = hui::action_bit(hui::Action::confirm);
+    screen.update(open, 1.0f / 60.0f, feedback);
+    assert(screen.pending_detail == b.title_id);
+    screen.set_detail_error(b.title_id, "offline");
+    screen.pending_detail.clear();
+    screen.update(search, 1.0f / 60.0f, feedback);
+    assert(screen.pending_detail == b.title_id && !screen.pending_search);
+    store::catalog::Entry detail;
+    detail.id = b.title_id;
+    detail.description = "Verified description";
+    screen.set_detail(detail);
+    screen.set_catalog({}, "removed");
+    assert(screen.artwork().empty());
+    screen.update(search, 1.0f / 60.0f, feedback);
+    assert(screen.pending_search);
 }
 
 int main(int argc, char **argv)
@@ -181,12 +198,41 @@ int main(int argc, char **argv)
                 screen.update(sort, 1.0f / 60.0f, feedback);
                 screen.update(sort, 1.0f / 60.0f, feedback);
             }
+            else if (mode == "detail" || mode == "detail-error" || mode == "detail-end")
+            {
+                screen.set_query("radio");
+                hui::InputFrame open;
+                open.pressed = hui::action_bit(hui::Action::confirm);
+                screen.update(open, 1.0f / 60.0f, feedback);
+                assert(!screen.pending_detail.empty());
+                if (mode == "detail-error")
+                    screen.set_detail_error(screen.pending_detail, "The network is unavailable.");
+                else
+                {
+                    store::catalog::Client client(argv[3]);
+                    store::catalog::Snapshot snapshot;
+                    store::catalog::Entry entry;
+                    store::net::Control control;
+                    std::string error;
+                    assert(client.cached(snapshot, error));
+                    assert(client.detail(snapshot, screen.pending_detail, entry, control, error));
+                    screen.set_detail(entry);
+                }
+            }
             else
                 return 9;
         }
         for (int frame = 0; frame < 120; ++frame)
             screen.update({}, 1.0f / 60.0f, feedback);
         screen.draw(renderer, fonts.refs);
+        if (argc == 5 && std::string(argv[4]) == "detail-end")
+        {
+            hui::InputFrame scroll;
+            scroll.nav = hui::Direction::down;
+            for (int frame = 0; frame < 120; ++frame)
+                screen.update(scroll, 1.0f / 60.0f, feedback);
+            screen.draw(renderer, fonts.refs);
+        }
         renderer.present(target.framebuffer(), 1920, 1080);
         glBindFramebuffer(GL_FRAMEBUFFER, target.framebuffer());
         std::vector<unsigned char> pixels(1920 * 1080 * 4);
