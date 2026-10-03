@@ -18,6 +18,7 @@
 #include "platform/ps5/display_egl.hpp"
 #include "platform/ps5/pad.hpp"
 #include "platform/ps5/ime.hpp"
+#include "platform/ps5/ime_abi.hpp"
 #include "platform/ps5/system.hpp"
 #include "../examples/sandbox-elevation/elevation.hpp"
 
@@ -82,6 +83,12 @@ int main()
 {
     using namespace hui;
     sys::log("[STORE] PPSA99000 startup");
+    // The system keyboard's library is refused once the store has left its
+    // sandbox (the loader answers 0x63), so it is loaded while still inside.
+    const int keyboard_dialog = sceCommonDialogInitialize();
+    const int keyboard_module = sceSysmoduleLoadModule(0x0096);
+    sys::log("[STORE] keyboard preload dialog=0x%08x module=0x%08x",
+             static_cast<unsigned>(keyboard_dialog), static_cast<unsigned>(keyboard_module));
 #ifdef STORE_SANDBOX_CONTROL
     const auto elevation_status = elevation::Status::unavailable;
 #else
@@ -564,8 +571,17 @@ int main()
             screen.pending_search = false;
             keyboard_active =
                 keyboard.open("Search ProsperoStore", "App name or developer", screen.query());
+            sys::log("[STORE] keyboard open=%d", keyboard_active ? 1 : 0);
             if (!keyboard_active)
             {
+                // Which of the keyboard's steps refused, for a report from the console.
+                std::int32_t user = -1;
+                const int common = sceCommonDialogInitialize();
+                const int module = sceSysmoduleLoadModule(0x0096);
+                const int foreground = sceUserServiceGetForegroundUser(&user);
+                sys::log("[STORE] keyboard refused: dialog=0x%08x module=0x%08x user=0x%08x id=%d",
+                         static_cast<unsigned>(common), static_cast<unsigned>(module),
+                         static_cast<unsigned>(foreground), user);
                 screen.set_status("The system keyboard could not open. Try Search again.");
                 feedback.play(audio::Cue::error);
             }
@@ -577,6 +593,8 @@ int main()
                 screen.set_query(keyboard.text());
             else if (state == ps5::Ime::State::failed)
                 screen.set_status("The system keyboard closed unexpectedly. Try Search again.");
+            if (state != ps5::Ime::State::open)
+                sys::log("[STORE] keyboard closed state=%d", static_cast<int>(state));
             keyboard_active = state == ps5::Ime::State::open;
         }
         screen.update(keyboard_owns_input ? InputFrame{} : frame, dt, feedback);

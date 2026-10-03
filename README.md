@@ -4,10 +4,31 @@ A native PS5 app store for the homebrew catalog at
 [homebrew.page](https://homebrew.page): browse, install, uninstall and update
 apps with the controller. Title ID `PPSA99000`.
 
-Development is in progress; this is not a release. Browsing, installing,
-updating and uninstalling work and have run on a console. **[PLAN.md](PLAN.md)** is the implementation plan: scope,
-what is known about the console and how well, the owner's decisions, the
-design, the milestones and the open questions.
+Version 01.000.000 is the first release, a beta. Browsing, installing, updating
+and uninstalling have run on a console (firmware as listed in the notes).
+**[PLAN.md](PLAN.md)** is the implementation plan: scope, what is known about
+the console and how well, the owner's decisions, the design, the milestones and
+the open questions.
+
+## Install
+
+1. The console needs ShadowMountPlus and a payload loader listening on port
+   9021 (the store uses it to leave its sandbox and to start its file worker).
+2. Unpack `PPSA99000.zip` and copy the `PPSA99000` folder into a location
+   ShadowMountPlus scans, for example `/data/homebrew`.
+3. Start ProsperoStore from the home screen. Later versions are installed by
+   the store itself.
+
+## Known limits of this version
+
+- ZIP apps only; image files (ffpfsc) are listed but can't be installed.
+- The store installs, updates and removes apps; it does not start them.
+- After the store updates itself, the console needs a few minutes before it
+  starts the new version; until then the store asks to be opened again.
+- An update is only offered for apps whose catalog entry lists a content version.
+- The home-screen name of an app does not change after an update.
+- USB locations are offered but have not carried a real install yet.
+- English only.
 
 See [IMPLEMENTATION_NOTES.md](IMPLEMENTATION_NOTES.md) for completed work,
 validation results, known limitations, and the remaining implementation work.
