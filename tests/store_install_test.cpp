@@ -149,6 +149,10 @@ void check_archives(const fs::path &root)
     const auto out = (root / "out").string();
     assert(install::extract_archive(file, kId, out, cancelled, written, error));
     assert(written == info.unpacked && tree(out) == expected_tree(good));
+    // Every file and folder is open to all, as the console needs to start the app.
+    for (const auto &item : fs::recursive_directory_iterator(out))
+        assert((fs::status(item.path()).permissions() & fs::perms::all) == fs::perms::all);
+    assert((fs::status(out).permissions() & fs::perms::all) == fs::perms::all);
     // The destination must be new: nothing is ever unpacked over existing files.
     assert(!install::extract_archive(file, kId, out, cancelled, written, error));
     assert(install::remove_tree(out) && !fs::exists(out));

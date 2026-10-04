@@ -2224,8 +2224,10 @@ void Screen::draw_action_box(const ui::Fonts &fonts, std::uint32_t glass, const 
         }
         else
             list.arc(cx, cy, radius, 10.0f, time_ * 3.4f, 1.7f, kAccent);
-        ui::text(list, fonts.semibold, ui::upper(state.headline), cx, cy + 52.0f, 15,
-                 kInk.with_alpha(0.62f), gfx::Align::center, 3.0f);
+        // Inside the ring: at this height its inner edge leaves about 130 px.
+        ui::text(list, fonts.semibold,
+                 fonts.semibold.font->fit(ui::upper(state.headline), 13, 110.0f), cx, cy + 42.0f,
+                 13, kInk.with_alpha(0.62f), gfx::Align::center, 2.0f);
         const char *names[] = {"Download", "Verify", "Unpack", "Finish"};
         const int step = !mine                         ? -1
                          : phase == Phase::downloading ? 0
