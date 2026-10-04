@@ -244,6 +244,7 @@ int main()
     [[maybe_unused]] const char *note = "", *previous_note = "";
     [[maybe_unused]] std::int64_t tour_until = 0, tour_next = 0;
     [[maybe_unused]] unsigned tour_step = 0;
+    [[maybe_unused]] bool shot_wanted = false; // development: save the next frame
     [[maybe_unused]] int bench_step = -1;
     ps5::Ime keyboard;
     bool keyboard_active = false;
@@ -489,6 +490,8 @@ int main()
                 screen.pending_order.kind = store::Order::Kind::cancel;
                 screen.pending_order.id = argument;
             }
+            else if (verb == "shot")
+                shot_wanted = true;
             else if (verb == "tour")
             {
                 tour_until = now + std::atoll(argument.c_str()) * 1000000;
@@ -638,6 +641,38 @@ int main()
         pad.tick(dt);
         screen.draw(renderer, fonts.refs);
         renderer.present(0, display.width(), display.height());
+#ifdef STORE_DEVELOPMENT
+        if (shot_wanted)
+        {
+            // What the TV shows, at half size: /data/prosperostore/dev/shot.tga.
+            shot_wanted = false;
+            const int w = display.width(), h = display.height(), hw = w / 2, hh = h / 2;
+            std::vector<std::uint8_t> pixels(static_cast<std::size_t>(w) * h * 4);
+            glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+            glPixelStorei(GL_PACK_ALIGNMENT, 4);
+            glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+            std::string tga(18, '\0');
+            tga[2] = 2; // uncompressed true colour, rows from the bottom like GL
+            tga[12] = static_cast<char>(hw & 0xff);
+            tga[13] = static_cast<char>(hw >> 8);
+            tga[14] = static_cast<char>(hh & 0xff);
+            tga[15] = static_cast<char>(hh >> 8);
+            tga[16] = 24;
+            tga.reserve(tga.size() + static_cast<std::size_t>(hw) * hh * 3);
+            for (int y = 0; y < hh; ++y)
+                for (int x = 0; x < hw; ++x)
+                {
+                    const std::uint8_t *px =
+                        &pixels[(static_cast<std::size_t>(y) * 2 * w + x * 2) * 4];
+                    tga.push_back(static_cast<char>(px[2]));
+                    tga.push_back(static_cast<char>(px[1]));
+                    tga.push_back(static_cast<char>(px[0]));
+                }
+            const auto error = hui::save::write_atomic("/data/prosperostore/dev/shot.tga", tga);
+            sys::log("[STORE] shot %dx%d gl=0x%x saved=%d", hw, hh, glGetError(),
+                     error.empty() ? 1 : 0);
+        }
+#endif
         if (!display.swap())
         {
             sys::log("[STORE] presentation failed");

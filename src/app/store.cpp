@@ -1371,8 +1371,17 @@ void Screen::draw_top_bar(const ui::Fonts &fonts)
         (void)busy;
     }
     else if (room > 60.0f)
-        ui::text(list, fonts.regular, fonts.regular.font->fit(status_, 20, std::min(280.0f, room)),
-                 kRight, centred(kTopY, 20), 20, kInk.with_alpha(0.55f), gfx::Align::right);
+    {
+        // A status too long for the room keeps its first part whole ("Catalog verified")
+        // rather than ending in a cut word.
+        const float width = std::min(280.0f, room);
+        std::string line = status_;
+        if (fonts.regular.measure(line, 20) > width)
+            if (const auto dot = line.find(" \xE2\x80\xA2 "); dot != std::string::npos)
+                line.resize(dot);
+        ui::text(list, fonts.regular, fonts.regular.font->fit(line, 20, width), kRight,
+                 centred(kTopY, 20), 20, kInk.with_alpha(0.55f), gfx::Align::right);
+    }
 }
 
 // Discover's stage: the app in focus (or the featured one), big, over its own
