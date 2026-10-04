@@ -83,6 +83,10 @@ int main()
 {
     using namespace hui;
     sys::log("[STORE] PPSA99000 startup");
+    // Start-up steps, timed from here: where the wait before the first frame goes.
+    const std::int64_t started_us = sys::monotonic_us();
+    const auto since_start = [started_us]
+    { return static_cast<long long>((sys::monotonic_us() - started_us) / 1000); };
     // The system keyboard's library is refused once the store has left its
     // sandbox (the loader answers 0x63), so it is loaded while still inside.
     const int keyboard_dialog = sceCommonDialogInitialize();
@@ -107,7 +111,8 @@ int main()
         hui::save::read_file(std::string(storage_root) + "/dev/run.txt", &run_token, 64);
     sys::log("[STORE] run start token=%s", run_token.c_str());
 #endif
-    sys::log("[STORE] elevation status=%u", static_cast<unsigned>(elevation_status));
+    sys::log("[STORE] elevation status=%u at_ms=%lld", static_cast<unsigned>(elevation_status),
+             since_start());
     const int transport = store::net::start_transport(elevation_status == elevation::Status::ok);
     sys::log("[STORE] transport startup rc=0x%08x", static_cast<unsigned>(transport));
     ps5::Display display;
@@ -132,13 +137,15 @@ int main()
     audio::Mixer mixer;
     audio::SoundBank sounds;
     const auto bank = sounds.load(app_root + "/assets/audio/sfx");
-    sys::log("[STORE] sound files=%d rejected=%d", bank.files, bank.rejected);
+    sys::log("[STORE] sound files=%d rejected=%d at_ms=%lld", bank.files, bank.rejected,
+             since_start());
     ps5::AudioOut audio;
     audio.start(mixer);
     pthread_t request_thread{};
     const bool requests_started =
         elevated && pthread_create(&request_thread, nullptr, development_requests, nullptr) == 0;
     store::Screen screen;
+    screen.play_intro();
     // The picture for coming-soon apps that have no artwork of their own.
     std::uint32_t coming_soon_texture = 0;
     {
@@ -176,7 +183,8 @@ int main()
     InputTracker input;
     FrameStats stats;
     std::int64_t previous = sys::monotonic_us();
-    sys::log("[STORE] interactive width=%d height=%d", display.width(), display.height());
+    sys::log("[STORE] interactive width=%d height=%d at_ms=%lld", display.width(), display.height(),
+             since_start());
     bool first_swap = true;
     // Pictures are uploaded once and kept for the session. Creating and
     // deleting textures while the focus moves stalled frames for over a
@@ -272,6 +280,8 @@ int main()
                                                                    : "update";
             if (update.kind == store::Update::Kind::catalog)
             {
+                if (!catalog_generation)
+                    sys::log("[STORE] catalog arrived at_ms=%lld", since_start());
                 requested_icons.clear();
                 catalog_generation = update.generation;
                 hashes.clear();
@@ -682,7 +692,7 @@ int main()
         {
             // The console's splash picture stays up until there is a frame to show.
             sys::hide_splash_screen();
-            sys::log("[STORE] first-swap ok");
+            sys::log("[STORE] first-swap ok at_ms=%lld", since_start());
             first_swap = false;
         }
         stats.add(ms);

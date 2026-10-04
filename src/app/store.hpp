@@ -184,6 +184,18 @@ class Screen
     std::string pending_detail;
     bool pending_search = false;
     void update(const hui::InputFrame &input, float dt, hui::ui::Feedback &feedback);
+    // The opening: the store's mark assembles while the catalog loads, then hands
+    // over to the top bar. Off unless asked for (the console build asks).
+    void play_intro()
+    {
+        intro_on_ = true;
+        intro_clock_ = intro_leave_ = 0.0f;
+        intro_leaving_ = false;
+    }
+    bool intro_showing() const
+    {
+        return intro_on_ && intro_leave_ < 1.0f;
+    }
     void draw(hui::gfx::Renderer &renderer, const hui::ui::Fonts &fonts);
     bool wants_quit() const
     {
@@ -311,6 +323,9 @@ class Screen
     // Uninstalling is a hold, not a question: the button fills while it is held.
     hui::ui::HoldButton hold_;
     bool chime_ = false; // a job finished well: its toast plays the completion sound
+    bool intro_on_ = false, intro_leaving_ = false;
+    float intro_clock_ = 0.0f, intro_leave_ = 0.0f;
+    void draw_intro(const hui::ui::Fonts &fonts);
     std::string ask_id_;
     bool fresh_catalog_ = false;
     std::vector<hui::tween::Spring> appear_;

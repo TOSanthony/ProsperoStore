@@ -453,6 +453,8 @@ int main(int argc, char **argv)
             else if (mode == "reel-browse")
             {
             }
+            else if (mode == "reel-intro")
+                screen.play_intro();
             else if (mode == "busy-home")
             {
                 screen.set_installer(true, true, "", "/data/homebrew");
@@ -672,6 +674,11 @@ int main(int argc, char **argv)
             {
                 steps = {{40, "confirm"}};
                 frames = 760;
+            }
+            else if (scene == "reel-intro")
+            {
+                frames = 300;
+                screen.play_intro(); // after the warm-up frames, so the clip starts at zero
             }
             const auto press = [](const std::string &name)
             {

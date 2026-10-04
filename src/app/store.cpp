@@ -1100,9 +1100,23 @@ void Screen::update_page(const InputFrame &input, ui::Feedback &feedback)
         article_.handle(input, feedback);
 }
 
-void Screen::update(const InputFrame &input, float dt, ui::Feedback &feedback)
+void Screen::update(const InputFrame &raw, float dt, ui::Feedback &feedback)
 {
     time_ += dt;
+    // The intro stays at least a moment, and until the catalog has answered (six
+    // seconds at most: the home page has its own loading state). Input waits for it.
+    if (intro_on_ && intro_leave_ < 1.0f)
+    {
+        intro_clock_ += dt;
+        const bool ready = !loading_ || !apps_.empty();
+        const float least = settings_.reduce_motion ? 0.5f : 1.6f;
+        if (!intro_leaving_ && ((ready && intro_clock_ >= least) || intro_clock_ >= 6.0f))
+            intro_leaving_ = true;
+        if (intro_leaving_)
+            intro_leave_ = std::min(1.0f, intro_leave_ + dt / 0.75f);
+    }
+    const InputFrame quiet{};
+    const InputFrame &input = intro_on_ && intro_leave_ < 0.5f ? quiet : raw;
     // A scripted install presses the button as soon as it can be pressed.
     if (!auto_order_.empty() && details_ && focused() && focused()->title_id == auto_order_)
     {
@@ -1482,6 +1496,8 @@ void Screen::draw_stage(const ui::Fonts &fonts)
 
     // The call to action lights up when the stage holds the focus; beside
     // it, what the app is on this console.
+    if (stage_ < 0)
+        return; // nothing on the stage yet: no call to action
     const float lit = banner_focus_.value;
     const Rect b = kStageButton;
     list.glow(b, b.h * 0.5f, 26, kAccent.with_alpha((0.22f + 0.08f * breath()) * lit));
@@ -2460,6 +2476,120 @@ void Screen::draw_page(const ui::Fonts &fonts, std::uint32_t glass)
     }
 }
 
+// The opening. The store's mark, as on its icon: three glass tiles and a gold one
+// with the diamond, landing one after another on springs, a sheen across the gold,
+// the name spacing in. When the catalog has answered, the mark flies into the top
+// bar's diamond and the home page shows through.
+void Screen::draw_intro(const ui::Fonts &fonts)
+{
+    auto &list = overlay_;
+    const float t = intro_clock_, leave = tween::cubic_in_out(intro_leave_);
+    const bool still = settings_.reduce_motion;
+    const Color teal = Color::rgb(0x2fd4f0), gold = kAccent, gold_deep = Color::rgb(0xc98a1b);
+    const Rect full{0, 0, kWidth, kHeight};
+
+    // The room: Farlight's dark with a teal and a gold light breathing in it.
+    list.push_opacity(1.0f - tween::smoothstep(intro_leave_ * 1.3f));
+    list.rounded_rect(full, 0, Color::rgb(0x08111f));
+    const float breathe = still ? 0.5f : 0.5f + 0.5f * std::sin(t * 1.6f);
+    list.glow({560.0f, 180.0f, 800.0f, 600.0f}, 300, 360, teal.with_alpha(0.1f + 0.05f * breathe));
+    list.glow({900.0f, 420.0f, 420.0f, 320.0f}, 160, 260, gold.with_alpha(0.05f + 0.03f * breathe));
+    list.pop_opacity();
+
+    // The mark: a 2 x 2 grid centred above the name, flying to the top bar as it leaves.
+    constexpr float kTile = 132.0f, kGap = 22.0f, kRadius = 30.0f;
+    const float cx = 960.0f, cy = 450.0f;
+    const float logo_x = kMargin + 13.0f, logo_y = kTopY; // the top bar's diamond
+    const float scale = tween::lerp(1.0f, 0.075f, leave);
+    const float gold_cx = cx + (kTile + kGap) * 0.5f, gold_cy = cy + (kTile + kGap) * 0.5f;
+    list.push_transform(scale, gold_cx, gold_cy, (logo_x - gold_cx) * leave,
+                        (logo_y - gold_cy) * leave);
+    const auto landed = [&](int i)
+    {
+        if (still)
+            return tween::clamp01(t / 0.35f);
+        return tween::stagger(t, i, 0.09f, 0.55f);
+    };
+    for (int i = 0; i < 4; ++i)
+    {
+        const float k = landed(i);
+        if (k <= 0.0f)
+            continue;
+        const float pop = still ? 1.0f : tween::back_out(k);
+        const float x = cx + (i % 2 ? kGap * 0.5f : -kTile - kGap * 0.5f);
+        const float y = cy + (i / 2 ? kGap * 0.5f : -kTile - kGap * 0.5f) -
+                        36.0f * (1.0f - k) * (still ? 0.0f : 1.0f);
+        const Rect r{x, y, kTile, kTile};
+        const float alpha = tween::clamp01(k * 1.6f);
+        list.push_transform(0.62f + 0.38f * pop, r.cx(), r.cy(), 0, 0);
+        if (i < 3)
+        {
+            // Glass: a teal rim, a faint fill, light pooling at the top. Fades as the mark leaves.
+            const float a = alpha * (1.0f - tween::smoothstep(intro_leave_ * 2.2f));
+            list.glow(r.inset(-6.0f), kRadius + 6.0f, 46, teal.with_alpha(0.32f * a));
+            list.bordered_rect(r, kRadius, teal.with_alpha(0.14f * a), 3.5f,
+                               teal.with_alpha(0.95f * a));
+            list.gradient_rect({r.x + 8.0f, r.y + 8.0f, r.w - 16.0f, r.h * 0.45f}, kRadius - 8.0f,
+                               kWhite.with_alpha(0.22f * a), kWhite.with_alpha(0.0f));
+        }
+        else
+        {
+            // Gold, turning into the top bar's diamond as it flies there.
+            const float turn = 0.7854f * leave;
+            list.glow(r.inset(-10.0f), kRadius + 10.0f, 70,
+                      gold.with_alpha((0.34f + 0.12f * breathe) * alpha));
+            if (leave > 0.0f)
+                list.rotated_rect(r, kRadius, turn, gold.with_alpha(alpha));
+            else
+            {
+                list.gradient_rect(r, kRadius, gold.with_alpha(alpha), gold_deep.with_alpha(alpha));
+                // A sheen sweeps across once it has landed, then every few seconds.
+                const float sweep = still ? -1.0f : std::fmod(t - 0.75f, 3.2f) / 0.7f;
+                if (t > 0.75f && sweep >= 0.0f && sweep <= 1.0f)
+                {
+                    list.push_clip(r.inset(2.0f));
+                    const float sx = r.x - 60.0f + (r.w + 120.0f) * tween::cubic_in_out(sweep);
+                    list.rotated_rect({sx - 14.0f, r.y - 40.0f, 28.0f, r.h + 80.0f}, 4.0f, 0.42f,
+                                      kWhite.with_alpha(0.35f * alpha));
+                    list.pop_clip();
+                }
+            }
+            const float hole = 46.0f;
+            list.rotated_rect({r.cx() - hole * 0.5f, r.cy() - hole * 0.5f, hole, hole}, 9.0f,
+                              0.7854f, Color::rgb(0x08111f).with_alpha(alpha));
+        }
+        list.pop_transform();
+    }
+    list.pop_transform();
+
+    // The name, spacing in under the mark, then where the apps come from.
+    list.push_opacity(1.0f - tween::smoothstep(intro_leave_ * 2.0f));
+    const float name = still ? 1.0f : tween::cubic_out(tween::clamp01((t - 0.45f) / 0.7f));
+    if (name > 0.0f)
+        ui::text(list, fonts.semibold, "PROSPEROSTORE", cx, centred(660.0f, 40), 40,
+                 kInk.with_alpha(name), gfx::Align::center, tween::lerp(26.0f, 11.0f, name));
+    const float source = still ? 1.0f : tween::smoothstep((t - 0.8f) / 0.5f);
+    if (source > 0.0f)
+        ui::text(list, fonts.semibold, "homebrew.page", cx, centred(716.0f, 24), 24,
+                 gold.with_alpha(0.92f * source), gfx::Align::center, 2.0f);
+    // A longer wait says what it is waiting for, with a line of light running along a track.
+    const float waiting = tween::smoothstep((t - 2.2f) / 0.5f);
+    if (waiting > 0.0f && !intro_leaving_)
+    {
+        const Rect track{cx - 110.0f, 790.0f, 220.0f, 3.0f};
+        list.rounded_rect(track, 1.5f, kInk.with_alpha(0.14f * waiting));
+        const float run = still ? 0.5f : std::fmod(t * 0.8f, 1.0f);
+        const float head = track.x + (track.w + 80.0f) * run - 80.0f;
+        list.push_clip(track);
+        list.gradient_rect_h({head, track.y, 80.0f, 3.0f}, 1.5f, teal.with_alpha(0.0f),
+                             teal.with_alpha(0.9f * waiting));
+        list.pop_clip();
+        ui::text(list, fonts.regular, "Loading the catalog", cx, centred(834.0f, 20), 20,
+                 kInk.with_alpha(0.5f * waiting), gfx::Align::center);
+    }
+    list.pop_opacity();
+}
+
 void Screen::draw(gfx::Renderer &renderer, const ui::Fonts &fonts)
 {
     layout(fonts);
@@ -2534,6 +2664,8 @@ void Screen::draw(gfx::Renderer &renderer, const ui::Fonts &fonts)
     ui::Canvas canvas{overlay_, fonts, glass, time_};
     dialog_.draw(canvas);
     toasts_.draw(canvas);
+    if (intro_showing())
+        draw_intro(fonts);
 
     // Farlight's clouds, leaning toward the focused app's colour.
     const Color tint = tint_.value();
@@ -2652,7 +2784,8 @@ void Screen::write_about()
         "OpenSSL, zlib, miniz, Monocypher, yyjson, PicoSHA2, QR Code generator and stb. "
         "Fonts: Inter, Montserrat and DejaVu Sans Mono."));
     blocks.push_back(
-        Block::paragraph("BlackBearReloaded. Free software under the GPL, version 3 or later."));
+        Block::paragraph("Brought to you by BlackBearReloaded. Free software under the GPL, "
+                         "version 3 or later."));
     about_.set_content(std::move(blocks));
     about_.scroll_to(0, true);
 }
@@ -3091,16 +3224,20 @@ void Screen::draw_panel(const ui::Fonts &fonts, std::uint32_t glass)
         list.glow({cx - 56.0f, cy - 56.0f, 112.0f, 112.0f}, 40, 50, kAccent.with_alpha(0.2f));
         list.rotated_rect({cx - 40.0f, cy - 40.0f, 80.0f, 80.0f}, 16.0f, 0.7854f, kAccent);
         list.rotated_rect({cx - 18.0f, cy - 18.0f, 36.0f, 36.0f}, 7.0f, 0.7854f, kDeep);
-        ui::text(list, fonts.display, "ProsperoStore", px + 150.0f, panel.y + 104.0f, 52, kInk);
-        float words = ui::text(list, fonts.regular, "Apps from ", px + 152.0f, panel.y + 146.0f, 24,
+        ui::text(list, fonts.display, "ProsperoStore", px + 150.0f, panel.y + 98.0f, 52, kInk);
+        float words = ui::text(list, fonts.regular, "Apps from ", px + 152.0f, panel.y + 136.0f, 22,
                                kInk.with_alpha(0.62f));
-        ui::text(list, fonts.semibold, "homebrew.page", px + 152.0f + words, panel.y + 146.0f, 24,
+        ui::text(list, fonts.semibold, "homebrew.page", px + 152.0f + words, panel.y + 136.0f, 22,
                  kAccent);
+        words = ui::text(list, fonts.regular, "Brought to you by ", px + 152.0f, panel.y + 168.0f,
+                         22, kInk.with_alpha(0.62f));
+        ui::text(list, fonts.semibold, "BlackBearReloaded", px + 152.0f + words, panel.y + 168.0f,
+                 22, kInk);
         if (!self_version_.empty())
             pill(list, fonts, "Version " + self_version_,
                  px + pw - fonts.semibold.measure("Version " + self_version_, 21.0f) - 34.0f,
                  panel.y + 92.0f, 36.0f, kInk.with_alpha(0.12f), kInk, 1.0f, kAllLayers);
-        list.rounded_rect({px, panel.y + 186.0f, pw, 1.0f}, 0, kInk.with_alpha(0.12f));
+        list.rounded_rect({px, panel.y + 194.0f, pw, 1.0f}, 0, kInk.with_alpha(0.12f));
         ui::Canvas canvas{list, fonts, glass, time_};
         about_.draw(canvas);
     }
