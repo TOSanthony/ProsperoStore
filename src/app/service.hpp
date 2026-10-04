@@ -39,6 +39,7 @@ struct Update
     std::string message;
     bool ok = false;
     bool restart = false; // the store updated itself: restart to finish
+    bool close = false;   // the update helper has the go-ahead: the store must close now
     std::vector<std::pair<std::string, std::uint64_t>> locations; // path, free bytes
 };
 // What the installer is doing, for the frame that draws it.

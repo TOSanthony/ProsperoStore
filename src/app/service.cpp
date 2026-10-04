@@ -4,6 +4,7 @@
 
 #include "app/ambient.hpp"
 #include "system/title_registry.hpp"
+#include "system/self_update_store.hpp"
 #include "app/service.hpp"
 #include "core/save_file.hpp"
 #include "core/qr.hpp"
@@ -466,6 +467,17 @@ void Service::run_installer()
             result = install::uninstall(environment, job.entry.id, job.location, progress_);
         else if (job.kind == Job::Kind::adopt)
             result = install::adopt(environment, job.entry.id, job.location);
+#ifdef STORE_FILE_WORKER
+        else if (job.entry.id == environment.self)
+        {
+            // The store itself: the kit's helper swaps the files of its folder
+            // once it has closed, so the next start runs the new version.
+            result.operation = "self-update";
+            result.ok = system::update_self(job.entry, environment.self_version, progress_,
+                                            job_control_, result.error);
+            result.version = job.entry.content_version;
+        }
+#endif
         else
             result = install::apply(
                 environment, {job.entry, job.location, minimum, job.entry.id == environment.self},
@@ -487,7 +499,14 @@ void Service::run_installer()
         done.entry.id = job.entry.id;
         done.ok = result.ok;
         const auto &name = job.entry.name.empty() ? job.entry.id : job.entry.name;
-        if (result.ok)
+        if (result.ok && result.operation == "self-update")
+        {
+            done.close = true;
+            done.message = "Updating ProsperoStore";
+            done.detail = "It closes now. A notification says when the new version is in "
+                          "place; then open it again.";
+        }
+        else if (result.ok)
         {
             done.restart = result.restart;
             done.message = name + (result.operation == "uninstall" ? " uninstalled"

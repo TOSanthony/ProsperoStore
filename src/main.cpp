@@ -30,6 +30,7 @@
 #include <cstdio>
 #include <cstring>
 #include <pthread.h>
+#include <sys/stat.h>
 #include <cstdlib>
 #include <map>
 #include <mutex>
@@ -273,7 +274,9 @@ int main()
     [[maybe_unused]] int bench_step = -1;
     ps5::Ime keyboard;
     bool keyboard_active = false;
-    while (!quit.load() && !screen.wants_quit())
+    std::int64_t close_at = 0; // set when the store updates itself: close at this time
+    while (!quit.load() && !screen.wants_quit() &&
+           (close_at == 0 || sys::monotonic_us() < close_at))
     {
         const auto now = sys::monotonic_us();
         const double ms = static_cast<double>(now - previous) / 1000.0;
@@ -346,8 +349,16 @@ int main()
             else if (update.kind == store::Update::Kind::notice)
                 screen.notify(std::move(update.message), std::move(update.detail));
             else if (update.kind == store::Update::Kind::job)
+            {
+                // The update helper waits for the store to close: say so, then close.
+                if (update.close)
+                {
+                    close_at = sys::monotonic_us() + 3500000;
+                    sys::log("[STORE] self-update applied: closing");
+                }
                 screen.finish_job(update.ok, update.restart, std::move(update.message),
                                   std::move(update.detail));
+            }
             else if (update.kind == store::Update::Kind::locations)
                 screen.set_locations(std::move(update.locations));
             else if (update.kind == store::Update::Kind::icon)
@@ -504,6 +515,11 @@ int main()
                 entry.version = argument;
                 entry.content_version = argument;
                 entry.digest = digest.substr(0, 64);
+                struct stat archive
+                {
+                };
+                if (stat((std::string(storage_root) + "/dev/self.zip").c_str(), &archive) == 0)
+                    entry.size = static_cast<std::uint64_t>(archive.st_size);
                 entry.artifact = "https://github.com/blackbearreloaded/ProsperoStore/releases/"
                                  "download/dev/PPSA99000.zip";
                 sys::log("[STORE] remote selfupdate accepted=%d",

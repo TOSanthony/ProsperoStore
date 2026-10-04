@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <fcntl.h>
+#include <string>
 #include <sys/types.h>
 #include <vector>
 
@@ -94,12 +95,16 @@ namespace store::system
 {
 bool launch_worker(install::Channel &channel)
 {
+    return launch_program("store-worker.elf", channel);
+}
+
+bool launch_program(const char *file, install::Channel &channel)
+{
     // Once the store has left its sandbox, /app0 is no longer its own folder:
     // the same folder is then reached through the sandbox's mount point.
     int program = -1;
-    for (const char *path :
-         {"/app0/store-worker.elf", "/mnt/sandbox/PPSA99000_000/app0/store-worker.elf"})
-        if ((program = sceKernelOpen(path, O_RDONLY, 0)) >= 0)
+    for (const char *folder : {"/app0/", "/mnt/sandbox/PPSA99000_000/app0/"})
+        if ((program = sceKernelOpen((std::string(folder) + file).c_str(), O_RDONLY, 0)) >= 0)
             break;
     if (program < 0)
     {

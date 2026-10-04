@@ -66,6 +66,11 @@ developer; press R3 to cycle name, newest release, and recently updated
 sorting. Clear the search text to show the full section again. Circle goes
 back or closes the store.
 
+When a newer ProsperoStore is listed, its own page (Settings > ProsperoStore)
+offers the update. It downloads and unpacks like any app, then the store
+closes; a small helper started through the payload loader puts the new files
+in place, and a notification says when to open it again.
+
 App pages show verified metadata, full-size artwork, and a scrolling article.
 Use the D-pad to scroll and Triangle to retry or refresh details. Scan the QR
 code for the app's page, release notes, and source repository.
