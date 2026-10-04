@@ -20,6 +20,7 @@
 #include "platform/ps5/display_egl.hpp"
 #include "platform/ps5/pad.hpp"
 #include "platform/ps5/ime.hpp"
+#include "platform/ps5/keyboard.hpp"
 #include "platform/ps5/ime_abi.hpp"
 #include "platform/ps5/system.hpp"
 #include "../examples/sandbox-elevation/elevation.hpp"
@@ -35,6 +36,8 @@
 #include <map>
 #include <mutex>
 #include <GL/glcorearb.h>
+
+extern "C" int sceUserServiceGetInitialUser(int *user);
 
 namespace
 {
@@ -94,6 +97,10 @@ int main()
     // sandbox (the loader answers 0x63), so it is loaded while still inside.
     const int keyboard_dialog = sceCommonDialogInitialize();
     const int keyboard_module = sceSysmoduleLoadModule(0x0096);
+    // USB keyboards for moving around: the same rule, so their library loads here too.
+    store::ps5::Keyboards keyboards;
+    const int keyboards_ready = keyboards.prepare();
+    sys::log("[STORE] usb keyboard library rc=0x%08x", static_cast<unsigned>(keyboards_ready));
     // The console's app-install service: the home screen's list of titles.
     const int registry = store::system::prepare_title_registry();
     sys::log("[STORE] title registry rc=0x%08x", static_cast<unsigned>(registry));
@@ -140,6 +147,11 @@ int main()
     ps5::Pad pad;
     if (!pad.open())
         sys::log("[STORE] controller unavailable");
+    int keyboard_user = -1;
+    if (sceUserServiceGetInitialUser(&keyboard_user) < 0)
+        keyboard_user = -1;
+    PadSample last_pad{}; // the controller's latest state, before keys are added to it
+    int keyboards_seen = 0;
     audio::Mixer mixer;
     audio::SoundBank sounds;
     const auto bank = sounds.load(app_root + "/assets/audio/sfx");
@@ -283,7 +295,34 @@ int main()
         previous = now;
         const float dt = std::clamp(static_cast<float>(ms / 1000.0), 0.001f, 0.1f);
         std::array<PadSample, 64> samples{};
-        const auto count = pad.read(samples);
+        auto count = pad.read(samples);
+        // Keys act as the controller buttons they stand for (app/keyboard_map.hpp), so
+        // repeats and holds behave the same. Without a new controller sample this
+        // frame, its last state carries the keys.
+        keyboards.open(keyboard_user, now);
+        if (keyboards.opened() != keyboards_seen)
+        {
+            keyboards_seen = keyboards.opened();
+            sys::log("[STORE] usb keyboards opened=%d", keyboards_seen);
+        }
+        if (count > 0)
+            last_pad = samples[count - 1];
+        bool keys_connected = false;
+        const std::uint32_t keys = keyboards.buttons(keys_connected);
+        if (keys_connected)
+        {
+            if (count == 0)
+            {
+                samples[0] = last_pad;
+                samples[0].timestamp_us = static_cast<std::uint64_t>(now);
+                count = 1;
+            }
+            for (std::size_t i = 0; i < count; ++i)
+            {
+                samples[i].buttons |= keys;
+                samples[i].connected = true;
+            }
+        }
         ui::Feedback feedback;
         if (updates.empty())
             service.take(updates);
@@ -787,6 +826,7 @@ int main()
     if (requests_started)
         pthread_join(request_thread, nullptr);
     audio.stop();
+    keyboards.close();
     pad.close();
     if (coming_soon_texture)
         glDeleteTextures(1, &coming_soon_texture);

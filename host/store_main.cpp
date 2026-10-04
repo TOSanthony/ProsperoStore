@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "app/ambient.hpp"
+#include "app/keyboard_map.hpp"
 #include "app/store.hpp"
 #include "catalog/client.hpp"
 #include "catalog/icons.hpp"
@@ -193,6 +194,25 @@ static void check_installed_sections()
     assert(screen.artwork().empty());
 }
 
+static void check_keyboard_keys()
+{
+    using namespace hui::pad_bits;
+    const auto press = [](std::initializer_list<std::uint16_t> keys, std::uint32_t modifiers = 0)
+    {
+        const std::vector<std::uint16_t> held(keys);
+        return store::keyboard_buttons(held, modifiers);
+    };
+    assert(press({store::hid::kUp}) == kUp && press({store::hid::kLeft}) == kLeft);
+    assert(press({store::hid::kEnter}) == kCross && press({store::hid::kSpace}) == kCross);
+    assert(press({store::hid::kEscape}) == kCircle && press({store::hid::kBackspace}) == kCircle);
+    assert(press({store::hid::kTab}) == kR1 && press({store::hid::kTab}, 0x02) == kL1);
+    assert(press({store::hid::kPageDown}) == kR1 && press({store::hid::kPageUp}) == kL1);
+    assert(press({store::hid::kSlash}) == kTriangle && press({store::hid::kDelete}) == kSquare);
+    assert(press({store::hid::kF10}) == kOptions && press({store::hid::kF5}) == kR3);
+    assert(press({store::hid::kDown, store::hid::kEnter}) == (kDown | kCross));
+    assert(press({0x04 /* A */}) == 0 && press({}) == 0);
+}
+
 static void check_hold_to_uninstall()
 {
     store::Screen screen;
@@ -261,6 +281,7 @@ int main(int argc, char **argv)
     check_search_and_sort();
     check_installed_sections();
     check_hold_to_uninstall();
+    check_keyboard_keys();
     if (argc < 3 || argc > 5)
         return 2;
     const auto get_display = reinterpret_cast<PFNEGLGETPLATFORMDISPLAYEXTPROC>(

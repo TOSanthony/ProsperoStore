@@ -66,6 +66,11 @@ developer; press R3 to cycle name, newest release, and recently updated
 sorting. Clear the search text to show the full section again. Circle goes
 back or closes the store.
 
+A USB keyboard works too: arrows move, Enter or Space selects, Escape or
+Backspace goes back, Tab and Shift+Tab (or Page Down and Page Up) switch
+sections, / or F3 searches, Delete or F2 opens Downloads (and uninstalls when
+held on an app's page), F10 or the Menu key opens Settings, F5 sorts.
+
 When a newer ProsperoStore is listed, its own page (Settings > ProsperoStore)
 offers the update. It downloads and unpacks like any app, then the store
 closes; a small helper started through the payload loader puts the new files
