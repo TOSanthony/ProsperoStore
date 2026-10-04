@@ -14,6 +14,7 @@
 #include "diag/fsbench.hpp"
 #include "system/worker_launch.hpp"
 #endif
+#include "system/title_registry.hpp"
 #include "platform/ps5/audio_out.hpp"
 #include "platform/ps5/display_egl.hpp"
 #include "platform/ps5/pad.hpp"
@@ -91,6 +92,9 @@ int main()
     // sandbox (the loader answers 0x63), so it is loaded while still inside.
     const int keyboard_dialog = sceCommonDialogInitialize();
     const int keyboard_module = sceSysmoduleLoadModule(0x0096);
+    // The console's app-install service: the home screen's list of titles.
+    const int registry = store::system::prepare_title_registry();
+    sys::log("[STORE] title registry rc=0x%08x", static_cast<unsigned>(registry));
     sys::log("[STORE] keyboard preload dialog=0x%08x module=0x%08x",
              static_cast<unsigned>(keyboard_dialog), static_cast<unsigned>(keyboard_module));
 #ifdef STORE_SANDBOX_CONTROL

@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "app/ambient.hpp"
+#include "system/title_registry.hpp"
 #include "app/service.hpp"
 #include "core/save_file.hpp"
 #include "core/qr.hpp"
@@ -472,6 +473,15 @@ void Service::run_installer()
         hui::sys::log("[STORE] job id=%s operation=%s ok=%d version=%s error=%s %s",
                       job.entry.id.c_str(), result.operation.c_str(), result.ok,
                       result.version.c_str(), result.error.c_str(), result.note.c_str());
+        // An uninstalled app leaves the home screen too. Its own files under
+        // /data are not the console's to remove and stay where they are.
+        int unregistered = 1;
+        if (result.ok && result.operation == "uninstall")
+        {
+            unregistered = system::unregister_title(job.entry.id);
+            hui::sys::log("[STORE] unregister id=%s rc=0x%08x", job.entry.id.c_str(),
+                          static_cast<unsigned>(unregistered));
+        }
         Update done;
         done.kind = Update::Kind::job;
         done.entry.id = job.entry.id;
@@ -487,7 +497,10 @@ void Service::run_installer()
             done.detail =
                 result.restart ? "Close ProsperoStore and open it again to finish. If the "
                                  "old version opens, restart the console first."
-                : result.operation == "uninstall" ? "Its saved data was left in place."
+                : result.operation == "uninstall"
+                    ? (unregistered == 0 ? "It is off the home screen. Its saved data stays."
+                                         : "Its saved data stays. Its home-screen tile goes "
+                                           "after a restart.")
                 : result.operation == "adopt" ? "ProsperoStore will offer its updates from now on."
                 : result.operation == "update"
                     ? "The new version is in place. Give the console a few minutes "

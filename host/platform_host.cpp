@@ -50,3 +50,17 @@ void quit()
 }
 
 } // namespace hui::sys
+
+#include "system/title_registry.hpp"
+namespace store::system
+{
+// The PC has no home screen: nothing to prepare, and every request is refused.
+int prepare_title_registry()
+{
+    return 0;
+}
+int unregister_title(const std::string &)
+{
+    return -1;
+}
+} // namespace store::system
