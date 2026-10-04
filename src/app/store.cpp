@@ -735,7 +735,11 @@ Rect Screen::focus_target() const
         tab.y += scroll_.value;
         return tab;
     }
-    return card_rect(focus_).inset(-9.0f);
+    // Around the tile as it is drawn, grown by kLift, so the frame shows on every side.
+    const Rect card = card_rect(focus_);
+    const float grow_x = card.w * kLift * 0.5f, grow_y = card.h * kLift * 0.5f;
+    return {card.x - grow_x - 7.0f, card.y - grow_y - 7.0f, card.w + 2.0f * grow_x + 14.0f,
+            card.h + 2.0f * grow_y + 14.0f};
 }
 float Screen::focus_radius() const
 {
@@ -743,7 +747,7 @@ float Screen::focus_radius() const
         return kStageButton.h * 0.5f + 7.0f;
     if (zone_ == Zone::chips || visible_.empty())
         return kTabH * 0.5f + 4.0f;
-    return kTileRadius + 9.0f;
+    return kTileRadius * (1.0f + kLift) + 7.0f;
 }
 // Discover moves a shelf at a time; the grid keeps the row above in view.
 float Screen::scroll_target() const
@@ -1703,6 +1707,26 @@ void Screen::draw_grid(const ui::Fonts &fonts)
     const Rect window{0, window_top(), kWidth, kViewBottom - window_top()};
     const int count = static_cast<int>(visible_.size());
     const int focused = zone_ == Zone::grid && count > 0 ? focus_ : -1;
+    // The focus highlight: one object that glides between the tabs, the
+    // stage's button and the tiles. Under a tile it is the shadow and the
+    // light in that app's own colour. It is drawn before the tiles, so on its
+    // way to the next one it passes under the tiles in between.
+    Rect ring = ring_.value();
+    const float shake = ui::shake(nudge_.value, time_);
+    ring.x += shake * nudge_x_;
+    ring.y += shake * nudge_y_ - scroll_.value;
+    const float radius = ring_radius_.value;
+    const float plate = plate_.value;
+    const Color light =
+        focused >= 0 ? apps_[visible_[static_cast<std::size_t>(focused)]].accent : kAccent;
+    if (plate > 0.01f)
+    {
+        list.shadow({ring.x, ring.y + 18.0f, ring.w, ring.h}, radius, 42,
+                    kBlack.with_alpha(0.6f * plate));
+        list.glow(ring, radius, 34,
+                  gfx::mix(light, kAccent, 0.35f).with_alpha((0.3f + 0.12f * breath()) * plate));
+    }
+    list.bordered_rect(ring, radius, kClear, 3.0f, kInk.with_alpha(0.95f));
     list.push_clip({0, window.y - 30.0f, kWidth, window.h + 30.0f});
     if (discover())
     {
@@ -1777,25 +1801,6 @@ void Screen::draw_grid(const ui::Fonts &fonts)
     }
     list.pop_clip();
 
-    // The focus highlight: one object that glides between the tabs, the
-    // stage's button and the tiles. Under a tile it is the shadow and the
-    // light in that app's own colour.
-    Rect ring = ring_.value();
-    const float shake = ui::shake(nudge_.value, time_);
-    ring.x += shake * nudge_x_;
-    ring.y += shake * nudge_y_ - scroll_.value;
-    const float radius = ring_radius_.value;
-    const float plate = plate_.value;
-    const Color light =
-        focused >= 0 ? apps_[visible_[static_cast<std::size_t>(focused)]].accent : kAccent;
-    if (plate > 0.01f)
-    {
-        list.shadow({ring.x, ring.y + 18.0f, ring.w, ring.h}, radius, 42,
-                    kBlack.with_alpha(0.6f * plate));
-        list.glow(ring, radius, 34,
-                  gfx::mix(light, kAccent, 0.35f).with_alpha((0.3f + 0.12f * breath()) * plate));
-    }
-    list.bordered_rect(ring, radius, kClear, 3.0f, kInk.with_alpha(0.95f));
     if (focused >= 0)
     {
         list.push_clip({0, window.y - 30.0f, kWidth, window.h + 30.0f});
