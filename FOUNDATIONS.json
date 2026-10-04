@@ -10,14 +10,12 @@
           "examples/sandbox-elevation/protocol.hpp",
           "examples/sandbox-elevation/src/elevation.cpp",
           "examples/sandbox-elevation/src/main.cpp",
-          "tests/test_elevation.cpp",
-          "tools/build-lapy-helper.py"
+          "tests/test_elevation.cpp"
         ]
       },
       {
         "commit": "2966cac7cbbf394444a567cc794f372c23583c1c",
         "files": [
-          "docs/SELF_UPDATE.md",
           "examples/self-update/self_update.h",
           "examples/self-update/self_update.c",
           "examples/self-update/self_update_protocol.h",
@@ -26,14 +24,22 @@
           "examples/self-update-helper/Makefile",
           "examples/self-update-helper/main.cpp",
           "examples/self-update-helper/updater.hpp",
-          "examples/self-update-helper/updater.cpp",
           "examples/self-update-helper/archive.hpp",
           "examples/self-update-helper/archive.cpp",
           "examples/self-update-helper/files.hpp",
           "examples/self-update-helper/files.cpp",
           "examples/update-check/update_check.h",
-          "examples/update-check/update_check.c",
-          "tests/test_self_update.cpp"
+          "examples/update-check/update_check.c"
+        ]
+      },
+      {
+        "commit": "f98de734b68b0b980d38ff03a330066afd6ae16d",
+        "files": [
+          "docs/SELF_UPDATE.md",
+          "docs/SANDBOX_ELEVATION.md",
+          "examples/self-update-helper/updater.cpp",
+          "tests/test_self_update.cpp",
+          "tools/build-lapy-helper.py"
         ]
       }
     ],
@@ -55,7 +61,8 @@
       "docs/PRESENTATION_ASSETS.md": "6cf911454192793db587633a66c683bd4a3a42467d5b9986e33e668bb4e4ab9c",
       "docs/RECIPES.md": "366f114c89b619e1ef20255d0b084b1e6828734b35a41547487d77775a25ddfc",
       "docs/RUNTIME_SHIM.md": "d973388f70c57d2a71fc8a8bee0da97c40faffc55e778660d07363facffeaacc",
-      "docs/SELF_UPDATE.md": "fbf67b17b78c225da7d10752e23784d374ad50c145403f044672122b30e3f700",
+      "docs/SANDBOX_ELEVATION.md": "44e73731a08bbf619da59d5e3012ea0cf2675f4f5b32ccc16ad86ae2067b1738",
+      "docs/SELF_UPDATE.md": "11473211077d7c7317e0e9dcff88bd1e13d28ae2664a419a582957d919a700fa",
       "docs/TESTING.md": "6e27802a902fe4368d1b857867dc5787a71f052db1b4c3ea55425d9dbcbbbba9",
       "docs/TROUBLESHOOTING.md": "c118ce29521edf2fbfc3d314fc142b21e4b8e295c550bd8ce96d1f4c05cd7594",
       "docs/UPDATE_CHECK.md": "188fa76251e4aaab62783895a714f1bad65ab6d578fbcd206b76485b1ad5ce45",
@@ -79,7 +86,7 @@
       "examples/self-update-helper/files.cpp": "bf80ca4fd886a13663fd6500680e3ef4cfdee1aa1780b5a493c7a47268580601",
       "examples/self-update-helper/files.hpp": "af3fef63dda59c64ab01c4e3f787fe3a602dd6c5c85f4f1cfa9ed95fb36aa577",
       "examples/self-update-helper/main.cpp": "559674b14ba92cafb097f94b164de315a76ccedad17ac41e8ade209ff43a9d26",
-      "examples/self-update-helper/updater.cpp": "c4a98221960f2c8ceb130e08b428364e5e62deea7cd73d4528604a83e32a43a5",
+      "examples/self-update-helper/updater.cpp": "5baf4dd6d7a6237157278d3f324a17ddc727d75c477936242bc9eba4f7b277b8",
       "examples/self-update-helper/updater.hpp": "47700ddb76d00a0d5d923b373645be3e23518efb74e765c491563bd074caf0ed",
       "examples/self-update/self_update.c": "e0380a8cec20b3dce5d35019d33cf6ebe1de1a8c030aa537f5af32f283710e73",
       "examples/self-update/self_update.h": "13072c7a324454e820f0508db180b97bad32415a00a13c712b7623e1ab37aa9d",
@@ -113,7 +120,7 @@
       "tests/test_https_trust.cpp": "94edfc67641c2d6291510cf3b6e7a6f7074c54604bd31e344ea3d3692161b8f3",
       "tests/test_incremental_build.py": "1aa28211d769475f089905a1a7ce5501c723234f83730003c5e9e4808d853634",
       "tests/test_link_options.py": "6fe9114aff5d0b2d5d81a30dcacc39202fe65360a9ea68f7489a3faefb117932",
-      "tests/test_self_update.cpp": "ab45caf6162c6f742154e680b309bde3bd843bf1057a19563ba30aa61b3caf7c",
+      "tests/test_self_update.cpp": "79faa969ea0704d468fd106a8ad7b395d41615343a854acd3efa0a0166fec6e2",
       "tests/test_tools.py": "ff74c7e47ec4e11c439bcb9ec008aaa161f84370f5b952de4fd907773792bc73",
       "tests/test_update_check.cpp": "cd89131d9be39948b9c3b4ba891f0bcf27d7976588ca72c6acf17a75c845bef0",
       "tooling/README.md": "3237d6f1ba68f8ee736aa83331ac4d36e88ab6f81668e29ccd68e36516f67a06",
@@ -134,7 +141,7 @@
       "tooling/native/self_container.hpp": "c06a754fb6897b816154a598cdc7413dcbb2260baed54e00d8e854bbed9b7100",
       "tooling/prospero-clang18": "15dd5f73472f5a1cfed9e974f550bddf1cec5f2136ec5ffe062a764b1c45b48a",
       "tools/build-host-tools.sh": "c3ea9578eb9e86655ecf81d4b4c2847a2a58630aa6c935289156271295cd3912",
-      "tools/build-lapy-helper.py": "afa97e992fdc3210bcba443ca954e3b5ac15ea3b0acda8dc0c50cba1d4078614",
+      "tools/build-lapy-helper.py": "0a7de695ededb9d6fb69ed4c628bb12743ac06bde55ade6dbb051b443012c19a",
       "tools/build-tests.sh": "f00a3a1b0a0bd3a38264c051a0c70485c6c7c58d8e61e9d6582d72252fa5c7f8",
       "tools/check-headers.ps1": "b75d2c4855a6ed59beb520a7bedf0838bb81a34cf1a10828a1071dfacbb0795a",
       "tools/deploy.sh": "68549e7d8d59ae1770b8908569f3b607e03ac134ca4011211923a94a041bde1c",
