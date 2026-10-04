@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #ifdef STORE_FILE_WORKER
 #include "system/worker_launch.hpp"
+#include "system/app_folder.hpp"
 #include <cstdint>
 #include <cstdio>
 #include <fcntl.h>
@@ -100,12 +101,10 @@ bool launch_worker(install::Channel &channel)
 
 bool launch_program(const char *file, install::Channel &channel)
 {
-    // Once the store has left its sandbox, /app0 is no longer its own folder:
-    // the same folder is then reached through the sandbox's mount point.
+    // Once the store has left its sandbox, /app0 may no longer be its own folder:
+    // app_folder() finds it wherever it is mounted.
     int program = -1;
-    for (const char *folder : {"/app0/", "/mnt/sandbox/PPSA99000_000/app0/"})
-        if ((program = sceKernelOpen((std::string(folder) + file).c_str(), O_RDONLY, 0)) >= 0)
-            break;
+    program = sceKernelOpen((app_folder() + "/" + file).c_str(), O_RDONLY, 0);
     if (program < 0)
     {
         std::printf("[STORE] worker: the program is missing (0x%08x)\n",

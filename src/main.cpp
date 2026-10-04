@@ -16,6 +16,7 @@
 #include "system/worker_launch.hpp"
 #endif
 #include "system/title_registry.hpp"
+#include "system/app_folder.hpp"
 #include "platform/ps5/audio_out.hpp"
 #include "platform/ps5/display_egl.hpp"
 #include "platform/ps5/pad.hpp"
@@ -113,8 +114,9 @@ int main()
 #endif
     constexpr const char *storage_root = "/data/prosperostore";
     const bool elevated = elevation_status == elevation::Status::ok;
-    const std::string app_root =
-        elevation_status == elevation::Status::ok ? "/mnt/sandbox/PPSA99000_000/app0" : "/app0";
+    // Wherever the store is installed (system/app_folder.hpp), now that the root may have changed.
+    const std::string app_root = store::system::app_folder();
+    sys::log("[STORE] app folder=%s", app_root.c_str());
     request_path = std::string(storage_root) + "/dev/request.txt";
     handled_path = std::string(storage_root) + "/handled.txt";
     if (elevated && !store::diag::start(storage_root))
