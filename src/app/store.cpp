@@ -1347,6 +1347,9 @@ void Screen::draw_top_bar(const ui::Fonts &fonts)
     list.rounded_rect({under.x + 18.0f, kTopY + 21.0f, under.w - 36.0f, 3.0f}, 1.5f, kAccent);
     const Rect &last = chips_[kSections - 1];
     ui::draw_button(list, fonts, glyphs, ui::Button::r1, last.x + last.w + 8.0f, kTopY, 26);
+    // The right end only has the room R1 leaves: its words are fitted into it, never over it.
+    const float room =
+        kRight - (last.x + last.w + 8.0f + ui::button_width(ui::Button::r1, 26) + 28.0f);
 
     // The right end: what the installer is doing, or the catalog's state.
     float progress = -1.0f;
@@ -1356,6 +1359,7 @@ void Screen::draw_top_bar(const ui::Fonts &fonts)
         std::string line = progress >= 0.0f
                                ? std::to_string(static_cast<int>(progress * 100.0f)) + "%"
                                : std::string(phase);
+        line = fonts.semibold.font->fit(line, 20, std::max(0.0f, room - 40.0f));
         const float width = ui::text(list, fonts.semibold, line, kRight, centred(kTopY, 20), 20,
                                      kInk, gfx::Align::right);
         const float cx = kRight - width - 24.0f;
@@ -1366,9 +1370,9 @@ void Screen::draw_top_bar(const ui::Fonts &fonts)
             list.arc(cx, kTopY, 11.0f, 3.0f, time_ * 4.0f, 1.9f, kAccent);
         (void)busy;
     }
-    else
-        ui::text(list, fonts.regular, fonts.regular.font->fit(status_, 20, 280.0f), kRight,
-                 centred(kTopY, 20), 20, kInk.with_alpha(0.55f), gfx::Align::right);
+    else if (room > 60.0f)
+        ui::text(list, fonts.regular, fonts.regular.font->fit(status_, 20, std::min(280.0f, room)),
+                 kRight, centred(kTopY, 20), 20, kInk.with_alpha(0.55f), gfx::Align::right);
 }
 
 // Discover's stage: the app in focus (or the featured one), big, over its own
