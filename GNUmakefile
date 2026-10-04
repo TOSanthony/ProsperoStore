@@ -9,6 +9,7 @@ APP_STATIC_ARCHIVES := .deps/ps5-opengl/libps5opengl-group.a
 APP_IMPORT_STUBS := .deps/ps5-opengl/current/lib/libSceAgc.so .deps/ps5-opengl/current/lib/libSceAgcDriver.so build/system-keyboard/libSceCommonDialog.so
 APP_WRAP_SYMBOLS := malloc calloc realloc free posix_memalign malloc_usable_size sceSystemServiceHideSplashScreen
 APP_HEAP_SIZE := 0x10000000
+APP_LAPY_HELPER := 1
 STORE_WORKER := build/store-worker/store-worker.elf
 APP_ROOT_FILES := $(STORE_WORKER)
 DEVELOPMENT ?= 0

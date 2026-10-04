@@ -19,6 +19,7 @@ APP_PARAM ?=
 APP_SCE_SYS ?=
 APP_ASSETS ?= assets
 APP_ROOT_FILES ?=
+APP_LAPY_HELPER ?= 0
 PACBREW_PACKAGES ?=
 PACBREW_INCLUDE_PATHS ?=
 PACBREW_STATIC_ARCHIVES ?=
@@ -47,6 +48,7 @@ export HOST_CXX HOST_TEST_CXXFLAGS HOST_TEST_LDFLAGS
 export APP_DEFINITIONS APP_INCLUDE_PATHS APP_STATIC_ARCHIVES APP_RUNTIME_MODULES
 export APP_IMPORT_STUBS APP_WRAP_SYMBOLS APP_HEAP_SIZE
 export APP_SOURCE_DIR APP_PARAM APP_SCE_SYS APP_ASSETS APP_ROOT_FILES
+export APP_LAPY_HELPER
 export PACBREW_PACKAGES PACBREW_INCLUDE_PATHS PACBREW_STATIC_ARCHIVES
 export PS5_HOST FTP_PORT DEPLOY_FORMAT PS5_FTP_USER PS5_FTP_PASSWORD DEPLOY_DRY_RUN
 export TITLE_ID APP_NAME APP_CATEGORY CONTENT_SUFFIX
@@ -97,7 +99,7 @@ test-elevation:
 	@$(HOST_CXX) $(HOST_TEST_CXXFLAGS) -idirafter .deps/native/ps5-payload-sdk/target/include \
 		tests/test_elevation.cpp $(HOST_TEST_LDFLAGS) -o build/tests/test_elevation
 	@build/tests/test_elevation
-	@printf '%s\n' 'Lapy cooperative request, data-ready polling, and proof checks passed.'
+	@printf '%s\n' 'Resident/one-shot Lapy client, exchange, and proof checks passed.'
 
 test-update-check:
 	@mkdir -p build/tests
@@ -160,17 +162,17 @@ packages: $(RUNTIME)
 	@bash tools/build.sh All
 
 sandbox-elevation-ffpfsc: $(RUNTIME)
-	@printf '%s\n' '==> [sandbox-elevation] Building the official-Lapy client proof image'
+	@printf '%s\n' '==> [sandbox-elevation] Building the embedded upstream-Lapy proof image'
 	@APP_SOURCE_DIR=examples/sandbox-elevation/src \
 		APP_PARAM=examples/sandbox-elevation/sce_sys/param.json \
-		APP_SCE_SYS=sce_sys APP_ASSETS= \
+		APP_SCE_SYS=sce_sys APP_ASSETS= APP_LAPY_HELPER=1 \
 		bash tools/build.sh Ffpfsc
 
 update-check-example: $(RUNTIME)
 	@printf '%s\n' '==> [update-check] Building the catalog update-check example title'
 	@APP_SOURCE_DIR=examples/update-check \
 		APP_PARAM=examples/update-check/sce_sys/param.json \
-		APP_SCE_SYS=sce_sys APP_ASSETS=examples/update-check/assets \
+		APP_SCE_SYS=sce_sys APP_ASSETS=examples/update-check/assets APP_LAPY_HELPER=0 \
 		bash tools/build.sh Folder
 deploy:
 	@printf '%s\n' '==> [deploy] Building and publishing the selected app output over FTP'
@@ -229,12 +231,12 @@ help:
 	  'make ffpkg           Build the folder and UFS2 .ffpkg image' \
 	  'make ffpfsc          Build the folder and compressed .ffpfsc image' \
 	  'make packages        Build folder, .ffpkg, and .ffpfsc outputs' \
-	  'make sandbox-elevation-ffpfsc  Build the official-Lapy client proof image' \
+	  'make sandbox-elevation-ffpfsc  Build the embedded upstream-Lapy proof image' \
 	  'make update-check-example  Build the catalog update-check example title' \
 	  'make test-update-check     Run the update-check host tests' \
 	  'make deploy PS5_HOST=<address>  Build and FTP-deploy the app folder' \
 	  'make undeploy PS5_HOST=<address>  Remove this title from /data/homebrew' \
-	  'Build variables:     APP_DEFINITIONS, APP_INCLUDE_PATHS, APP_STATIC_ARCHIVES, APP_RUNTIME_MODULES' \
+	  'Build variables:     APP_DEFINITIONS, APP_INCLUDE_PATHS, APP_STATIC_ARCHIVES, APP_RUNTIME_MODULES, APP_LAPY_HELPER' \
 	  'PacBrew variables:   PACBREW_PACKAGES, PACBREW_INCLUDE_PATHS, PACBREW_STATIC_ARCHIVES' \
 	  'Deploy variables:    FTP_PORT=2121, DEPLOY_FORMAT=folder|ffpfsc|ffpkg, DEPLOY_DRY_RUN=0|1' \
 	  'Local defaults:      Copy .env.example to the ignored .env file' \

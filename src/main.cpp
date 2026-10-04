@@ -116,8 +116,8 @@ int main()
         hui::save::read_file(std::string(storage_root) + "/dev/run.txt", &run_token, 64);
     sys::log("[STORE] run start token=%s", run_token.c_str());
 #endif
-    sys::log("[STORE] elevation status=%u at_ms=%lld", static_cast<unsigned>(elevation_status),
-             since_start());
+    sys::log("[STORE] elevation status=%u path=%s at_ms=%lld",
+             static_cast<unsigned>(elevation_status), elevation::path(), since_start());
     const int transport = store::net::start_transport(elevation_status == elevation::Status::ok);
     sys::log("[STORE] transport startup rc=0x%08x", static_cast<unsigned>(transport));
     ps5::Display display;

@@ -12,11 +12,11 @@ the open questions.
 
 ## Install
 
-1. The console needs ShadowMountPlus, a payload loader listening on port 9021
-   (the store starts its file worker through it), and the upstream
-   [Lapy owned-root daemon](https://github.com/mpereiraesaa/PS5-Lapy-JB-Daemon)
-   running before the store starts: the store asks Lapy for access to `/data`
-   and installs nothing without it. See
+1. The console needs ShadowMountPlus and a payload loader listening on port
+   9021. ProsperoStore embeds upstream Lapy's exact-title one-shot helper and
+   starts it through that loader when no resident Lapy service answers. The
+   store installs nothing unless Lapy grants and the store verifies access to
+   `/data`. See
    [docs/SANDBOX_ELEVATION.md](docs/SANDBOX_ELEVATION.md) for the firmware Lapy
    has been checked on.
 2. Unpack `PPSA99000.zip` and copy the `PPSA99000` folder into a location
@@ -47,8 +47,11 @@ host validation and `make host-snapshots` for the UI preview. Release builds
 omit development requests by default. `FOUNDATIONS.json` records immutable
 foundation sources; `third_party/STORE_SOURCES.json` records vendored libraries.
 
-All persistent store state is under `/data/prosperostore`, using the boilerplate's
-elevation helper. This includes settings, cache, receipts, logs, crash reports
+All persistent store state is under `/data/prosperostore`. Normal builds fetch
+Lapy at a pinned commit, invoke its unmodified exact-title `owned-helper`
+target, verify its manifest and embed the resulting ELF and MIT license. At
+startup the store tries a resident Lapy service first, then uses that embedded
+one-shot helper. This includes settings, cache, receipts, logs, crash reports
 and development-control receipts. If elevation is unavailable, browsing uses
 memory only and installation remains disabled. Elevated HTTPS uses PacBrew
 curl/OpenSSL with certificate checks against the console's CA list.
