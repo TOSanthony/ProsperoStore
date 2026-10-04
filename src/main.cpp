@@ -522,6 +522,18 @@ int main()
                     entry.size = static_cast<std::uint64_t>(archive.st_size);
                 entry.artifact = "https://github.com/blackbearreloaded/ProsperoStore/releases/"
                                  "download/dev/PPSA99000.zip";
+                // Or a real release on GitHub: its address and size in dev/self.url and
+                // dev/self.size, downloaded through the store's transport like any release.
+                std::string url, size;
+                if (save::read_file(std::string(storage_root) + "/dev/self.url", &url, 1024) &&
+                    url.starts_with("https://github.com/"))
+                {
+                    while (!url.empty() && (url.back() == '\n' || url.back() == '\r'))
+                        url.pop_back();
+                    entry.artifact = url;
+                    if (save::read_file(std::string(storage_root) + "/dev/self.size", &size, 32))
+                        entry.size = std::strtoull(size.c_str(), nullptr, 10);
+                }
                 sys::log("[STORE] remote selfupdate accepted=%d",
                          service.request_install(entry, "/data/homebrew"));
             }
