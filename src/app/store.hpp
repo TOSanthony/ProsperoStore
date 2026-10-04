@@ -196,6 +196,11 @@ class Screen
     {
         return intro_on_ && intro_leave_ < 1.0f;
     }
+    // The intro has begun to hand over (or there is none): the music may come in.
+    bool intro_finishing() const
+    {
+        return !intro_on_ || intro_leaving_;
+    }
     void draw(hui::gfx::Renderer &renderer, const hui::ui::Fonts &fonts);
     bool wants_quit() const
     {

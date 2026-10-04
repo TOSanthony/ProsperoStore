@@ -179,7 +179,7 @@ bool MusicPlayer::next_song()
             error = track->open(std::move(data));
         if (error.empty())
         {
-            track->set_looping(false);
+            track->set_looping(playlist_.size() == 1); // one song: a seamless loop
             track_ = std::move(track);
             current_ = name;
             failures_ = 0;

@@ -5,6 +5,7 @@
 #include "app/store.hpp"
 #include "app/service.hpp"
 #include "audio/cues.hpp"
+#include "audio/music.hpp"
 #include "core/frame_stats.hpp"
 #include "core/image.hpp"
 #include "core/version.hpp"
@@ -143,6 +144,18 @@ int main()
     const auto bank = sounds.load(app_root + "/assets/audio/sfx");
     sys::log("[STORE] sound files=%d rejected=%d at_ms=%lld", bank.files, bank.rejected,
              since_start());
+    // The store's song, looping quietly under everything (as in ProsperoPuzzles).
+    // The stream attaches before the audio thread starts; the bus stays silent
+    // until the intro hands over, then fades in.
+    audio::MusicPlayer music;
+    const int songs = music.init(mixer, app_root + "/assets/audio/music",
+                                 static_cast<std::uint64_t>(sys::monotonic_us()));
+    mixer.set_bus_gain(audio::Bus::music, 0.0f);
+    sys::log("[STORE] music songs=%d", songs);
+    // About 12 dB under the interface sounds: the song is mastered near -15 dBFS,
+    // the cues sit near -30 dBFS, and the player already lowers its stream 8 dB.
+    constexpr float kMusicLevel = 0.11f;
+    float music_level = 0.0f; // 0..1 of kMusicLevel, eased in and out
     ps5::AudioOut audio;
     audio.start(mixer);
     pthread_t request_thread{};
@@ -649,7 +662,22 @@ int main()
             requested_icons = std::move(missing);
         if (screen.settings().sounds)
             for (const auto &cue : feedback.cues)
+            {
                 sounds.play(mixer, audio::SoundSet::glass, cue);
+                if (cue.cue == audio::Cue::complete)
+                    music.duck();
+            }
+        // In as the intro hands over, over two seconds; quiet when sounds are off.
+        {
+            const float target = screen.intro_finishing() && screen.settings().sounds ? 1.0f : 0.0f;
+            const float step = std::min(dt, 0.05f) / 2.0f;
+            const float before = music_level;
+            music_level = target > music_level ? std::min(target, music_level + step)
+                                               : std::max(target, music_level - step * 4.0f);
+            if (music_level != before)
+                mixer.set_bus_gain(audio::Bus::music, kMusicLevel * music_level * music_level);
+        }
+        music.pump(std::min(dt, 0.05f));
         if (feedback.rumble_strength > 0 && screen.settings().vibration)
             pad.rumble(feedback.rumble_strength, feedback.rumble_seconds);
         pad.tick(dt);
@@ -717,6 +745,14 @@ int main()
         }
     }
     quit.store(true);
+    // The song fades out over half a second instead of stopping mid-note.
+    for (int step = 0; step < 30 && music_level > 0.0f; ++step)
+    {
+        music_level = std::max(0.0f, music_level - 1.0f / 30.0f);
+        mixer.set_bus_gain(audio::Bus::music, kMusicLevel * music_level * music_level);
+        music.pump(1.0f / 60.0f);
+        sys::sleep_us(16000);
+    }
     keyboard.close();
     service.stop();
     store::net::stop_transport();
