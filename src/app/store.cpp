@@ -2809,7 +2809,7 @@ void Screen::draw(gfx::Renderer &renderer, const ui::Fonts &fonts)
     {
         // The release notes, over everything but the question they came from.
         overlay_.rounded_rect({0.0f, 0.0f, 1920.0f, 1080.0f}, 0,
-                              gfx::Color{0.0f, 0.0f, 0.0f, 0.86f});
+                              gfx::Color{0.0f, 0.0f, 0.0f, 0.95f});
         notes_.draw(canvas);
         const ui::Hint reading[] = {{ui::Button::cross, "Update now"},
                                     {ui::Button::dpad, "Scroll"},
