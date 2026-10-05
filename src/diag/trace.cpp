@@ -176,6 +176,48 @@ void trace_console(const char *when)
               static_cast<unsigned>(info.st_uid));
     else
         trace("[%s] journal.json: lstat errno %d (%s)", when, errno, std::strerror(errno));
+    trace("[%s] process uid %u gid %u", when, static_cast<unsigned>(getuid()),
+          static_cast<unsigned>(getgid()));
+    for (const char *folder : {"/data", "/data/prosperostore", "/data/homebrew"})
+    {
+        if (stat(folder, &info) == 0)
+            trace("[%s] %s: mode %o, uid %u, gid %u", when, folder,
+                  static_cast<unsigned>(info.st_mode), static_cast<unsigned>(info.st_uid),
+                  static_cast<unsigned>(info.st_gid));
+        else
+            trace("[%s] %s: stat errno %d (%s)", when, folder, errno, std::strerror(errno));
+        if (DIR *listed = opendir(folder))
+        {
+            int count = 0;
+            while (readdir(listed))
+                ++count;
+            closedir(listed);
+            trace("[%s] %s: listed, %d entries", when, folder, count);
+        }
+        else
+            trace("[%s] %s: opendir errno %d (%s)", when, folder, errno, std::strerror(errno));
+    }
+    // A fresh folder: can the store use what it just made?
+    {
+        const char *fresh = "/data/.prosperostore-probe-dir";
+        const char *inner = "/data/.prosperostore-probe-dir/file";
+        const int made = mkdir(fresh, 0777);
+        const int made_errno = made == 0 ? 0 : errno;
+        const int fd = open(inner, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+        const int open_errno = fd >= 0 ? 0 : errno;
+        if (fd >= 0)
+            close(fd);
+        const int looked = lstat(inner, &info);
+        const int look_errno = looked == 0 ? 0 : errno;
+        DIR *listed = opendir(fresh);
+        const int list_errno = listed ? 0 : errno;
+        if (listed)
+            closedir(listed);
+        trace("[%s] fresh folder: mkdir %d/%d, create file %d, lstat file %d, opendir %d", when,
+              made, made_errno, open_errno, look_errno, list_errno);
+        unlink(inner);
+        rmdir(fresh);
+    }
     if (DIR *folder = opendir("/data/prosperostore"))
     {
         std::string names;
