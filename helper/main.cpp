@@ -21,6 +21,16 @@
 #include <unistd.h>
 #include <vector>
 
+#ifdef STORE_WORKER_CONSOLE
+#include <ps5/kernel.h>
+extern "C"
+{
+    int sceKernelLoadStartModule(const char *path, std::size_t argc, const void *argv,
+                                 unsigned flags, void *option, int *result);
+    int sceUserServiceInitialize(void *parameters);
+}
+#endif
+
 namespace
 {
 std::atomic<bool> cancelled{false};
@@ -136,6 +146,32 @@ void *report(void *)
 }
 } // namespace
 
+// Takes title off the home screen through the console's app-install service. A
+// payload that imports the library never starts on firmware 12.70, so it is loaded
+// by path and its two functions are found through the payload SDK. 0: done.
+int unregister(const std::string &title)
+{
+#ifdef STORE_WORKER_CONSOLE
+    (void)sceUserServiceInitialize(nullptr);
+    const int handle = sceKernelLoadStartModule("/system/common/lib/libSceAppInstUtil.sprx", 0,
+                                                nullptr, 0, nullptr, nullptr);
+    if (handle < 0)
+        return handle;
+    const auto initialize = reinterpret_cast<int (*)()>(
+        kernel_dynlib_dlsym(getpid(), static_cast<std::uint32_t>(handle), "sceAppInstUtilInitialize"));
+    const auto remove = reinterpret_cast<int (*)(const char *)>(kernel_dynlib_dlsym(
+        getpid(), static_cast<std::uint32_t>(handle), "sceAppInstUtilAppUnInstall"));
+    if (!initialize || !remove)
+        return -2;
+    if (const int ready = initialize(); ready < 0)
+        return ready;
+    return remove(title.c_str());
+#else
+    (void)title;
+    return -3; // a host build has no home screen
+#endif
+}
+
 int main()
 {
     using namespace store::install;
@@ -157,6 +193,21 @@ int main()
         const bool saved = save_download(first);
         say(saved ? "ok\n" : "fail The download could not be saved\n");
         return saved ? 0 : 1;
+    }
+    if (verb == "unregister")
+    {
+        if (!title_id_plain(first))
+        {
+            say("fail ffffffff\n");
+            return 1;
+        }
+        say("ready\n");
+        const int code = unregister(first);
+        char reply[32];
+        std::snprintf(reply, sizeof(reply), code == 0 ? "ok\n" : "fail %08x\n",
+                      static_cast<unsigned>(code));
+        say(reply);
+        return code == 0 ? 0 : 1;
     }
     if ((!extract && verb != "remove") || !worker_path(first) ||
         (extract && !worker_path(destination)))

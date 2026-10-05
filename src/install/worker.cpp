@@ -185,6 +185,38 @@ bool worker_store(const Connect &connect, const std::string &path, Writer &write
     return true;
 }
 
+bool title_id_plain(std::string_view title)
+{
+    if (title.size() != 9)
+        return false;
+    for (std::size_t i = 0; i < title.size(); ++i)
+        if (i < 4 ? (title[i] < 'A' || title[i] > 'Z') : (title[i] < '0' || title[i] > '9'))
+            return false;
+    return true;
+}
+
+int worker_unregister(const Connect &connect, const std::string &title, int &code)
+{
+    code = -1;
+    if (!title_id_plain(title))
+        return -1;
+    Session session;
+    std::string request(kWorkerMagic);
+    request += "\nunregister\n" + title + "\n";
+    if (!begin(connect, session, request))
+        return -1;
+    std::string last;
+    (void)follow(session, nullptr, nullptr, last);
+    if (last == "ok")
+    {
+        code = 0;
+        return 1;
+    }
+    if (last.rfind("fail ", 0) == 0)
+        code = static_cast<int>(std::strtoul(last.c_str() + 5, nullptr, 16));
+    return 0;
+}
+
 int worker_remove(const Connect &connect, const std::string &path)
 {
     if (!worker_path(path))

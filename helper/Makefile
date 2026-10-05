@@ -11,7 +11,8 @@ endif
 OUTPUT ?= ../build/store-worker/store-worker.elf
 WORK := $(dir $(OUTPUT))
 SOURCE := ../src
-CXXFLAGS := -std=c++20 -O2 -Wall -Wextra -Werror -fno-exceptions -fno-rtti -I$(SOURCE)
+CXXFLAGS := -std=c++20 -O2 -Wall -Wextra -Werror -fno-exceptions -fno-rtti -I$(SOURCE) \
+	-DSTORE_WORKER_CONSOLE
 CFLAGS := -std=c11 -O2 -w -I$(SOURCE)
 LDFLAGS := -Wl,--build-id=none
 
@@ -35,7 +36,7 @@ $(WORK)%.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 $(OUTPUT): $(OBJECTS)
-	$(CXX) $(LDFLAGS) -o $@ $^
+	$(CXX) $(LDFLAGS) -o $@ $^ -lSceUserService
 
 clean:
 	rm -rf -- $(WORK)

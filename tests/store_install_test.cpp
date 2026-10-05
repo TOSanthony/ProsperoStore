@@ -1001,6 +1001,14 @@ void check_worker(const fs::path &base, const std::string &program)
         assert(!fs::exists(f.work / "staging/big"));
         // Removing what isn't there is done, as it is for the store itself.
         assert(install::worker_remove(connect, (f.work / "staging/big").string()) == 1);
+        // Unregistering: a host worker has no home screen and answers with its code;
+        // a malformed title ID never reaches a worker.
+        int code = 0;
+        assert(install::worker_unregister(connect, "PPSA99109", code) == 0 && code == -3);
+        const unsigned before = host.started;
+        assert(install::worker_unregister(connect, "ppsa99109", code) == -1);
+        assert(install::worker_unregister(connect, "PPSA9910", code) == -1);
+        assert(host.started == before);
         fs::remove(f.work / "staging/big.zip");
         // Paths outside the work folders never reach a worker.
         host.started = 0;

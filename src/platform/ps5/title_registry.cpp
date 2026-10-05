@@ -2,6 +2,9 @@
 // Copyright (C) 2026 BlackBearReloaded
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "system/title_registry.hpp"
+#include "install/worker.hpp"
+#include "platform/ps5/system.hpp"
+#include "system/worker_launch.hpp"
 #include <cstddef>
 
 extern "C"
@@ -71,6 +74,16 @@ int unregister_title(const std::string &title_id)
         if (i < 4 ? (c < 'A' || c > 'Z') : (c < '0' || c > '9'))
             return -1;
     }
+#ifdef STORE_FILE_WORKER
+    // The file worker, a loader payload, may use the service on every firmware tried;
+    // the store itself may not on 12.70 (the library load answers 0x80020063).
+    int code = -1;
+    const int asked = install::worker_unregister(
+        [](install::Channel &channel) { return launch_worker(channel); }, title_id, code);
+    hui::sys::log("[STORE] unregister worker=%d code=0x%08x", asked, static_cast<unsigned>(code));
+    if (asked == 1)
+        return 0;
+#endif
     if (const int state = ready(); state != 0)
         return state;
     return uninstall_fn(title_id.c_str());

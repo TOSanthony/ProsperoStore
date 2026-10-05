@@ -19,6 +19,10 @@ namespace store::install
 // each a four-byte little-endian length and that many bytes, and a length of
 // zero to end; the worker answers "ok" once the file is durable. A connection
 // that ends before the zero length leaves no file behind.
+// "unregister" with a title ID takes that title off the home screen through the
+// console's app-install service, which a loader payload may use on every
+// firmware tried (an app may not on 12.70): the worker answers "ready", then
+// "ok" or "fail <code>" with the console's answer as eight hex digits.
 inline constexpr std::string_view kWorkerMagic = "PSW1";
 inline constexpr std::size_t kWorkerLine = 2048;
 inline constexpr std::size_t kWorkerPiece = 1u << 20;
@@ -42,6 +46,11 @@ int worker_extract(const Connect &connect, const std::string &archive, std::stri
                    const std::string &destination, const std::atomic<bool> &cancelled,
                    std::atomic<std::uint64_t> &written, std::string &error, ExtractTimes &times);
 int worker_remove(const Connect &connect, const std::string &path);
+// A title ID, written plainly: four capitals and five digits (PPSA99000).
+bool title_id_plain(std::string_view title);
+// 1: the console took the title off the home screen. 0: it refused (code holds
+// its answer). -1: no worker could be started, or the title ID is malformed.
+int worker_unregister(const Connect &connect, const std::string &title, int &code);
 
 // Where a download is written. finish makes it durable and closes it, and is
 // always called; a worker whose writer is dropped without it leaves no file.
