@@ -78,7 +78,7 @@
       "examples/sandbox-elevation/elevation.hpp": "5555d7c7dcaa89578c7b91d8698ef2fb218a9956a1c629abe9b418468289ebad",
       "examples/sandbox-elevation/protocol.hpp": "743e5572c8b1b7c5ae870653aaa240bf5b806328f5caea166569dd8dcc079093",
       "examples/sandbox-elevation/sce_sys/param.json": "e1e4a31eed8335e8bc9a89b0a67c2e2adb59f05e6811b0bf6855f3e719aaa1bd",
-      "examples/sandbox-elevation/src/elevation.cpp": "43093cc3868570e18daca75c25688524b25d873577492cd76fc6403bb5443605",
+      "examples/sandbox-elevation/src/elevation.cpp": "296cdddda96c8f85494437d3954fa9222305de344505f0189997c3d4f60b5141",
       "examples/sandbox-elevation/src/main.cpp": "c7eada2f0a04f3b1d3ddcf369fbd929cf7d43ed18444f0c30b58874e1bdc2720",
       "examples/self-update-helper/Makefile": "a14645b8cac484de80a7c01da36b3827379292b2b798cde2456a840ca487066d",
       "examples/self-update-helper/archive.cpp": "e7d8bec721934c51df061fad82f110993cd169aa82d24d12286aa5f558e3f821",
@@ -166,6 +166,9 @@
       "tools/setup-test-dependencies.sh": "b9b7c5e7b9690ef4ddc3ed14592865f61edd902a0c4e0e10fb61a515d8bf1528",
       "tools/test-pacbrew-curl.sh": "29c64e5a34d6a20d6ff5fab4a29b8059d399bd288e6c22778b4ab396d37f692e",
       "tools/validate-assets.sh": "d432d1479b959363c274db64015cd7b321e7f3ed699d9deb25fd97d473bb8d9e"
+    },
+    "local_changes": {
+      "examples/sandbox-elevation/src/elevation.cpp": "verify_data also requires listing /data: ShadowMountPlus 1.7 exposes /data to a sandboxed app without elevation (opendir/lstat refused), so Lapy must still run. Store-only until the boilerplate kit takes it."
     }
   },
   {

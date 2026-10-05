@@ -1022,19 +1022,8 @@ void Screen::update_home(const InputFrame &input, ui::Feedback &feedback)
             focus_ = shelves_.front().start + shelves_.front().pos;
         else if (zone_ == Zone::grid && !discover() && focus_ >= kColumns)
             focus_ %= kColumns;
-        else if (!activity_.id.empty() || !activity_.waiting.empty())
-        {
-            ask_ = Ask::quit;
-            dialog_.open({ui::StatusKind::warning,
-                          "Close ProsperoStore?",
-                          "An app is still being installed. Closing now cancels it; nothing "
-                          "half-installed is left behind.",
-                          {{"Keep installing"}, {"Close", ui::ButtonKind::primary, true}}},
-                         feedback);
-            return;
-        }
         else
-            quit_ = true;
+            return; // At the top Circle does nothing: the store is closed from the console.
         feedback.play(audio::Cue::back);
     }
 }
@@ -2640,7 +2629,6 @@ void Screen::draw(gfx::Renderer &renderer, const ui::Fonts &fonts)
     if (!all)
         home[homes++] = {ui::Button::square, "Downloads"};
     home[homes++] = {ui::Button::l1, "Sections", ui::Button::r1};
-    home[homes++] = {ui::Button::circle, "Close"};
     // The page's row names the one thing Cross does for this app, when it can.
     const Offer state = focused() ? offer(*focused()) : Offer{};
     ui::Hint detail[5];
