@@ -23,7 +23,7 @@
 </p>
 
 ProsperoStore is a homebrew app store that runs natively on the PS5. Title ID `PPSA99000`.
-The current version is **01.000.000**, the first release, a beta.
+The current version is **01.000.000**, the first release, an alpha.
 
 > [!WARNING]
 > **ProsperoStore includes an exact-title one-shot helper built from upstream
