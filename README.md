@@ -28,11 +28,10 @@ the open questions.
 
 - ZIP apps only; image files (ffpfsc) are listed but can't be installed.
 - The store installs, updates and removes apps; it does not start them.
-- After the store updates itself, the console needs a few minutes before it
-  starts the new version; until then the store asks to be opened again.
+- The store updates itself only when it was installed as a folder (not as an
+  image); afterwards it closes and is opened again by hand.
 - An update is only offered for apps whose catalog entry lists a content version.
 - The home-screen name of an app does not change after an update.
-- USB locations are offered but have not carried a real install yet.
 - English only.
 
 See [IMPLEMENTATION_NOTES.md](IMPLEMENTATION_NOTES.md) for completed work,
