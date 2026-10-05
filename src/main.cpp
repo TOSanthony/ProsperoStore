@@ -11,6 +11,9 @@
 #include "core/version.hpp"
 #include "core/save_file.hpp"
 #include "diag/diagnostics.hpp"
+#ifdef STORE_DEBUG_TRACE
+#include "diag/trace.hpp"
+#endif
 #ifdef STORE_DEVELOPMENT
 #include "diag/fsbench.hpp"
 #include "system/worker_launch.hpp"
@@ -107,6 +110,13 @@ int main()
     sys::log("[STORE] title registry rc=0x%08x", static_cast<unsigned>(registry));
     sys::log("[STORE] keyboard preload dialog=0x%08x module=0x%08x",
              static_cast<unsigned>(keyboard_dialog), static_cast<unsigned>(keyboard_module));
+#ifdef STORE_DEBUG_TRACE
+    store::diag::trace("ProsperoStore debug build, started");
+    store::diag::trace("keyboard library 0x%08x, usb keyboards 0x%08x, title registry 0x%08x",
+                       static_cast<unsigned>(keyboard_module),
+                       static_cast<unsigned>(keyboards_ready), static_cast<unsigned>(registry));
+    store::diag::trace_console("start");
+#endif
 #ifdef STORE_SANDBOX_CONTROL
     const auto elevation_status = elevation::Status::unavailable;
 #else
@@ -130,6 +140,15 @@ int main()
              static_cast<unsigned>(elevation_status), elevation::path(), since_start());
     const int transport = store::net::start_transport(elevation_status == elevation::Status::ok);
     sys::log("[STORE] transport startup rc=0x%08x", static_cast<unsigned>(transport));
+#ifdef STORE_DEBUG_TRACE
+    // Status: 0 ok, 1 invalid request, 3 unsupported, 5 unavailable, 6 prepare failed,
+    // 7 apply failed, 9 transport error (no answer from Lapy), 11 timeout.
+    store::diag::trace("elevation (Lapy): status %u via %s after %lld ms",
+                       static_cast<unsigned>(elevation_status), elevation::path(), since_start());
+    store::diag::trace_console("after elevation");
+    store::diag::trace("app folder: %s; network: %s (0x%08x)", app_root.c_str(),
+                       elevated ? "libcurl" : "sceHttp", static_cast<unsigned>(transport));
+#endif
     ps5::Display display;
     if (!display.open(3840, 2160))
     {
@@ -372,6 +391,11 @@ int main()
                     apps.back().available_version = entry.content_version;
                     apps.back().size = entry.size;
                 }
+#ifdef STORE_DEBUG_TRACE
+                store::diag::trace("catalog: %zu apps, %s, %s", apps.size(),
+                                   update.snapshot.online ? "online" : "offline",
+                                   update.message.c_str());
+#endif
                 screen.set_catalog(std::move(apps),
                                    elevated ? update.message
                                             : "Read only: install permission unavailable • " +
@@ -398,6 +422,10 @@ int main()
                     close_at = sys::monotonic_us() + 3500000;
                     sys::log("[STORE] self-update applied: closing");
                 }
+#ifdef STORE_DEBUG_TRACE
+                store::diag::trace("job %s: %s - %s", update.entry.id.c_str(),
+                                   update.message.c_str(), update.detail.c_str());
+#endif
                 screen.finish_job(update.ok, update.restart, std::move(update.message),
                                   std::move(update.detail));
             }
@@ -455,7 +483,12 @@ int main()
             else if (!update.entry.id.empty())
                 screen.set_detail_error(update.entry.id, update.message);
             else
+            {
+#ifdef STORE_DEBUG_TRACE
+                store::diag::trace("catalog failed: %s", update.message.c_str());
+#endif
                 screen.catalog_failed(update.message);
+            }
         }
         if (!screen.pending_detail.empty() && service.request_detail(screen.pending_detail))
             screen.pending_detail.clear();
@@ -719,6 +752,15 @@ int main()
                 sys::log("[STORE] keyboard closed state=%d", static_cast<int>(state));
             keyboard_active = state == ps5::Ime::State::open;
         }
+#ifdef STORE_DEBUG_TRACE
+        // About shows the trace as it grows.
+        if (static std::size_t shown = 0; store::diag::trace_lines().size() != shown)
+        {
+            auto lines = store::diag::trace_lines();
+            shown = lines.size();
+            screen.set_debug(std::move(lines), store::diag::trace_file());
+        }
+#endif
         screen.update(keyboard_owns_input ? InputFrame{} : frame, dt, feedback);
         // What is on screen first; then, when the whole catalog fits the
         // budget, the rest of it, sixteen at a time.

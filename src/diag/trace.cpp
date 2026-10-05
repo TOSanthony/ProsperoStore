@@ -1,0 +1,172 @@
+// ProsperoStore - The debug build's trace: what the store found at each step, for reports.
+// Copyright (C) 2026 BlackBearReloaded
+// SPDX-License-Identifier: GPL-3.0-or-later
+#include "diag/trace.hpp"
+#include "platform/ps5/system.hpp"
+#include <cerrno>
+#include <cstdarg>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
+#include <ctime>
+#include <fcntl.h>
+#include <mutex>
+#include <sys/stat.h>
+#include <unistd.h>
+
+extern "C"
+{
+    struct SwVersion
+    {
+        std::uint64_t size;
+        char text[0x1c];
+        std::uint32_t version;
+    };
+    int sceKernelGetSystemSwVersion(SwVersion *version);
+    int sceNetSocket(const char *name, int domain, int type, int protocol);
+    int sceNetConnect(int socket, const void *address, std::uint32_t length);
+    int sceNetSetsockopt(int socket, int level, int option, const void *value, std::uint32_t size);
+    int sceNetSocketClose(int socket);
+}
+
+namespace store::diag
+{
+namespace
+{
+std::mutex guard;
+std::vector<std::string> lines;
+std::string file;
+
+// The first place the trace can be written: /data once the store reaches it, else a
+// USB drive (which ShadowMountPlus 1.7 mounts into the sandbox), else nowhere.
+void open_file()
+{
+    const char *candidates[] = {"/data/prosperostore/debug-trace.txt",
+                                "/mnt/usb0/ProsperoStore-debug-trace.txt",
+                                "/mnt/usb1/ProsperoStore-debug-trace.txt",
+                                "/mnt/ext0/ProsperoStore-debug-trace.txt"};
+    for (const char *candidate : candidates)
+    {
+        if (!file.empty() && file == candidate)
+            return;
+        if (std::strncmp(candidate, "/data/", 6) == 0)
+            (void)mkdir("/data/prosperostore", 0777);
+        const int descriptor = open(candidate, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+        if (descriptor < 0)
+            continue;
+        // A better place than before: everything so far goes there too.
+        for (const auto &line : lines)
+        {
+            (void)write(descriptor, line.data(), line.size());
+            (void)write(descriptor, "\n", 1);
+        }
+        close(descriptor);
+        file = candidate;
+        return;
+    }
+}
+
+void append(const std::string &line)
+{
+    if (file.empty())
+        return;
+    const int descriptor = open(file.c_str(), O_WRONLY | O_APPEND);
+    if (descriptor < 0)
+        return;
+    (void)write(descriptor, line.data(), line.size());
+    (void)write(descriptor, "\n", 1);
+    close(descriptor);
+}
+
+std::string probe_write(const char *folder)
+{
+    const std::string path = std::string(folder) + "/.prosperostore-probe";
+    const int descriptor = open(path.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0666);
+    if (descriptor < 0)
+        return std::string("no (") + std::strerror(errno) + ")";
+    const bool wrote = write(descriptor, "probe", 5) == 5;
+    close(descriptor);
+    unlink(path.c_str());
+    return wrote ? "yes" : "opened but not written";
+}
+
+std::string probe_loader()
+{
+    struct Address
+    {
+        std::uint8_t length, family;
+        std::uint16_t port;
+        std::uint32_t address;
+        std::uint16_t virtual_port;
+        std::uint8_t zero[6];
+    };
+    const int socket = sceNetSocket("trace_loader", 2, 1, 6);
+    if (socket < 0)
+        return "no socket";
+    constexpr int connect_us = 2'000'000;
+    (void)sceNetSetsockopt(socket, 0xffff, 0x1109, &connect_us, sizeof(connect_us));
+    constexpr std::uint16_t port = 9021;
+    const Address address{sizeof(Address), 2, static_cast<std::uint16_t>((port << 8) | (port >> 8)),
+                          0x0100007f, 0, {0}};
+    const int result = sceNetConnect(socket, &address, sizeof(address));
+    (void)sceNetSocketClose(socket);
+    char text[48];
+    std::snprintf(text, sizeof(text), result < 0 ? "no answer (0x%08x)" : "answers",
+                  static_cast<unsigned>(result));
+    return text;
+}
+} // namespace
+
+void trace(const char *format, ...)
+{
+    char text[512];
+    va_list arguments;
+    va_start(arguments, format);
+    std::vsnprintf(text, sizeof(text), format, arguments);
+    va_end(arguments);
+    hui::sys::log("[STORE] trace %s", text);
+    std::lock_guard lock(guard);
+    lines.emplace_back(text);
+    // Until the file is in /data, look for a better place each time (a few lines a start).
+    if (file.rfind("/data/", 0) != 0)
+        open_file();
+    else
+        append(lines.back());
+}
+
+std::vector<std::string> trace_lines()
+{
+    std::lock_guard lock(guard);
+    return lines;
+}
+
+std::string trace_file()
+{
+    std::lock_guard lock(guard);
+    return file;
+}
+
+void trace_console(const char *when)
+{
+    if (std::strcmp(when, "start") == 0)
+    {
+        SwVersion version{sizeof(SwVersion), {}, 0};
+        const int read = sceKernelGetSystemSwVersion(&version);
+        trace("firmware: %s (0x%08x)", read == 0 ? version.text : "unknown",
+              static_cast<unsigned>(version.version));
+        const std::time_t now = std::time(nullptr);
+        char clock[32];
+        std::strftime(clock, sizeof(clock), "%Y-%m-%d %H:%M UTC", std::gmtime(&now));
+        trace("console clock: %s", clock);
+        trace("payload loader on port 9021: %s", probe_loader().c_str());
+    }
+    struct stat info
+    {
+    };
+    trace("[%s] /data visible: %s, writable: %s", when, stat("/data", &info) == 0 ? "yes" : "no",
+          probe_write("/data").c_str());
+    trace("[%s] /system_ex/app/PPSA99000: %s", when,
+          stat("/system_ex/app/PPSA99000/eboot.bin", &info) == 0 ? "found" : "not found");
+    trace("[%s] /app0: %s", when, stat("/app0/eboot.bin", &info) == 0 ? "found" : "not found");
+}
+} // namespace store::diag

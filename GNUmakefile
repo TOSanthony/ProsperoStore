@@ -14,6 +14,11 @@ STORE_WORKER := build/store-worker/store-worker.elf
 SELF_UPDATE_HELPER := build/self-update/self-updater.elf
 APP_ROOT_FILES := $(STORE_WORKER) $(SELF_UPDATE_HELPER)
 DEVELOPMENT ?= 0
+# DEBUG_TRACE=1: the debug build for reports (trace in About, klog and debug-trace.txt).
+DEBUG_TRACE ?= 0
+ifeq ($(DEBUG_TRACE),1)
+APP_DEFINITIONS += STORE_DEBUG_TRACE=1
+endif
 ifeq ($(DEVELOPMENT),1)
 APP_DEFINITIONS += STORE_DEVELOPMENT=1
 ifeq ($(SANDBOX_CONTROL),1)

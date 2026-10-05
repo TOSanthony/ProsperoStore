@@ -129,6 +129,13 @@ class Screen
     // The scanned folders apps can be installed to, with the room in each.
     void set_locations(std::vector<std::pair<std::string, std::uint64_t>> locations);
     // The running store: its title and the version it was built as.
+    // The debug build's trace, shown first in About (diag/trace.hpp).
+    void set_debug(std::vector<std::string> lines, std::string file)
+    {
+        debug_lines_ = std::move(lines);
+        debug_file_ = std::move(file);
+        write_about();
+    }
     void set_self(std::string id, std::string version)
     {
         self_id_ = std::move(id);
@@ -286,6 +293,8 @@ class Screen
     void update_panel(const hui::InputFrame &input, hui::ui::Feedback &feedback);
     void draw_panel(const hui::ui::Fonts &fonts, std::uint32_t glass);
     void write_about();
+    std::vector<std::string> debug_lines_;
+    std::string debug_file_;
     const App *self_app() const;
     std::string time_left() const;
     void draw_action_box(const hui::ui::Fonts &fonts, std::uint32_t glass, const App &app,
