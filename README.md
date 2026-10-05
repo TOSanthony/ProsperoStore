@@ -64,7 +64,9 @@ The current version is **01.000.000**, the first release, a beta.
 ## Install
 
 1. Make sure the console runs ShadowMountPlus and a payload loader on port 9021 (see the warning
-   above).
+   above). We recommend
+   [ShadowMountPlus 1.7beta4](https://github.com/drakmor/ShadowMountPlus/releases/tag/1.7beta4),
+   the newest version, especially on newer firmware.
 2. Download `PPSA99000.zip` from the release and unzip it.
 3. Copy the `PPSA99000` folder into a folder ShadowMountPlus scans, for example
    `/data/homebrew`, so that `eboot.bin` ends up at `/data/homebrew/PPSA99000/eboot.bin` (not one
