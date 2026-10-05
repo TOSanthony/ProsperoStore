@@ -1,94 +1,174 @@
-# ProsperoStore
+<p align="center">
+  <img src="sce_sys/icon0.png" width="128" alt="ProsperoStore icon">
+</p>
 
-A native PS5 app store for the homebrew catalog at
-[homebrew.page](https://homebrew.page): browse, install, uninstall and update
-apps with the controller. Title ID `PPSA99000`.
+<h1 align="center">ProsperoStore</h1>
 
-Version 01.000.000 is the first release, a beta. Browsing, installing, updating
-and uninstalling have run on a console (firmware as listed in the notes).
-**[PLAN.md](PLAN.md)** is the implementation plan: scope, what is known about
-the console and how well, the owner's decisions, the design, the milestones and
-the open questions.
+<p align="center">
+  <strong>The native PS5 app store for <a href="https://homebrew.page">homebrew.page</a></strong>
+</p>
+
+<p align="center">
+  Browse, install, update and uninstall PS5 homebrew from your couch, with the controller or a keyboard.
+</p>
+
+> [!TIP]
+> **Every app in ProsperoStore comes from [homebrew.page](https://homebrew.page)**, the community
+> catalog of PS5 homebrew. Browse it on the web at **[homebrew.page](https://homebrew.page)**, then
+> install from the console with one button. The catalog is signed, and every download is checked
+> against it before anything touches your console.
+
+<p align="center">
+  <img src="docs/media/home.jpg" width="900" alt="ProsperoStore's Discover screen on a PS5">
+</p>
+
+ProsperoStore is a homebrew app store that runs natively on the PS5. Title ID `PPSA99000`.
+The current version is **01.000.000**, the first release, a beta.
+
+> [!WARNING]
+> **ProsperoStore includes an exact-title one-shot helper built from upstream
+> [PS5-Lapy-JB-Daemon](https://github.com/mpereiraesaa/PS5-Lapy-JB-Daemon).** The PS5 jailbreak
+> environment must provide [ShadowMountPlus](https://github.com/drakmor/ShadowMountPlus) and a
+> local ELF loader on TCP port 9021. If a resident Lapy service is already running, the store asks
+> it first; otherwise it sends the packaged helper over that local connection, so no separate Lapy
+> payload is needed. Installs, updates and uninstalls have run on firmware 6.02 and 12.70. Other
+> firmware is experimental; the helper refuses runtime layouts it does not know instead of guessing.
+
+## Features
+
+- **The whole [homebrew.page](https://homebrew.page) catalog** - Discover shows one app big over
+  shelves (New and updated, Apps, Games, Tools, Coming soon, On this console); each section has its
+  own grid, with search by name or developer and sorting by name, release or update.
+- **One-button installs** - Cross on an app's page downloads it, checks it against the signed
+  catalog, unpacks it and puts it in place. A ring, four steps (Download, Verify, Unpack, Finish)
+  and the time left show the progress; Circle cancels, and nothing changes until the end.
+- **Updates** - apps installed with the store are offered their newer versions (the Updates
+  section, or Update all). A running app is never touched until it is closed.
+- **Clean uninstalls** - hold the Uninstall button: the app's folder goes and so does its
+  home-screen tile. Its saved data stays.
+- **Fast file work** - unpacking and removing run in a helper started through the payload loader,
+  which the console does not slow down: Kodi's 2,700 files unpack in about 25 seconds.
+- **Apps you installed by hand** - an app the catalog lists can be handed over to the store
+  (Manage with ProsperoStore) and is updated from then on.
+- **Any install location** - the folders ShadowMountPlus scans on the internal drive, an extended
+  drive or a USB drive, chosen in **Settings**.
+- **It updates itself** - when a newer ProsperoStore is listed, its own page offers it; see
+  [Updating ProsperoStore](#updating-prosperostore).
+- **Looks and feel** - each app's picture is made from its own icon's colours, with a soft
+  opening animation, background music, interface sounds and springy motion. **Reduce motion** is
+  in **Settings**.
+- **Keyboard support** - a USB keyboard works as well as the controller; see [Controls](#controls).
+- **A QR code on every app's page** - opens the app's page on homebrew.page, with its release
+  notes and source.
 
 ## Install
 
-1. The console needs ShadowMountPlus and a payload loader listening on port
-   9021. ProsperoStore embeds upstream Lapy's exact-title one-shot helper and
-   starts it through that loader when no resident Lapy service answers. The
-   store installs nothing unless Lapy grants and the store verifies access to
-   `/data`. See
-   [docs/SANDBOX_ELEVATION.md](docs/SANDBOX_ELEVATION.md) for the firmware Lapy
-   has been checked on.
-2. Unpack `PPSA99000.zip` and copy the `PPSA99000` folder into a location
-   ShadowMountPlus scans, for example `/data/homebrew`.
-3. Start ProsperoStore from the home screen. Later versions are installed by
-   the store itself.
+1. Make sure the console runs ShadowMountPlus and a payload loader on port 9021 (see the warning
+   above).
+2. Download `PPSA99000.zip` from the release and unzip it.
+3. Copy the `PPSA99000` folder into a folder ShadowMountPlus scans, for example
+   `/data/homebrew`, so that `eboot.bin` ends up at `/data/homebrew/PPSA99000/eboot.bin` (not one
+   folder deeper).
+4. Wait a few seconds for ShadowMountPlus to add it to the home screen, then open ProsperoStore.
+
+The store keeps its own data in `/data/prosperostore` (settings, cache, install records and
+logs), outside the app's folder, so updates keep it.
+
+## Controls
+
+| Action | Controller | Keyboard |
+| --- | --- | --- |
+| Move | D-pad or left stick | Arrows |
+| Open, install, update | Cross | Enter or Space |
+| Back, close | Circle | Escape or Backspace |
+| Previous / next section | L1 / R1 | Shift+Tab / Tab, or Page Up / Page Down |
+| Search | Triangle | / or F3 |
+| Downloads; hold to uninstall on an app's page | Square | Delete or F2 |
+| Settings | Options | F10 or the Menu key |
+| Sort | R3 | F5 |
+
+## Updating ProsperoStore
+
+When [homebrew.page](https://homebrew.page) lists a newer ProsperoStore, a notice appears for ten
+seconds at the top right, and the store's own page (**Settings > ProsperoStore**) offers the
+update. It downloads and unpacks like any app; then the store closes, a small helper started
+through the payload loader puts the new files in place, and a notification says when to open it
+again. The next start runs the new version.
 
 ## Known limits of this version
 
 - ZIP apps only; image files (ffpfsc) are listed but can't be installed.
 - The store installs, updates and removes apps; it does not start them.
-- The store updates itself only when it was installed as a folder (not as an
-  image); afterwards it closes and is opened again by hand.
+- The store updates itself only when it was installed as a folder (not as an image).
 - An update is only offered for apps whose catalog entry lists a content version.
 - The home-screen name of an app does not change after an update.
 - English only.
 
-See [IMPLEMENTATION_NOTES.md](IMPLEMENTATION_NOTES.md) for completed work,
-validation results, known limitations, and the remaining implementation work.
+## Source code
 
-The catalog side is ready: the store reads the API at
-`https://homebrew.page/api/v1/`, specified in
-[the catalog's `docs/api.md`](https://github.com/blackbearreloaded/ps5-homebrew-catalog/blob/main/docs/api.md).
+The store's source is in this repository: the app in `src/`, the file worker in `helper/`, the
+host previews and checks in `host/` and `tests/`. Build on Linux (WSL works) with
+`make DEVELOPMENT=1 app`, or `make app` for a release build without development requests.
+`make test lint` runs the host checks. [IMPLEMENTATION_NOTES.md](IMPLEMENTATION_NOTES.md) records
+what was built and how it was verified on consoles, and [PLAN.md](PLAN.md) the design and
+decisions. `FOUNDATIONS.json` pins the foundation sources, and `third_party/STORE_SOURCES.json` the
+vendored libraries. The store reads the catalog API at `https://homebrew.page/api/v1/`, specified
+in [the catalog's `docs/api.md`](https://github.com/blackbearreloaded/ps5-homebrew-catalog/blob/main/docs/api.md).
 
-Build in Linux/WSL with `make DEVELOPMENT=1 app`. Run `make test lint` for
-host validation and `make host-snapshots` for the UI preview. Release builds
-omit development requests by default. `FOUNDATIONS.json` records immutable
-foundation sources; `third_party/STORE_SOURCES.json` records vendored libraries.
+## Project foundation
 
-All persistent store state is under `/data/prosperostore`. Normal builds fetch
-Lapy at a pinned commit, invoke its unmodified exact-title `owned-helper`
-target, verify its manifest and embed the resulting ELF and MIT license. At
-startup the store tries a resident Lapy service first, then uses that embedded
-one-shot helper. This includes settings, cache, receipts, logs, crash reports
-and development-control receipts. If elevation is unavailable, browsing uses
-memory only and installation remains disabled. Elevated HTTPS uses PacBrew
-curl/OpenSSL with certificate checks against the console's CA list.
+> [!IMPORTANT]
+> **The catalog is [homebrew.page](https://homebrew.page)**, built from
+> [ps5-homebrew-catalog](https://github.com/blackbearreloaded/ps5-homebrew-catalog). Developers list
+> their apps there, and ProsperoStore installs what it lists.
 
-Browse with the D-pad or left stick, switch sections with L1/R1, and open an
-app with Cross. Discover shows one app big over shelves of apps; each app's
-picture is made from its own icon. Options opens Settings (install location,
-sounds, vibration, reduce motion, the check for a newer store), Square opens
-Downloads, and L1/R1 move between Downloads, Settings and About. To uninstall,
-hold the Uninstall button. Triangle opens system-keyboard search by name or
-developer; press R3 to cycle name, newest release, and recently updated
-sorting. Clear the search text to show the full section again. Circle goes
-back or closes the store.
+> [!IMPORTANT]
+> **Built on the [PS5 Native App Boilerplate](https://github.com/blackbearreloaded/ps5-native-app-boilerplate)**,
+> the native foundation also used by ProsperoEden and ProsperoLight: application structure,
+> runtime, packaging, sandbox elevation and the self-update helper.
 
-A USB keyboard works too: arrows move, Enter or Space selects, Escape or
-Backspace goes back, Tab and Shift+Tab (or Page Down and Page Up) switch
-sections, / or F3 searches, Delete or F2 opens Downloads (and uninstalls when
-held on an app's page), F10 or the Menu key opens Settings, F5 sorts.
+> [!IMPORTANT]
+> **The interface is built with [ps5-homebrew-ui](https://github.com/blackbearreloaded/ps5-homebrew-ui)**
+> and drawn with [ps5-opengl](https://github.com/blackbearreloaded/ps5-opengl).
 
-When a newer ProsperoStore is listed, its own page (Settings > ProsperoStore)
-offers the update. It downloads and unpacks like any app, then the store
-closes; a small helper started through the payload loader puts the new files
-in place, and a notification says when to open it again.
+## Thanks
 
-App pages show verified metadata, full-size artwork, and a scrolling article.
-Use the D-pad to scroll and Triangle to retry or refresh details. Scan the QR
-code for the app's page, release notes, and source repository.
+- [ShadowMountPlus](https://github.com/drakmor/ShadowMountPlus) by drakmor puts installed apps on
+  the home screen.
+- [PS5-Lapy-JB-Daemon](https://github.com/mpereiraesaa/PS5-Lapy-JB-Daemon) by mpereiraesaa gives
+  the store access to `/data`.
+- szampan, for testing and feedback.
 
-The screens follow the UI library's Storefront design in the Farlight
-colours: a featured banner, section chips, a grid of cards and a product page.
-When the catalog lists a newer ProsperoStore, a notice appears in the top-right
-corner for ten seconds. On an app's page Cross installs, updates or uninstalls it (Square uninstalls
-when an update is offered); progress shows on the page, on the app's card and in
-the top bar, and Cross cancels. An app that is running can't be updated or
-uninstalled until it is closed. Nothing is changed in an app's folder until the
-download has been checked against the signed catalog and unpacked.
+<!-- bbr-footer:start -->
+<!-- Generated by ps5-homebrew-dev-protocol/scripts/readme-footer. Edit the template there, not here. -->
 
-Installed scans the configured ShadowMountPlus locations without changing them.
-Only folders with matching store receipts are managed; duplicate title IDs
-and externally installed apps stay unmanaged. Updates lists newer catalog
-versions for managed folders. Image files are listed without mounting them.
+## Credits
+
+Built with the [PS5 Payload SDK](https://github.com/ps5-payload-dev/sdk) by John Törnblom (ps5-payload-dev).
+Third-party components, authors and licenses are listed in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+## License
+
+Copyright © 2026 BlackBearReloaded. Licensed under GPL-3.0-or-later; see [LICENSE](LICENSE). Third-party components keep their own licenses.
+
+## Disclaimer
+
+- **No affiliation.** This is an independent homebrew project. It is not
+  affiliated with, endorsed by, or sponsored by Sony Interactive Entertainment.
+  "PlayStation", "PS5" and related marks are trademarks of Sony Interactive
+  Entertainment Inc.
+- **No proprietary material.** No Sony SDK, firmware, encryption keys or
+  decrypted system modules are included.
+- **No warranty.** This project is provided "as is", without warranty of any
+  kind, to the extent permitted by law. See sections 15 and 16 of the GPL.
+- **Use at your own risk.** Running homebrew requires a modified console, which
+  may void its warranty, breach the platform's terms of service, or cause data
+  loss.
+- **Legal use only.** Use it only with hardware, accounts and content you own.
+  This project does not support or enable piracy.
+
+## AI assistance
+
+This project was developed with AI assistance from OpenAI and/or Anthropic tools.
+<!-- bbr-footer:end -->
