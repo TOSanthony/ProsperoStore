@@ -16,6 +16,8 @@ namespace store::net
 // Console startup/shutdown, outside the worker lifetime.
 int start_transport(bool elevated);
 void stop_transport();
+// "libcurl" or "sceHttp": the one start_transport chose.
+const char *transport_name();
 enum class Purpose
 {
     catalog,

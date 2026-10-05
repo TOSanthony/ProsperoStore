@@ -6,6 +6,7 @@
 #include "platform/ps5/system.hpp"
 #include "net/curl_request.hpp"
 #include <algorithm>
+#include <unistd.h>
 #include <vector>
 
 extern "C"
@@ -40,17 +41,28 @@ namespace store::net
 {
 namespace
 {
+constexpr const char *kCaList = "/system/common/cert/CA_LIST.cer";
 bool elevated_transport = false;
 bool curl_ready = false;
 } // namespace
 int start_transport(bool elevated)
 {
-    elevated_transport = elevated;
-    if (!elevated)
+    // libcurl needs the whole elevation: in a sandbox it can't start its resolver thread
+    // and can't see the console's CA list. A store that only reached /data (mounted by
+    // ShadowMountPlus 1.7, Lapy never asked) is still sandboxed, so it keeps sceHttp.
+    const bool ca_list = access(kCaList, R_OK) == 0;
+    elevated_transport = elevated && ca_list;
+    hui::sys::log("[STORE] transport elevated=%d ca_list=%d -> %s", elevated ? 1 : 0,
+                  ca_list ? 1 : 0, transport_name());
+    if (!elevated_transport)
         return 0;
     const auto result = curl_global_init(CURL_GLOBAL_DEFAULT);
     curl_ready = result == CURLE_OK;
     return curl_ready ? 0 : -static_cast<int>(result);
+}
+const char *transport_name()
+{
+    return elevated_transport ? "libcurl" : "sceHttp";
 }
 void stop_transport()
 {

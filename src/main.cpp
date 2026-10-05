@@ -150,7 +150,7 @@ int main()
     if (elevated)
         store::diag::curl_probe("after elevation");
     store::diag::trace("app folder: %s; network: %s (0x%08x)", app_root.c_str(),
-                       elevated ? "libcurl" : "sceHttp", static_cast<unsigned>(transport));
+                       store::net::transport_name(), static_cast<unsigned>(transport));
 #endif
     ps5::Display display;
     if (!display.open(3840, 2160))
