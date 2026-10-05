@@ -284,7 +284,8 @@ int main()
     [[maybe_unused]] const char *note = "", *previous_note = "";
     [[maybe_unused]] std::int64_t tour_until = 0, tour_next = 0;
     [[maybe_unused]] unsigned tour_step = 0;
-    [[maybe_unused]] bool shot_wanted = false; // development: save the next frame
+    [[maybe_unused]] bool shot_wanted = false;       // development: save the next frame
+    [[maybe_unused]] std::string shot_name = "shot"; // ... as /data/prosperostore/dev/<name>.tga
     [[maybe_unused]] int bench_step = -1;
     ps5::Ime keyboard;
     bool keyboard_active = false;
@@ -587,7 +588,14 @@ int main()
                 screen.pending_order.id = argument;
             }
             else if (verb == "shot")
+            {
+                // An optional name of letters and dashes, so several screens can be kept.
+                shot_name = "shot";
+                if (!argument.empty() && argument.size() <= 32 &&
+                    argument.find_first_not_of("abcdefghijklmnopqrstuvwxyz-") == std::string::npos)
+                    shot_name = argument;
                 shot_wanted = true;
+            }
             else if (verb == "tour")
             {
                 tour_until = now + std::atoll(argument.c_str()) * 1000000;
@@ -779,7 +787,8 @@ int main()
                     tga.push_back(static_cast<char>(px[1]));
                     tga.push_back(static_cast<char>(px[0]));
                 }
-            const auto error = hui::save::write_atomic("/data/prosperostore/dev/shot.tga", tga);
+            const auto error =
+                hui::save::write_atomic("/data/prosperostore/dev/" + shot_name + ".tga", tga);
             sys::log("[STORE] shot %dx%d gl=0x%x saved=%d", hw, hh, glGetError(),
                      error.empty() ? 1 : 0);
         }
