@@ -36,8 +36,9 @@ The current version is **01.000.000**, the first release, an alpha.
 > [!WARNING]
 > **ProsperoStore includes an exact-title one-shot helper built from upstream
 > [PS5-Lapy-JB-Daemon](https://github.com/mpereiraesaa/PS5-Lapy-JB-Daemon).** The PS5 jailbreak
-> environment must provide [ShadowMountPlus](https://github.com/drakmor/ShadowMountPlus) and a
-> local ELF loader on TCP port 9021. If a resident Lapy service is already running, the store asks
+> environment must provide [ShadowMountPlus](https://github.com/drakmor/ShadowMountPlus)
+> ([1.7beta4](https://github.com/drakmor/ShadowMountPlus/releases/tag/1.7beta4) or newer
+> recommended) and a local ELF loader on TCP port 9021. If a resident Lapy service is already running, the store asks
 > it first; otherwise it sends the packaged helper over that local connection, so no separate Lapy
 > payload is needed. Installs, updates and uninstalls have run on firmware 6.02 and 12.70. Other
 > firmware is experimental; the helper refuses runtime layouts it does not know instead of guessing.
@@ -71,10 +72,15 @@ The current version is **01.000.000**, the first release, an alpha.
 
 ## Install
 
-1. Make sure the console runs ShadowMountPlus and a payload loader on port 9021 (see the warning
-   above). We recommend
-   [ShadowMountPlus 1.7beta4](https://github.com/drakmor/ShadowMountPlus/releases/tag/1.7beta4),
-   the newest version, especially on newer firmware.
+> [!TIP]
+> **Use [ShadowMountPlus 1.7beta4](https://github.com/drakmor/ShadowMountPlus/releases/tag/1.7beta4)
+> or newer**, especially on newer firmware. It mounts ProsperoStore from the folder (or drive) you
+> copy it to, and it also mounts `/data` and USB and extended storage drives into the app's
+> sandbox. Older versions may not register the store or give it access to `/data`, which shows
+> as "Read only" in the store.
+
+1. Make sure the console runs ShadowMountPlus 1.7beta4 or newer and a payload loader on port 9021
+   (see the warning above).
 2. Download `PPSA99000.zip` from the release and unzip it.
 3. Copy the `PPSA99000` folder into a folder ShadowMountPlus scans, for example
    `/data/homebrew`, so that `eboot.bin` ends up at `/data/homebrew/PPSA99000/eboot.bin` (not one
