@@ -116,6 +116,7 @@ int main()
                        static_cast<unsigned>(keyboard_module),
                        static_cast<unsigned>(keyboards_ready), static_cast<unsigned>(registry));
     store::diag::trace_console("start");
+    store::diag::curl_probe("sandboxed");
 #endif
 #ifdef STORE_SANDBOX_CONTROL
     const auto elevation_status = elevation::Status::unavailable;
@@ -146,6 +147,8 @@ int main()
     store::diag::trace("elevation (Lapy): status %u via %s after %lld ms",
                        static_cast<unsigned>(elevation_status), elevation::path(), since_start());
     store::diag::trace_console("after elevation");
+    if (elevated)
+        store::diag::curl_probe("after elevation");
     store::diag::trace("app folder: %s; network: %s (0x%08x)", app_root.c_str(),
                        elevated ? "libcurl" : "sceHttp", static_cast<unsigned>(transport));
 #endif
