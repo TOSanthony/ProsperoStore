@@ -41,6 +41,12 @@
           "tests/test_self_update.cpp",
           "tools/build-lapy-helper.py"
         ]
+      },
+      {
+        "commit": "881804f52f04f09b90341a8f7f1284e405f53c18",
+        "files": [
+          "examples/sandbox-elevation/src/elevation.cpp"
+        ]
       }
     ],
     "files": {
@@ -166,9 +172,6 @@
       "tools/setup-test-dependencies.sh": "b9b7c5e7b9690ef4ddc3ed14592865f61edd902a0c4e0e10fb61a515d8bf1528",
       "tools/test-pacbrew-curl.sh": "29c64e5a34d6a20d6ff5fab4a29b8059d399bd288e6c22778b4ab396d37f692e",
       "tools/validate-assets.sh": "d432d1479b959363c274db64015cd7b321e7f3ed699d9deb25fd97d473bb8d9e"
-    },
-    "local_changes": {
-      "examples/sandbox-elevation/src/elevation.cpp": "verify_data also requires listing /data: ShadowMountPlus 1.7 exposes /data to a sandboxed app without elevation (opendir/lstat refused), so Lapy must still run. Store-only until the boilerplate kit takes it."
     }
   },
   {
