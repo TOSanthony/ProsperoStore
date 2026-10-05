@@ -738,9 +738,8 @@ void Service::check_store_update()
     if (result.state != UPDATE_CHECK_AVAILABLE)
         return;
     Update notice;
-    notice.kind = Update::Kind::notice;
-    notice.message = std::string("Update available: ") + result.version;
-    notice.detail = "A newer ProsperoStore is listed on homebrew.page.";
+    notice.kind = Update::Kind::store_update;
+    notice.message = result.version;
     publish(std::move(notice));
 }
 

@@ -111,6 +111,9 @@ class Screen
     }
     // A floating notice in the top-right corner; it leaves after ten seconds.
     void notify(std::string title, std::string body);
+    // A newer ProsperoStore is listed: asked once each time the store opens
+    // (Update now / What's new / Skip), with the release notes in a view of their own.
+    void offer_store_update(std::string version);
     // Whether this build and this console can install (reason says why not),
     // whether running apps can be told apart (updates and uninstalls need it),
     // and the scanned folder new apps go to.
@@ -332,8 +335,24 @@ class Screen
     {
         none,
         adopt,
-        quit
+        quit,
+        store_update
     } ask_ = Ask::none;
+    enum class StoreOffer
+    {
+        none,
+        waiting, // for the store's own details (the release notes) and a quiet screen
+        asked,
+        done
+    } store_offer_ = StoreOffer::none;
+    std::string store_offer_version_;
+    float store_offer_wait_ = 0.0f;
+    bool store_offer_detail_asked_ = false, store_offer_notes_ = false, notes_open_ = false;
+    bool store_update_wanted_ = false; // "Update now" was chosen: ordered once it can be
+    float store_update_wait_ = 0.0f;
+    hui::ui::TextView notes_;
+    void open_store_offer(hui::ui::Feedback &feedback);
+    void start_store_update();
     // Uninstalling is a hold, not a question: the button fills while it is held.
     hui::ui::HoldButton hold_;
     bool chime_ = false; // a job finished well: its toast plays the completion sound

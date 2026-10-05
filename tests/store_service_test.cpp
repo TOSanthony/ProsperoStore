@@ -241,9 +241,9 @@ int main()
     refresh_ready = true;
     const auto online = next(service, store::Update::Kind::catalog);
     assert(online.generation == 2 && online.snapshot.online);
-    // A newer store in the catalog becomes one notice; nothing is downloaded for it.
-    const auto notice = next(service, store::Update::Kind::notice);
-    assert(notice.message == "Update available: 1.0.10" && !notice.detail.empty());
+    // A newer store in the catalog becomes one offer; nothing is downloaded for it.
+    const auto notice = next(service, store::Update::Kind::store_update);
+    assert(notice.message == "1.0.10");
     std::vector<std::string> ids;
     for (const auto &entry : fixture().entries)
         ids.push_back(entry.id);

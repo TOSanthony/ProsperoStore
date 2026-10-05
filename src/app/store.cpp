@@ -210,6 +210,11 @@ Screen::Screen() : theme_(farlight_theme())
     article_.style.padding = 4;
     article_.set_bounds({kInfoX - 4.0f, 604.0f, kInfoW + 8.0f, 322.0f});
     dialog_.style.theme = theme_;
+    notes_.style.theme = theme_;
+    notes_.style.body_size = 25;
+    notes_.style.footer = false;
+    notes_.style.padding = 44;
+    notes_.set_bounds({460.0f, 132.0f, 1000.0f, 760.0f});
     about_.style.theme = theme_;
     about_.style.body_size = 26;
     about_.style.footer = false;
@@ -226,6 +231,73 @@ Screen::Screen() : theme_(farlight_theme())
 void Screen::notify(std::string title, std::string body)
 {
     toasts_.push(ui::StatusKind::info, std::move(title), std::move(body), 10.0f);
+}
+
+void Screen::offer_store_update(std::string version)
+{
+    if (store_offer_ != StoreOffer::none)
+        return;
+    store_offer_version_ = std::move(version);
+    store_offer_ = StoreOffer::waiting;
+    store_offer_wait_ = 0.0f;
+}
+
+void Screen::open_store_offer(ui::Feedback &feedback)
+{
+    const auto self = std::find_if(apps_.begin(), apps_.end(),
+                                   [&](const auto &app) { return app.title_id == self_id_; });
+    const std::string notes =
+        self != apps_.end() && self->detail ? self->detail->release_notes : std::string{};
+    // The version as the console writes it (01.000.010), when the catalog gives it.
+    if (self != apps_.end() && !self->available_version.empty())
+        store_offer_version_ = self->available_version;
+    store_offer_notes_ = !notes.empty();
+    if (store_offer_notes_)
+    {
+        // The catalog's notes are plain text: lines, with list items starting "- ".
+        using Block = ui::TextBlock;
+        std::vector<Block> blocks;
+        blocks.push_back(Block::heading("What's new in " + store_offer_version_, 2));
+        std::size_t at = 0;
+        while (at <= notes.size())
+        {
+            const std::size_t end = std::min(notes.find('\n', at), notes.size());
+            std::string line = notes.substr(at, end - at);
+            at = end + 1;
+            while (!line.empty() && (line.back() == ' ' || line.back() == '\r'))
+                line.pop_back();
+            if (line.empty())
+                continue;
+            if (line.starts_with("- "))
+                blocks.push_back(Block::bullet(line.substr(2)));
+            else
+                blocks.push_back(Block::paragraph(std::move(line)));
+        }
+        notes_.set_content(std::move(blocks));
+        notes_.scroll_to(0, true);
+    }
+    ask_ = Ask::store_update;
+    std::vector<ui::DialogButton> buttons;
+    buttons.push_back({"Skip"});
+    if (store_offer_notes_)
+        buttons.push_back({"What's new"});
+    buttons.push_back({"Update now", ui::ButtonKind::primary});
+    const int update_now = static_cast<int>(buttons.size()) - 1;
+    dialog_.open({ui::StatusKind::info, "ProsperoStore " + store_offer_version_ + " is available",
+                  "You have " + self_version_ +
+                      ". The update is checked against the signed catalog, and ProsperoStore "
+                      "closes when it is installed.",
+                  std::move(buttons), update_now},
+                 feedback);
+    store_offer_ = StoreOffer::asked;
+}
+
+void Screen::start_store_update()
+{
+    // Ordered from update(), as soon as the store's own page could order it.
+    store_offer_ = StoreOffer::done;
+    store_update_wanted_ = true;
+    store_update_wait_ = 0.0f;
 }
 
 // ---- data -------------------------------------------------------------------
@@ -1143,7 +1215,83 @@ void Screen::update(const InputFrame &raw, float dt, ui::Feedback &feedback)
             update_all_.erase(update_all_.begin());
         }
     }
-    if (dialog_.is_open())
+    // The offer waits for a quiet screen and, a few seconds at most, for the release notes.
+    if (store_offer_ == StoreOffer::waiting && !intro_showing() && !dialog_.is_open() && !panel_ &&
+        !notes_open_)
+    {
+        store_offer_wait_ += dt;
+        const auto self = std::find_if(apps_.begin(), apps_.end(),
+                                       [&](const auto &app) { return app.title_id == self_id_; });
+        const bool wanted = self != apps_.end() && !self->detail && self->detail_error.empty() &&
+                            store_offer_wait_ < 8.0f;
+        if (!wanted)
+            open_store_offer(feedback);
+        else if (!store_offer_detail_asked_ && pending_detail.empty())
+        {
+            pending_detail = self_id_;
+            store_offer_detail_asked_ = true;
+        }
+    }
+    // "Update now": what Cross does on the store's own page, once its verified details
+    // are here. If that can't be, the page's own words say why.
+    if (store_update_wanted_ && pending_order.kind == Order::Kind::none)
+    {
+        store_update_wait_ += dt;
+        const auto self = std::find_if(apps_.begin(), apps_.end(),
+                                       [&](const auto &app) { return app.title_id == self_id_; });
+        const bool waiting = self != apps_.end() && !self->detail && self->detail_error.empty() &&
+                             store_update_wait_ < 10.0f;
+        if (waiting)
+        {
+            if (pending_detail.empty())
+                pending_detail = self_id_;
+        }
+        else
+        {
+            store_update_wanted_ = false;
+            const Offer state = self != apps_.end() ? offer(*self) : Offer{};
+            if (self != apps_.end() && state.armed && !state.busy &&
+                state.primary == Order::Kind::install)
+                order(*self, Order::Kind::install);
+            else
+                notify("The update couldn't start",
+                       state.reason.empty() ? "Open ProsperoStore's page in About to update it."
+                                            : state.reason);
+        }
+    }
+    notes_.set_active(notes_open_);
+    notes_.update(dt);
+    if (notes_open_)
+    {
+        // The notes take every input: Cross updates, Circle goes back to the question.
+        if (input.is_pressed(Action::confirm))
+        {
+            notes_open_ = false;
+            feedback.play(audio::Cue::select);
+            start_store_update();
+        }
+        else if (input.is_pressed(Action::back))
+        {
+            notes_open_ = false;
+            open_store_offer(feedback);
+        }
+        else
+            notes_.handle(input, feedback);
+    }
+    else if (dialog_.is_open() && ask_ == Ask::store_update)
+    {
+        if (dialog_.handle(input, feedback) == ui::Event::activated)
+        {
+            const int choice = dialog_.choice();
+            if (choice == (store_offer_notes_ ? 2 : 1))
+                start_store_update();
+            else if (store_offer_notes_ && choice == 1)
+                notes_open_ = true;
+            else
+                store_offer_ = StoreOffer::done;
+        }
+    }
+    else if (dialog_.is_open())
     {
         // The question takes every input until it is answered.
         if (dialog_.handle(input, feedback) == ui::Event::activated && dialog_.choice() == 1)
@@ -2657,6 +2805,17 @@ void Screen::draw(gfx::Renderer &renderer, const ui::Fonts &fonts)
     draw_job_card(fonts, glass);
     draw_panel(fonts, glass);
     ui::Canvas canvas{overlay_, fonts, glass, time_};
+    if (notes_open_)
+    {
+        // The release notes, over everything but the question they came from.
+        overlay_.rounded_rect({0.0f, 0.0f, 1920.0f, 1080.0f}, 0,
+                              gfx::Color{0.0f, 0.0f, 0.0f, 0.86f});
+        notes_.draw(canvas);
+        const ui::Hint reading[] = {{ui::Button::cross, "Update now"},
+                                    {ui::Button::dpad, "Scroll"},
+                                    {ui::Button::circle, "Back"}};
+        ui::draw_hints(overlay_, fonts, glyphs, reading, 3, kRight, true);
+    }
     dialog_.draw(canvas);
     toasts_.draw(canvas);
     if (intro_showing())

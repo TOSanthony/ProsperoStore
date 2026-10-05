@@ -306,6 +306,8 @@ int main()
     [[maybe_unused]] const char *note = "", *previous_note = "";
     [[maybe_unused]] std::int64_t tour_until = 0, tour_next = 0;
     [[maybe_unused]] unsigned tour_step = 0;
+    [[maybe_unused]] std::string press_keys;         // development: buttons still to press
+    [[maybe_unused]] std::int64_t press_next = 0;
     [[maybe_unused]] bool shot_wanted = false;       // development: save the next frame
     [[maybe_unused]] std::string shot_name = "shot"; // ... as /data/prosperostore/dev/<name>.tga
     [[maybe_unused]] int bench_step = -1;
@@ -417,6 +419,8 @@ int main()
                 screen.set_inventory(std::move(update.installed));
             else if (update.kind == store::Update::Kind::notice)
                 screen.notify(std::move(update.message), std::move(update.detail));
+            else if (update.kind == store::Update::Kind::store_update)
+                screen.offer_store_update(std::move(update.message));
             else if (update.kind == store::Update::Kind::job)
             {
                 // The update helper waits for the store to close: say so, then close.
@@ -666,12 +670,35 @@ int main()
                         &clean_path) == 0)
                     pthread_detach(thread);
             }
+            else if (verb == "press")
+            {
+                // Buttons one after another: r l u d (D-pad), X (Cross), B (Circle).
+                press_keys = argument;
+                press_next = now;
+            }
             else if (verb == "texbench")
                 bench_step = 0;
             else if (verb == "stress")
                 screen.stress(static_cast<std::size_t>(std::atoll(argument.c_str())));
             else if (verb == "pool")
                 icon_budget = static_cast<std::size_t>(std::max(4LL, std::atoll(argument.c_str())));
+        }
+        if (!press_keys.empty() && now >= press_next)
+        {
+            const char step = press_keys.front();
+            press_keys.erase(press_keys.begin());
+            frame = {};
+            if (step == 'X')
+                frame.pressed = action_bit(Action::confirm);
+            else if (step == 'B')
+                frame.pressed = action_bit(Action::back);
+            else
+                frame.nav = step == 'r'   ? Direction::right
+                            : step == 'l' ? Direction::left
+                            : step == 'd' ? Direction::down
+                                          : Direction::up;
+            press_next = now + 400000;
+            note = "press";
         }
         if (now < tour_until && now >= tour_next)
         {

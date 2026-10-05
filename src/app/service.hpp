@@ -24,6 +24,7 @@ struct Update
         qr,
         inventory,
         notice,    // message is its title, detail its body
+        store_update, // a newer ProsperoStore is listed: message is its version
         job,       // a finished install, update or uninstall: entry.id, ok, message, detail
         locations, // where apps can be installed on this console
         error
