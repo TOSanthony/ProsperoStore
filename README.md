@@ -153,6 +153,8 @@ in [the catalog's `docs/api.md`](https://github.com/blackbearreloaded/ps5-homebr
   the home screen.
 - [PS5-Lapy-JB-Daemon](https://github.com/mpereiraesaa/PS5-Lapy-JB-Daemon) by mpereiraesaa gives
   the store access to `/data`.
+- **Jones** ([X](https://x.com/Jonesskulls), [GitHub](https://github.com/AgentJonesy)), for helping
+  with testing.
 - szampan, for testing and feedback.
 
 <!-- bbr-footer:start -->
