@@ -18,6 +18,14 @@
 > install from the console with one button. The catalog is signed, and every download is checked
 > against it before anything touches your console.
 
+> [!IMPORTANT]
+> **ProsperoStore is an aggregator.** It lists and installs apps; it doesn't build, maintain or
+> support them. Each app belongs to its own developer. For a bug, a question or a feature request
+> about an app, go to that app's GitHub repository (the QR code on its page in the store opens its
+> page on [homebrew.page](https://homebrew.page), which links to the source) and contact its
+> developer there. Issues here are for the store itself: browsing, installing, updating and
+> uninstalling.
+
 <p align="center">
   <img src="docs/media/home.jpg" width="900" alt="ProsperoStore's Discover screen on a PS5">
 </p>
