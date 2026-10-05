@@ -1,6 +1,9 @@
 // ProsperoStore - Install, update and uninstall as journaled transactions.
 // Copyright (C) 2026 BlackBearReloaded
 // SPDX-License-Identifier: GPL-3.0-or-later
+#ifdef STORE_DEBUG_TRACE
+#include "diag/trace.hpp"
+#endif
 #include "install/transaction.hpp"
 #include "core/save_file.hpp"
 #include "install/archive.hpp"
@@ -640,10 +643,29 @@ Result recover(const Environment &environment)
     std::string body, error;
     catalog::Journal journal;
     Paths paths;
-    if (found != Kind::file || !read_small(path, 16 * 1024, body) ||
-        !catalog::parse_journal(body, journal, error) ||
-        !resolve(environment, journal.id, journal.location, false, paths, error))
+    const char *step = nullptr;
+    if (found != Kind::file)
+        step = "not a regular file";
+    else if (!read_small(path, 16 * 1024, body))
+        step = "can't be read";
+    else if (!catalog::parse_journal(body, journal, error))
+        step = "can't be parsed";
+    else if (!resolve(environment, journal.id, journal.location, false, paths, error))
+        step = "names a place that can't be used";
+    if (step)
+    {
+#ifdef STORE_DEBUG_TRACE
+        const int saved = errno;
+        struct stat info
+        {
+        };
+        const int lstat_errno = lstat(path.c_str(), &info) == 0 ? 0 : errno;
+        diag::trace("install journal %s: kind %d, lstat errno %d, errno %d, %s; body: %.200s",
+                    step, static_cast<int>(found), lstat_errno, saved, error.c_str(),
+                    body.c_str());
+#endif
         return fail("The record of an interrupted operation can't be read. Installing is off.");
+    }
     result.operation = journal.operation;
     const auto &id = journal.id;
     const auto placed = kind(paths.target), staged = kind(paths.staged);

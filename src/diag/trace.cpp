@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <cstring>
 #include <ctime>
+#include <dirent.h>
 #include <fcntl.h>
 #include <mutex>
 #include <sys/stat.h>
@@ -168,5 +169,24 @@ void trace_console(const char *when)
     trace("[%s] /system_ex/app/PPSA99000: %s", when,
           stat("/system_ex/app/PPSA99000/eboot.bin", &info) == 0 ? "found" : "not found");
     trace("[%s] /app0: %s", when, stat("/app0/eboot.bin", &info) == 0 ? "found" : "not found");
+    const char *journal = "/data/prosperostore/journal.json";
+    if (lstat(journal, &info) == 0)
+        trace("[%s] journal.json: present, mode %o, %lld bytes, uid %u", when,
+              static_cast<unsigned>(info.st_mode), static_cast<long long>(info.st_size),
+              static_cast<unsigned>(info.st_uid));
+    else
+        trace("[%s] journal.json: lstat errno %d (%s)", when, errno, std::strerror(errno));
+    if (DIR *folder = opendir("/data/prosperostore"))
+    {
+        std::string names;
+        while (const dirent *entry = readdir(folder))
+            if (std::strcmp(entry->d_name, ".") != 0 && std::strcmp(entry->d_name, "..") != 0 &&
+                names.size() < 300)
+                names += std::string(names.empty() ? "" : ", ") + entry->d_name;
+        closedir(folder);
+        trace("[%s] /data/prosperostore holds: %s", when, names.empty() ? "nothing" : names.c_str());
+    }
+    else
+        trace("[%s] /data/prosperostore can't be listed (%s)", when, std::strerror(errno));
 }
 } // namespace store::diag
