@@ -14,6 +14,7 @@
 #include <array>
 #include <cerrno>
 #include <cstdio>
+#include <cstring>
 #include <ctime>
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -336,6 +337,13 @@ Result apply(const Environment &environment, const Request &request, net::Contro
     const auto &id = entry.id;
     const auto fail = [&](std::string message)
     {
+#ifdef STORE_DEBUG_TRACE
+        const int saved = errno;
+        diag::trace("install %s refused: %s (errno %d %s; location %s, store folder %s)",
+                    id.c_str(), message.c_str(), saved, std::strerror(saved),
+                    request.location.c_str(),
+                    environment.root.empty() ? "none" : environment.root.c_str());
+#endif
         progress.phase = static_cast<int>(Phase::idle);
         result.error = std::move(message);
         return result;
@@ -386,6 +394,26 @@ Result apply(const Environment &environment, const Request &request, net::Contro
     result.operation = update ? "update" : "install";
     if (kind(request.location) != Kind::directory)
         return fail("The location isn't available");
+#ifdef STORE_DEBUG_TRACE
+    for (const std::string *folder :
+         {&request.location, static_cast<const std::string *>(&paths.work),
+          static_cast<const std::string *>(&paths.staging),
+          static_cast<const std::string *>(&paths.backups)})
+    {
+        struct stat info
+        {
+        };
+        const int found = stat(folder->c_str(), &info);
+        const int stat_errno = found == 0 ? 0 : errno;
+        const bool made = make_directory(*folder);
+        const int make_errno = made ? 0 : errno;
+        diag::trace("install %s: %s stat %d mode %o uid %u; make folder %s (errno %d %s)",
+                    id.c_str(), folder->c_str(), stat_errno,
+                    found == 0 ? static_cast<unsigned>(info.st_mode) : 0U,
+                    found == 0 ? static_cast<unsigned>(info.st_uid) : 0U, made ? "ok" : "failed",
+                    make_errno, std::strerror(make_errno));
+    }
+#endif
     if (!make_directory(paths.work) || !make_directory(paths.staging) ||
         !make_directory(paths.backups))
         return fail("No permission to write to the location's drive");

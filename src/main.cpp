@@ -230,6 +230,9 @@ int main()
     const char *installer_reason = "Installing is not switched on in this build.";
 #endif
     screen.set_installer(service.installer, false, installer_reason, "/data/homebrew");
+#ifdef STORE_DEBUG_TRACE
+    store::diag::trace("installer: %s", service.installer ? "on" : installer_reason);
+#endif
     if (!service.start())
         screen.set_status("The catalog service could not start");
     if (elevation_status != elevation::Status::ok)
