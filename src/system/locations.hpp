@@ -21,4 +21,6 @@ bool clean_absolute_path(std::string_view path);
 std::string drive_root(std::string_view path);
 // The transaction's app folder must be beyond every configured scan depth.
 bool work_path_unscanned(const ScanPolicy &policy, std::string_view app_path);
+// Why not, for messages: the scan path or manual.lst entry in the way ("" when unscanned).
+std::string work_path_conflict(const ScanPolicy &policy, std::string_view app_path);
 } // namespace store::system

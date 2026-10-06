@@ -76,9 +76,11 @@ bool resolve(const Environment &environment, const std::string &id, const std::s
     paths.receipt = paths.receipts + "/" + id + ".json";
     paths.journal = environment.root + "/journal.json";
     for (const auto *path : {&paths.staged, &paths.backup, &paths.trash})
-        if (!system::work_path_unscanned(environment.policy, *path))
+        if (const auto conflict = system::work_path_conflict(environment.policy, *path);
+            !conflict.empty())
         {
-            error = "The store's work folder is inside a scanned location";
+            // Named, so the ShadowMountPlus setting in the way can be found.
+            error = "The store's work folder is inside a scanned location (" + conflict + ")";
             return false;
         }
     out = std::move(paths);

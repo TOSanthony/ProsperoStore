@@ -174,14 +174,14 @@ std::string drive_root(std::string_view path)
     return {};
 }
 
-bool work_path_unscanned(const ScanPolicy &policy, std::string_view app_path)
+std::string work_path_conflict(const ScanPolicy &policy, std::string_view app_path)
 {
     if (!clean_absolute_path(app_path))
-        return false;
+        return "the path isn't a plain one";
     for (const auto &root : policy.roots)
     {
         if (within(app_path, root))
-            return false;
+            return "scan path " + root + " is inside it";
         if (within(root, app_path))
         {
             const auto relative = app_path.substr(root == "/" ? 0 : root.size());
@@ -189,12 +189,17 @@ bool work_path_unscanned(const ScanPolicy &policy, std::string_view app_path)
                 static_cast<unsigned>(std::count(relative.begin(), relative.end(), '/'));
             const unsigned limit = policy.depth + (within("/mnt/shadowmnt/pfsc", root) ? 1u : 0u);
             if (depth <= limit)
-                return false;
+                return "scan path " + root + ", scan depth " + std::to_string(policy.depth);
         }
     }
     for (const auto &path : policy.manual)
         if (within(path, app_path) || within(app_path, path))
-            return false;
-    return true;
+            return "manual.lst entry " + path;
+    return {};
+}
+
+bool work_path_unscanned(const ScanPolicy &policy, std::string_view app_path)
+{
+    return work_path_conflict(policy, app_path).empty();
 }
 } // namespace store::system

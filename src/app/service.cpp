@@ -166,15 +166,39 @@ bool Service::load_policy(system::ScanPolicy &out) const
     {
         hui::sys::log("[STORE] storage policy error=Existing configuration is unreadable; "
                       "refusing default paths");
+#ifdef STORE_DEBUG_TRACE
+        diag::trace("ShadowMountPlus settings: config.ini or manual.lst exists but can't be read");
+#endif
         return false;
     }
     if (!system::scan_policy(configuration, manual, policy, policy_error))
     {
         hui::sys::log("[STORE] storage policy error=%s", policy_error.c_str());
+#ifdef STORE_DEBUG_TRACE
+        diag::trace("ShadowMountPlus settings refused: %s", policy_error.c_str());
+#endif
         return false;
     }
     hui::sys::log("[STORE] storage config=%d manual=%d roots=%zu entries=%zu depth=%u", configured,
                   listed, policy.roots.size(), policy.manual.size(), policy.depth);
+#ifdef STORE_DEBUG_TRACE
+    {
+        // The scan paths outside removable drives, and the manual list: what a report needs.
+        std::string roots, manual_entries;
+        for (const auto &root : policy.roots)
+            if (!root.starts_with("/mnt/") && roots.size() < 300)
+                roots += (roots.empty() ? "" : ", ") + root;
+        for (const auto &entry : policy.manual)
+            if (manual_entries.size() < 300)
+                manual_entries += (manual_entries.empty() ? "" : ", ") + entry;
+        diag::trace("ShadowMountPlus settings: config.ini %s, manual.lst %s, scan depth %u, "
+                    "%zu scan paths (not on drives: %s), %zu manual entries%s%s",
+                    configured ? "found" : "none", listed ? "found" : "none", policy.depth,
+                    policy.roots.size(), roots.empty() ? "none" : roots.c_str(),
+                    policy.manual.size(), manual_entries.empty() ? "" : ": ",
+                    manual_entries.c_str());
+    }
+#endif
     out = std::move(policy);
     return true;
 }
