@@ -193,8 +193,14 @@ std::string work_path_conflict(const ScanPolicy &policy, std::string_view app_pa
         }
     }
     for (const auto &path : policy.manual)
-        if (within(path, app_path) || within(app_path, path))
+    {
+        // A manual entry is one game folder or one image, never a place that is scanned
+        // (ShadowMountPlus reads <entry>/sce_sys/param.json and nothing below). "/" or a
+        // whole drive there is a stray line: it holds everything and mounts nothing.
+        const bool stray = path == "/" || path == "/mnt" || drive_root(path) == path;
+        if ((!stray && within(path, app_path)) || within(app_path, path))
             return "manual.lst entry " + path;
+    }
     return {};
 }
 

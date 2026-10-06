@@ -22,6 +22,12 @@ int main()
            policy.roots.end());
     assert(!work_path_unscanned(policy, "/data/custom/PPSA99002/nested"));
     assert(work_path_unscanned(policy, "/data/prosperostore/staging/PPSA99002"));
+    // A stray "/" or drive line in manual.lst is no scanned place; a game folder still is.
+    assert(scan_policy("", "/\n/data\n/mnt/usb0\n/data/custom/PPSA99002\n", policy, error));
+    assert(policy.manual.size() == 4);
+    assert(work_path_unscanned(policy, "/data/prosperostore/staging/PPSA99002"));
+    assert(work_path_unscanned(policy, "/mnt/usb0/prosperostore/staging/PPSA99002"));
+    assert(!work_path_unscanned(policy, "/data/custom/PPSA99002/nested"));
     assert(scan_policy("scanpath=/data/prosperostore\nscan_depth=2", "", policy, error));
     assert(!work_path_unscanned(policy, "/data/prosperostore/staging/PPSA99002"));
     assert(!scan_policy("scanpath=/data/../system", "", policy, error));
