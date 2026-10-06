@@ -36,4 +36,8 @@ enum class Status : std::uint32_t
 [[nodiscard]] Status request(Capability capability,
                              const char *helper_path = "/app0/lapy.elf") noexcept;
 [[nodiscard]] const char *path() noexcept;
+// For diagnostics: the last step request() reached, and the value that step returned
+// (a libSceNet result, an errno or a reply status, as the step's name says).
+[[nodiscard]] const char *step() noexcept;
+[[nodiscard]] int step_code() noexcept;
 } // namespace elevation

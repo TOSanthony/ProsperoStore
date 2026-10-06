@@ -22,6 +22,13 @@ constexpr unsigned resident_polls = 30;
 constexpr unsigned cancellation_grace_polls = 20;
 constexpr useconds_t poll_interval_us = 50000;
 const char *selected_path = "none";
+const char *last_step = "none";
+int last_code = 0;
+void at(const char *step, int code = 0) noexcept
+{
+    last_step = step;
+    last_code = code;
+}
 
 struct NetSockaddrIn
 {
@@ -237,24 +244,35 @@ bool send_all(int socket, const void *data, std::size_t size) noexcept
 {
     return elevation::wire::transfer(static_cast<const std::uint8_t *>(data), size,
                                      [socket](const auto *bytes, std::size_t remaining)
-                                     { return sceNetSend(socket, bytes, remaining, 0); });
+                                     {
+                                         const int sent = sceNetSend(socket, bytes, remaining, 0);
+                                         last_code = sent;
+                                         return sent;
+                                     });
 }
 
 bool receive(int socket, elevation::wire::Message &message) noexcept
 {
     return elevation::wire::transfer(reinterpret_cast<std::uint8_t *>(&message), sizeof(message),
                                      [socket](auto *bytes, std::size_t remaining)
-                                     { return sceNetRecv(socket, bytes, remaining, 0); });
+                                     {
+                                         const int got = sceNetRecv(socket, bytes, remaining, 0);
+                                         last_code = got;
+                                         return got;
+                                     });
 }
 
 elevation::Status exchange(int socket, const elevation::wire::Message &request) noexcept
 {
     using namespace elevation;
+    at("sending the request to the helper (send result)");
     if (!send_all(socket, &request, sizeof(request)))
         return Status::transport_error;
     wire::Message reply{};
+    at("waiting for the helper's first reply (receive result)");
     if (!receive(socket, reply))
         return Status::transport_error;
+    at("the helper's first reply (its status)", static_cast<int>(reply.status));
     if (wire::matches(reply, request, wire::Kind::response) && reply.status != Status::ok)
         return reply.status;
     if (!wire::matches(reply, request, wire::Kind::prepare) || reply.status != Status::ok)
@@ -264,8 +282,13 @@ elevation::Status exchange(int socket, const elevation::wire::Message &request) 
     prepared.kind = wire::Kind::prepared;
     if (seteuid(geteuid()) != 0)
         prepared.status = Status::prepare_failed;
-    if (!send_all(socket, &prepared, sizeof(prepared)) || !receive(socket, reply))
+    at("sending 'prepared' to the helper (send result)");
+    if (!send_all(socket, &prepared, sizeof(prepared)))
         return Status::transport_error;
+    at("waiting for the helper's final reply (receive result)");
+    if (!receive(socket, reply))
+        return Status::transport_error;
+    at("the helper's final reply (its status)", static_cast<int>(reply.status));
     if (!wire::matches(reply, request, wire::Kind::response))
         return Status::protocol_error;
     if (prepared.status != Status::ok)
@@ -279,9 +302,11 @@ elevation::Status run_helper(const char *path, const elevation::wire::Message &r
     if (path == nullptr)
         return Status::invalid_request;
     File helper{open(path, O_RDONLY)};
+    at("opening the helper file (errno)", helper.get() < 0 ? errno : 0);
     if (helper.get() < 0)
         return Status::unavailable;
     const int socket = sceNetSocket("lapy_owned_helper", 2, 1, 6);
+    at("creating the socket (result)", socket);
     if (socket < 0)
         return Status::transport_error;
 
@@ -299,10 +324,15 @@ elevation::Status run_helper(const char *path, const elevation::wire::Message &r
                                  0x0100007f,
                                  0,
                                  {0}};
-    if (configured && sceNetConnect(socket, &endpoint, sizeof(endpoint)) >= 0)
+    at("setting the socket's timeouts (1 = ok)", configured ? 1 : 0);
+    const int connected = configured ? sceNetConnect(socket, &endpoint, sizeof(endpoint)) : -1;
+    if (configured)
+        at("connecting to the loader on port 9021 (result)", connected);
+    if (connected >= 0)
     {
         std::array<std::uint8_t, 4096> buffer{};
         bool streamed = true;
+        at("sending the helper to the loader (send result)");
         for (;;)
         {
             const auto count = read(helper.get(), buffer.data(), buffer.size());
@@ -322,9 +352,20 @@ elevation::Status run_helper(const char *path, const elevation::wire::Message &r
 }
 } // namespace
 
+const char *elevation::step() noexcept
+{
+    return last_step;
+}
+
+int elevation::step_code() noexcept
+{
+    return last_code;
+}
+
 elevation::Status elevation::request(Capability capability, const char *helper_path) noexcept
 {
     selected_path = "none";
+    at("checking /data");
     if (capability != Capability::filesystem)
         return Status::unsupported_capability;
     const pid_t pid = getpid();

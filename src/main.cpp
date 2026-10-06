@@ -146,6 +146,8 @@ int main()
     // 7 apply failed, 9 transport error (no answer from Lapy), 11 timeout.
     store::diag::trace("elevation (Lapy): status %u via %s after %lld ms",
                        static_cast<unsigned>(elevation_status), elevation::path(), since_start());
+    store::diag::trace("elevation stopped at: %s, value %d (0x%08x)", elevation::step(),
+                       elevation::step_code(), static_cast<unsigned>(elevation::step_code()));
     store::diag::trace_console("after elevation");
     if (elevated)
         store::diag::curl_probe("after elevation");
