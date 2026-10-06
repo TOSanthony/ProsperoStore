@@ -87,6 +87,13 @@ The current version is **01.000.000**, the first release, an alpha.
    folder deeper).
 4. Wait a few seconds for ShadowMountPlus to add it to the home screen, then open ProsperoStore.
 
+> [!NOTE]
+> **"Can't start the game or app" after copying the folder?** The console only starts an app
+> whose files are open to every user (permissions `777`). Some FTP programs upload them as `755`
+> or `644`. Set `PPSA99000` and everything inside it to `777` with your FTP program (often
+> "File permissions", applied to subfolders and files), then open the store again. Updates done
+> from inside the store set this themselves.
+
 The store keeps its own data in `/data/prosperostore` (settings, cache, install records and
 logs), outside the app's folder, so updates keep it.
 
@@ -105,11 +112,16 @@ logs), outside the app's folder, so updates keep it.
 
 ## Updating ProsperoStore
 
-When [homebrew.page](https://homebrew.page) lists a newer ProsperoStore, a notice appears for ten
-seconds at the top right, and the store's own page (**Settings > ProsperoStore**) offers the
-update. It downloads and unpacks like any app; then the store closes, a small helper started
-through the payload loader puts the new files in place, and a notification says when to open it
-again. The next start runs the new version.
+When [homebrew.page](https://homebrew.page) lists a newer ProsperoStore, the store asks when it
+opens: **Update now**, **What's new** (the release notes) or **Skip**. The store's own page
+(**Settings > ProsperoStore**) offers the update too. It downloads and unpacks like any app; then
+the store closes, a small helper started through the payload loader puts the new files in place,
+and a notification says when to open it again. The next start runs the new version. Versions
+before 1.000.020 show a short notice at the top right instead of the question.
+
+Updating from inside the store is the easy way. To update by hand, replace the `PPSA99000` folder
+with the one from the new release; if the console then says it can't start the app, see the note
+about permissions under [Install](#install).
 
 ## Known limits of this version
 
