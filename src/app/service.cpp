@@ -2,6 +2,9 @@
 // Copyright (C) 2026 BlackBearReloaded
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+#ifdef STORE_DEBUG_TRACE
+#include "diag/trace.hpp"
+#endif
 #include "app/ambient.hpp"
 #include "system/title_registry.hpp"
 #include "system/self_update_store.hpp"
@@ -581,7 +584,12 @@ void Service::run()
 #endif
     catalog::Snapshot snapshot;
     std::string error;
-    if (client.cached(snapshot, error))
+    const bool had_cache = client.cached(snapshot, error);
+#ifdef STORE_DEBUG_TRACE
+    diag::trace("catalog cache in %s: %s%s%s", root_.empty() ? "(no store folder)" : root_.c_str(),
+                had_cache ? "found" : "none", error.empty() ? "" : ", ", error.c_str());
+#endif
+    if (had_cache)
     {
         Update cached;
         cached.kind = Update::Kind::catalog;
@@ -598,6 +606,9 @@ void Service::run()
             break;
         }
         hui::sys::log("[STORE] catalog attempt=%u error=%s", attempt + 1, error.c_str());
+#ifdef STORE_DEBUG_TRACE
+        diag::trace("catalog attempt %u of 4: %s", attempt + 1, error.c_str());
+#endif
         if (attempt < 3)
             for (unsigned tick = 0; tick < (10U << attempt) && !control_.cancelled.load(); ++tick)
                 hui::sys::sleep_us(100000);

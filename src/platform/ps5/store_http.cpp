@@ -6,6 +6,10 @@
 #include "platform/ps5/system.hpp"
 #include "net/curl_request.hpp"
 #include <algorithm>
+#ifdef STORE_DEBUG_TRACE
+#include "diag/trace.hpp"
+#include <atomic>
+#endif
 #include <unistd.h>
 #include <vector>
 
@@ -44,6 +48,22 @@ namespace
 constexpr const char *kCaList = "/system/common/cert/CA_LIST.cer";
 bool elevated_transport = false;
 bool curl_ready = false;
+#ifdef STORE_DEBUG_TRACE
+// The debug build's record of requests: every failure (the first twenty) and the first
+// few that worked, so a trace shows both what the network refuses and what it carries.
+std::atomic<int> traced_failures = 0, traced_successes = 0;
+void trace_request(const std::string &url, const Response &out, const char *transport,
+                   const char *step, unsigned code)
+{
+    const bool worked = out.error.empty() && (out.status == 200 || out.status == 304);
+    if (worked ? traced_successes.fetch_add(1) >= 3 : traced_failures.fetch_add(1) >= 20)
+        return;
+    store::diag::trace("request %s: %.110s -> HTTP %d, %llu bytes%s%s%s%s (code 0x%08x)",
+                       transport, url.c_str(), out.status,
+                       static_cast<unsigned long long>(out.bytes), worked ? "" : ", failed at ",
+                       worked ? "" : step, out.error.empty() ? "" : ": ", out.error.c_str(), code);
+}
+#endif
 } // namespace
 int start_transport(bool elevated)
 {
@@ -93,6 +113,9 @@ Response request_once(const std::string &url, std::uint64_t limit, const Sink &s
             curl_request(url, limit, sink, control, etag, "/system/common/cert/CA_LIST.cer");
         hui::sys::log("[STORE] curl status=%d bytes=%llu error=%s", result.status,
                       static_cast<unsigned long long>(result.bytes), result.error.c_str());
+#ifdef STORE_DEBUG_TRACE
+        trace_request(url, result, "libcurl", "the request", 0);
+#endif
         return result;
     }
     struct Resources
@@ -201,6 +224,18 @@ Response request_once(const std::string &url, std::uint64_t limit, const Sink &s
                   static_cast<unsigned long long>(out.bytes), resources.pool, resources.ssl,
                   resources.http, resources.tmpl, resources.connection, resources.request, size,
                   out.error.c_str());
+#ifdef STORE_DEBUG_TRACE
+    // Which step the console's HTTPS library stopped at, from what was created.
+    const char *step = resources.pool < 0         ? "the network pool"
+                       : resources.ssl < 0        ? "TLS start"
+                       : resources.http < 0       ? "HTTP start"
+                       : resources.tmpl < 0       ? "the request template"
+                       : resources.connection < 0 ? "the connection set-up"
+                       : resources.request < 0    ? "the request set-up"
+                       : out.status == 0 ? "sending (name lookup, connecting or TLS)"
+                                         : "reading the answer";
+    trace_request(url, out, "sceHttp", step, static_cast<unsigned>(result));
+#endif
     return out;
 }
 } // namespace store::net
