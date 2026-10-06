@@ -20,6 +20,7 @@
 #endif
 #include "system/title_registry.hpp"
 #include "system/app_folder.hpp"
+#include "system/store_folder.hpp"
 #include "platform/ps5/audio_out.hpp"
 #include "platform/ps5/display_egl.hpp"
 #include "platform/ps5/pad.hpp"
@@ -130,6 +131,13 @@ int main()
     sys::log("[STORE] app folder=%s", app_root.c_str());
     request_path = std::string(storage_root) + "/dev/request.txt";
     handled_path = std::string(storage_root) + "/handled.txt";
+    // A folder left by a sandboxed run is taken back before anything is written to it.
+    const std::string reclaimed =
+        elevated ? store::system::reclaim_store_folder(storage_root) : std::string("not elevated");
+    sys::log("[STORE] store folder: %s", reclaimed.c_str());
+#ifdef STORE_DEBUG_TRACE
+    store::diag::trace("store folder: %s", reclaimed.c_str());
+#endif
     if (elevated && !store::diag::start(storage_root))
         sys::log("[STORE] persistent diagnostics unavailable");
 #ifdef STORE_DEVELOPMENT

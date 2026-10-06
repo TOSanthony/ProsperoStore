@@ -46,6 +46,13 @@ int worker_extract(const Connect &connect, const std::string &archive, std::stri
                    const std::string &destination, const std::atomic<bool> &cancelled,
                    std::atomic<std::uint64_t> &written, std::string &error, ExtractTimes &times);
 int worker_remove(const Connect &connect, const std::string &path);
+// One of the store's own folders, written plainly: a path ending in "/prosperostore".
+bool worker_folder(std::string_view path);
+// "reclaim" with such a folder: everything in it is given to the worker's user (root)
+// and opened to every user (folders 0777, files 0666), links untouched. A store that
+// once ran sandboxed left folders an elevated store is refused in. 1: done. 0: failed.
+// -1: no worker could be started, or the folder isn't one of the store's.
+int worker_reclaim(const Connect &connect, const std::string &folder);
 // A title ID, written plainly: four capitals and five digits (PPSA99000).
 bool title_id_plain(std::string_view title);
 // 1: the console took the title off the home screen. 0: it refused (code holds

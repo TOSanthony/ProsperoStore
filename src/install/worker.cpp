@@ -217,6 +217,27 @@ int worker_unregister(const Connect &connect, const std::string &title, int &cod
     return 0;
 }
 
+bool worker_folder(std::string_view path)
+{
+    constexpr std::string_view name = "/prosperostore";
+    // The same rules as a path inside it, which is what the folder plus a name is.
+    return path.size() > name.size() && path.ends_with(name) &&
+           worker_path(std::string(path) + "/x");
+}
+
+int worker_reclaim(const Connect &connect, const std::string &folder)
+{
+    if (!worker_folder(folder))
+        return -1;
+    Session session;
+    std::string request(kWorkerMagic);
+    request += "\nreclaim\n" + folder + "\n";
+    if (!begin(connect, session, request))
+        return -1;
+    std::string last;
+    return follow(session, nullptr, nullptr, last) && last == "ok" ? 1 : 0;
+}
+
 int worker_remove(const Connect &connect, const std::string &path)
 {
     if (!worker_path(path))

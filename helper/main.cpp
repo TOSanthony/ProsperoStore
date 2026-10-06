@@ -14,10 +14,12 @@
 #include <atomic>
 #include <csignal>
 #include <cstdio>
+#include <dirent.h>
 #include <fcntl.h>
 #include <mutex>
 #include <pthread.h>
 #include <string>
+#include <sys/stat.h>
 #include <unistd.h>
 #include <vector>
 
@@ -172,6 +174,37 @@ int unregister(const std::string &title)
 #endif
 }
 
+// Gives a folder and everything in it to this user and opens it to all, never through a
+// link. False when something could not be changed.
+bool reclaim(const std::string &path, int depth = 0)
+{
+    struct stat info
+    {
+    };
+    if (lstat(path.c_str(), &info) != 0)
+        return false;
+    if (S_ISLNK(info.st_mode))
+        return true;
+    bool ok = lchown(path.c_str(), geteuid(), getegid()) == 0;
+    if (S_ISDIR(info.st_mode))
+    {
+        ok = chmod(path.c_str(), 0777) == 0 && ok;
+        DIR *folder = depth < 12 ? opendir(path.c_str()) : nullptr;
+        if (!folder)
+            return false;
+        while (const dirent *entry = readdir(folder))
+        {
+            const std::string name = entry->d_name;
+            if (name != "." && name != "..")
+                ok = reclaim(path + "/" + name, depth + 1) && ok;
+        }
+        closedir(folder);
+    }
+    else if (S_ISREG(info.st_mode))
+        ok = chmod(path.c_str(), 0666) == 0 && ok;
+    return ok;
+}
+
 int main()
 {
     using namespace store::install;
@@ -193,6 +226,18 @@ int main()
         const bool saved = save_download(first);
         say(saved ? "ok\n" : "fail The download could not be saved\n");
         return saved ? 0 : 1;
+    }
+    if (verb == "reclaim")
+    {
+        if (!worker_folder(first))
+        {
+            say("fail The request was refused\n");
+            return 1;
+        }
+        say("ready\n");
+        const bool done = reclaim(first);
+        say(done ? "ok\n" : "fail The folder could not be reclaimed\n");
+        return done ? 0 : 1;
     }
     if (verb == "unregister")
     {
