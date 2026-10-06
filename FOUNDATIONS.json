@@ -147,7 +147,7 @@
       "tooling/native/self_container.hpp": "c06a754fb6897b816154a598cdc7413dcbb2260baed54e00d8e854bbed9b7100",
       "tooling/prospero-clang18": "15dd5f73472f5a1cfed9e974f550bddf1cec5f2136ec5ffe062a764b1c45b48a",
       "tools/build-host-tools.sh": "c3ea9578eb9e86655ecf81d4b4c2847a2a58630aa6c935289156271295cd3912",
-      "tools/build-lapy-helper.py": "0a7de695ededb9d6fb69ed4c628bb12743ac06bde55ade6dbb051b443012c19a",
+      "tools/build-lapy-helper.py": "9cb287e2b1d6c89778f1ba109e6a1a6c0905806ec46e24244de91f3aa65aad50",
       "tools/build-tests.sh": "f00a3a1b0a0bd3a38264c051a0c70485c6c7c58d8e61e9d6582d72252fa5c7f8",
       "tools/check-headers.ps1": "b75d2c4855a6ed59beb520a7bedf0838bb81a34cf1a10828a1071dfacbb0795a",
       "tools/deploy.sh": "68549e7d8d59ae1770b8908569f3b607e03ac134ca4011211923a94a041bde1c",
@@ -175,7 +175,8 @@
     },
     "local_changes": {
       "examples/sandbox-elevation/elevation.hpp": "Diagnostics only: elevation::step() and step_code() report the last step request() reached. Store-only until the boilerplate kit takes it.",
-      "examples/sandbox-elevation/src/elevation.cpp": "Diagnostics only: elevation::step() and step_code() report the last step request() reached. Store-only until the boilerplate kit takes it."
+      "examples/sandbox-elevation/src/elevation.cpp": "Diagnostics only: elevation::step() and step_code() report the last step request() reached. Store-only until the boilerplate kit takes it.",
+      "tools/build-lapy-helper.py": "Lapy helper from blackbearreloaded/PS5-Lapy-JB-Daemon c3bdfe3 (our donor-release fix, upstream PR 48, plus upstream PR 49 for the 32-byte credential attributes) built with payload SDK v0.42, which knows firmware 13.40 to 13.60. Store-only until upstream merges both."
     }
   },
   {
