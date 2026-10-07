@@ -91,11 +91,16 @@ The current version is **01.000.000**, the first release, an alpha.
 4. Wait a few seconds for ShadowMountPlus to add it to the home screen, then open ProsperoStore.
 
 > [!NOTE]
-> **"Can't start the game or app" after copying the folder?** The console only starts an app
-> whose files are open to every user (permissions `777`). Some FTP programs upload them as `755`
-> or `644`. Set `PPSA99000` and everything inside it to `777` with your FTP program (often
-> "File permissions", applied to subfolders and files), then open the store again. Updates done
-> from inside the store set this themselves.
+> **"Can't start the game or app" (CE-107750-0) after copying the folder?** The console only
+> starts an app whose files are open to every user (permissions `777`), and what copies the files
+> decides their permissions. Some FTP servers and programs upload them as `755` or `644`.
+>
+> - Set `PPSA99000` and everything inside it to `777` with your FTP program (often "File
+>   permissions", applied to subfolders and files), then open the store again.
+> - To avoid it next time: the [ftpsrv](https://github.com/ps5-payload-dev/ftpsrv) payload writes
+>   uploads with the right permissions, and in WinSCP a transfer preset with "Set permissions"
+>   `0777` does it for every upload.
+> - Updates done from inside the store, and apps the store installs, are set to `777` for you.
 
 The store keeps its own data in `/data/prosperostore` (settings, cache, install records and
 logs), outside the app's folder, so updates keep it.
