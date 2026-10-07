@@ -425,6 +425,21 @@ void check_transactions(const fs::path &base)
     assert(get(f.root / "user/app" / kId / "sce_sys/param.json") == metadata(kId, "01.000.002"));
     assert(get(f.root / "user/app" / kId / "icon0.png") == "old icon"); // The app ships none.
     assert(tree(f.target()) == v2 && f.managed() == "01.000.002" && f.settled());
+    // The previous version is kept whole, with what its owner had put inside it.
+    assert(result.kept_at == (f.work / "previous" / kId).string());
+    assert(tree(f.work / "previous" / kId) == v1);
+    // The next update of the app replaces that copy with the version it replaces.
+    fs::create_directories(f.target() / "assets/games");
+    put(f.target() / "assets/games/mine.bin", "my own file");
+    result = f.apply(f.request("01.000.003"));
+    assert(result.ok && result.operation == "update" && result.version == "01.000.003");
+    assert(!fs::exists(f.target() / "assets/games/mine.bin"));
+    assert(get(f.work / "previous" / kId / "assets/games/mine.bin") == "my own file");
+    assert(get(f.work / "previous" / kId / "sce_sys/param.json") == metadata(kId, "01.000.002"));
+    assert(f.settled());
+    // Back to the version the checks below start from.
+    assert(f.uninstall().ok);
+    assert(f.apply(f.request("01.000.001")).ok && f.apply(f.request("01.000.002")).ok);
 
     // A listing that claims a newer version than the file holds is not an update.
     request = f.request("01.000.002");
@@ -857,9 +872,10 @@ void check_worker(const fs::path &base, const std::string &program)
     host.started = 0;
     result = f.apply(request);
     assert(result.ok && result.operation == "update" && result.version == "01.000.002");
-    // Download, unpack, and the removal of the old version: a worker each.
-    assert(result.note.find("worker=1") != std::string::npos && host.started == 3);
+    // Download and unpack: a worker each. The old version is kept, not removed.
+    assert(result.note.find("worker=1") != std::string::npos && host.started == 2);
     assert(tree(f.target()) == v2 && f.managed() == "01.000.002" && f.settled());
+    assert(tree(f.work / "previous" / kId) == v1);
 
     host.started = 0;
     result = f.uninstall();

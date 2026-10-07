@@ -86,6 +86,9 @@ struct Result
     std::string version;   // The contentVersion now on disk.
     std::string error;
     std::string note; // For the log: where the time went.
+    // An update: where the previous version's folder was kept, with whatever the user
+    // had put inside it (<drive>/prosperostore/previous/<TITLEID>, until the next update).
+    std::string kept_at;
 };
 // At every instant <location>/<TITLEID> is the complete old version, the
 // complete new version, or absent. Installs when the folder is absent, updates

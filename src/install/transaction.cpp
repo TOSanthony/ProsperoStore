@@ -31,6 +31,7 @@ struct Paths
 {
     std::string work, staging, archive, staged, backups, backup, trashes, trash;
     std::string target, receipts, receipt, journal;
+    std::string keeps, keep; // the previous version of each updated app
 };
 
 // strict is for starting a transaction: the location must be scanned by
@@ -71,11 +72,13 @@ bool resolve(const Environment &environment, const std::string &id, const std::s
     paths.backup = paths.backups + "/" + id;
     paths.trashes = paths.work + "/trash";
     paths.trash = paths.trashes + "/" + id;
+    paths.keeps = paths.work + "/previous";
+    paths.keep = paths.keeps + "/" + id;
     paths.target = location + "/" + id;
     paths.receipts = environment.root + "/receipts";
     paths.receipt = paths.receipts + "/" + id + ".json";
     paths.journal = environment.root + "/journal.json";
-    for (const auto *path : {&paths.staged, &paths.backup, &paths.trash})
+    for (const auto *path : {&paths.staged, &paths.backup, &paths.trash, &paths.keep})
         if (const auto conflict = system::work_path_conflict(environment.policy, *path);
             !conflict.empty())
         {
@@ -196,6 +199,23 @@ bool discard(const Environment &environment, const std::string &path)
     if (environment.remove && kind(path) == Kind::directory && environment.remove(path) == 1)
         return true;
     return remove_tree(path);
+}
+
+// An update never deletes what it replaces. People keep their own files inside an app's
+// folder (games, firmware, settings of an older version), and the new version's folder
+// has none of them. So the previous folder is moved, whole, to the store's "previous"
+// folder on the same drive, where the next update of that app replaces it. Nothing
+// there is scanned by ShadowMountPlus (resolve checks it like the other work folders).
+bool keep_previous(const Environment &environment, const Paths &paths)
+{
+    if (kind(paths.backup) == Kind::absent)
+        return true;
+    if (!make_directory(paths.keeps) || !discard(environment, paths.keep) ||
+        rename(paths.backup.c_str(), paths.keep.c_str()) != 0)
+        return false;
+    sync_directory(paths.keeps);
+    sync_directory(paths.backups);
+    return true;
 }
 
 // Downloads to path and accepts the file only when its size and SHA-256 are
@@ -558,8 +578,12 @@ Result apply(const Environment &environment, const Request &request, net::Contro
                        entry.digest))
         return fail("Installed, but not recorded yet. Restart ProsperoStore to finish.");
     STORE_STEP("recorded");
-    if (update && !discard(environment, paths.backup))
-        return fail("Updated, but the previous version is still being removed.");
+    // The journal stays on failure, so the next start sets the previous version aside.
+    if (update && !keep_previous(environment, paths))
+        return fail("Updated, but the previous version is not set aside yet. Restart "
+                    "ProsperoStore to finish.");
+    if (update)
+        result.kept_at = paths.keep;
     if (update)
         refresh_registered(environment, id, paths.target);
     STORE_STEP("cleaned");
@@ -750,8 +774,12 @@ Result recover(const Environment &environment)
         if (placed == Kind::directory && folder_version(paths.target, id, version) &&
             version == journal.content_version)
         {
-            if (!record() || !discard(environment, paths.backup))
+            // The store's own previous folder holds nothing of the user's.
+            if (!record() || !(id == environment.self ? discard(environment, paths.backup)
+                                                      : keep_previous(environment, paths)))
                 return fail("An interrupted update could not be finished");
+            if (id != environment.self)
+                result.kept_at = paths.keep;
             refresh_registered(environment, id, paths.target);
             result.version = version;
             return close();

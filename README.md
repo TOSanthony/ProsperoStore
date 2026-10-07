@@ -52,7 +52,10 @@ The current version is **01.000.000**, the first release, an alpha.
   catalog, unpacks it and puts it in place. A ring, four steps (Download, Verify, Unpack, Finish)
   and the time left show the progress; Circle cancels, and nothing changes until the end.
 - **Updates** - apps installed with the store are offered their newer versions (the Updates
-  section, or Update all). A running app is never touched until it is closed.
+  section, or Update all). A running app is never touched until it is closed. An update replaces
+  the app's whole folder; the previous folder, with anything you had put inside it, is kept in
+  `/data/prosperostore/previous/<TITLE ID>` (or `prosperostore/previous` on the app's drive) until
+  that app's next update, so files of yours are never lost. Move them back by FTP if you need them.
 - **Clean uninstalls** - hold the Uninstall button: the app's folder goes and so does its
   home-screen tile. Its saved data stays.
 - **Fast file work** - unpacking and removing run in a helper started through the payload loader,

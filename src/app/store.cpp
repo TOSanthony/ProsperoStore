@@ -1135,9 +1135,10 @@ void Screen::update_page(const InputFrame &input, ui::Feedback &feedback)
             ask_id_ = shown.title_id;
             dialog_.open({ui::StatusKind::question,
                           "Manage " + shown.name + " with ProsperoStore?",
-                          "Nothing is changed now. From then on its updates are offered here, and "
-                          "an update replaces the app's whole folder: anything you added inside "
-                          "that folder is lost with it.",
+                          "Nothing is changed now. From then on its updates are offered here. An "
+                          "update replaces the app's whole folder; the previous one, with "
+                          "anything you added inside it, is kept in the store's \"previous\" "
+                          "folder until the next update.",
                           {{"Cancel"}, {"Manage", ui::ButtonKind::primary}}},
                          feedback);
         }
