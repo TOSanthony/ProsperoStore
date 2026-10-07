@@ -553,9 +553,7 @@ void Service::run_installer()
                       "before starting it."
                     : "ShadowMountPlus will add it to your home screen in a moment.";
             if (result.operation == "update" && !result.kept_at.empty())
-                done.detail = "The new version is in place. The previous one, with anything you "
-                              "added to its folder, is kept in " +
-                              result.kept_at + ".";
+                done.detail = "Previous folder kept in " + result.kept_at + ".";
         }
         else
         {
