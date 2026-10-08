@@ -7,10 +7,10 @@ before merging.
 
 ## What a pull request produces
 
-| | Pull request | Push to `main`, tag |
+| | Pull request | Tag, or a run started by hand |
 | --- | --- | --- |
 | Artifact name | `ProsperoStore-PR<number>-<commit>` | `prosperostore-<commit>` |
-| `<commit>` | First seven characters of the pull request's own head commit | The pushed commit, in full |
+| `<commit>` | First seven characters of the pull request's own head commit | The commit built, in full |
 | Label inside the app folder | `PR <number>, <commit>` | None |
 | `contentVersion` | Unchanged | Unchanged |
 
@@ -62,9 +62,9 @@ BUILD_LABEL="pacing test 2" make app
 
 ## Names in the workflow
 
-The pull-request name follows the repository's name by itself. The name used for pushes and
-tags, `prosperostore-<commit>`, appears twice in the workflow: the "Name this build" step and
-the release job's download. A tag never takes the pull-request branch, so the release job
+The pull-request name follows the repository's name by itself. The name used for tags and
+runs started by hand, `prosperostore-<commit>`, appears twice in the workflow: the "Name
+this build" step and the release job's download. A tag never takes the pull-request branch, so the release job
 finds its build under the same name as before; change both places together.
 
 Pull-request runs have a read-only token and no secrets, including for forks. Do not move
