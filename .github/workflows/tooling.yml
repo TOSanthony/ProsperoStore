@@ -8,9 +8,8 @@ name: Build
 # app-folder ZIP and its checksum. The ZIP is the only release file, and every entry in it
 # is stored with permissions 0777: the console only starts an app whose files are open to all.
 on:
+  # A build on main is started by hand (Run workflow): pushes to main build nothing.
   push:
-    branches:
-      - main
     tags:
       - "v[0-9]*.[0-9][0-9][0-9].[0-9][0-9][0-9]"
   pull_request:
