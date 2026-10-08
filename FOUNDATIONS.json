@@ -53,7 +53,7 @@
       ".clang-format": "a50f76a95278c40be80009087751cca989ab2585cb4a4fd3e6be200c12e0f6ae",
       ".clang-tidy": "ae89f6c9302fb4031e755fdce925bf0d38b3189072b90f5a3180f064ec2c0b7d",
       ".env.example": "3b0dff510ab8125bb130e4d2c997b2ec922720e1f5c9b6df4b2e5de2fae3a2d1",
-      ".github/workflows/tooling.yml": "cb84dc4fcec2c2d993533dbb87c9747507033b1cd57badd5e62874a262b51a00",
+      ".github/workflows/tooling.yml": "c5e86e9cce1842e37fd3234a0f1fc0aae8c5cec3905128a0af0f0d9a9904d81c",
       ".gitignore": "ccbdea5397c44a74a6271be9794255013deae8a666f82734296f84cbb7ca0017",
       "LICENSE": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
       "build.ps1": "826a8e8320a1881720f87ced4dae8006a5ec865494a85d3f1d33458ff8cec1e3",
@@ -155,7 +155,7 @@
       "tools/doctor.sh": "a346759ccc7c41654ebd195c10c4e87390e073bf43ada9132c6e94c46a60c3c2",
       "tools/init-project.sh": "c29eee4a1b8c84ab16a9fe3e8c0d2ef9d199af32257a368dbe62458242e70b60",
       "tools/inspect.ps1": "d22759165ee122b48dba70c603412ec3e2e0c67b301c738a09146a05c15ce5d2",
-      "tools/lint.sh": "4d0de7045500efc0e886be9d32fd5217b0e60777ef7dd90ad0d07e87a9178542",
+      "tools/lint.sh": "66f9406fdcb0dd860822d45a1a74166a3bb11ce869e0e9fcd803f869c6749892",
       "tools/ninja-build.sh": "fa85689b3cb839d357412ff9bf9166aee5e3c63fec65e9e14d34561d9ea12296",
       "tools/prepare-assets.ps1": "a9b1ec50ed16d1839e2fccbddba0d1fd4f0950171e9fadf4995b12e0b0df8d81",
       "tools/prepare-assets.sh": "05e36d98aec07888bc033a42b036f08b69ba1bde0cc9b66e598b4c1bb6daccad",
@@ -177,7 +177,8 @@
       "examples/sandbox-elevation/elevation.hpp": "Diagnostics only: elevation::step() and step_code() report the last step request() reached. Store-only until the boilerplate kit takes it.",
       "examples/sandbox-elevation/src/elevation.cpp": "Diagnostics only: elevation::step() and step_code() report the last step request() reached. Store-only until the boilerplate kit takes it.",
       "tools/build-lapy-helper.py": "Lapy helper from blackbearreloaded/PS5-Lapy-JB-Daemon c3bdfe3 (our donor-release fix, upstream PR 48, plus upstream PR 49 for the 32-byte credential attributes) built with payload SDK v0.42, which knows firmware 13.40 to 13.60. Store-only until upstream merges both.",
-      ".github/workflows/tooling.yml": "The store's own workflow: lint, its tests, the release ZIP only (entries 0777), a pre-release for a v-tag."
+      ".github/workflows/tooling.yml": "The store's own workflow: lint, its tests, the release ZIP only (entries 0777), a pre-release for a v-tag.",
+      "tools/lint.sh": "LINT_SKIP_TIDY=1 leaves clang-tidy out (the GitHub workflow uses it)."
     }
   },
   {
