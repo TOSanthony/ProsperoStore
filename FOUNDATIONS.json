@@ -53,7 +53,7 @@
       ".clang-format": "a50f76a95278c40be80009087751cca989ab2585cb4a4fd3e6be200c12e0f6ae",
       ".clang-tidy": "ae89f6c9302fb4031e755fdce925bf0d38b3189072b90f5a3180f064ec2c0b7d",
       ".env.example": "3b0dff510ab8125bb130e4d2c997b2ec922720e1f5c9b6df4b2e5de2fae3a2d1",
-      ".github/workflows/tooling.yml": "c5e86e9cce1842e37fd3234a0f1fc0aae8c5cec3905128a0af0f0d9a9904d81c",
+      ".github/workflows/tooling.yml": "1f0f2651f625630585428aad5bd5f23f98a13e85f8cc4cceec94d5a6ca30e0a9",
       ".gitignore": "ccbdea5397c44a74a6271be9794255013deae8a666f82734296f84cbb7ca0017",
       "LICENSE": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
       "build.ps1": "826a8e8320a1881720f87ced4dae8006a5ec865494a85d3f1d33458ff8cec1e3",
@@ -177,7 +177,7 @@
       "examples/sandbox-elevation/elevation.hpp": "Diagnostics only: elevation::step() and step_code() report the last step request() reached. Store-only until the boilerplate kit takes it.",
       "examples/sandbox-elevation/src/elevation.cpp": "Diagnostics only: elevation::step() and step_code() report the last step request() reached. Store-only until the boilerplate kit takes it.",
       "tools/build-lapy-helper.py": "Lapy helper from blackbearreloaded/PS5-Lapy-JB-Daemon c3bdfe3 (our donor-release fix, upstream PR 48, plus upstream PR 49 for the 32-byte credential attributes) built with payload SDK v0.42, which knows firmware 13.40 to 13.60. Store-only until upstream merges both.",
-      ".github/workflows/tooling.yml": "The store's own workflow: lint, its tests, the release ZIP only (entries 0777), a pre-release for a v-tag.",
+      ".github/workflows/tooling.yml": "The store's own workflow: lint, its tests, the release ZIP only (entries 0777), a pre-release for a v-tag. A pull request's build is named by its number and its own commit (docs/PULL_REQUEST_BUILDS.md).",
       "tools/lint.sh": "LINT_SKIP_TIDY=1 leaves clang-tidy out (the GitHub workflow uses it)."
     }
   },

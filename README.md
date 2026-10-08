@@ -145,7 +145,8 @@ about permissions under [Install](#install).
 The store's source is in this repository: the app in `src/`, the file worker in `helper/`, the
 host previews and checks in `host/` and `tests/`. Build on Linux (WSL works) with
 `make DEVELOPMENT=1 app`, or `make app` for a release build without development requests.
-`make test lint` runs the host checks. [IMPLEMENTATION_NOTES.md](IMPLEMENTATION_NOTES.md) records
+`make test lint` runs the host checks. Every pull request gets an installable build named by its
+number and commit: see [Pull-request builds](docs/PULL_REQUEST_BUILDS.md). [IMPLEMENTATION_NOTES.md](IMPLEMENTATION_NOTES.md) records
 what was built and how it was verified on consoles, and [PLAN.md](PLAN.md) the design and
 decisions. `FOUNDATIONS.json` pins the foundation sources, and `third_party/STORE_SOURCES.json` the
 vendored libraries. The store reads the catalog API at `https://homebrew.page/api/v1/`, specified
