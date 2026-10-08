@@ -53,7 +53,7 @@
       ".clang-format": "a50f76a95278c40be80009087751cca989ab2585cb4a4fd3e6be200c12e0f6ae",
       ".clang-tidy": "ae89f6c9302fb4031e755fdce925bf0d38b3189072b90f5a3180f064ec2c0b7d",
       ".env.example": "3b0dff510ab8125bb130e4d2c997b2ec922720e1f5c9b6df4b2e5de2fae3a2d1",
-      ".github/workflows/tooling.yml": "5391ea69ae9859567ba93552b40b20990a7c70b20d4343eb7c0fbf9f136dfa6e",
+      ".github/workflows/tooling.yml": "cb84dc4fcec2c2d993533dbb87c9747507033b1cd57badd5e62874a262b51a00",
       ".gitignore": "ccbdea5397c44a74a6271be9794255013deae8a666f82734296f84cbb7ca0017",
       "LICENSE": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
       "build.ps1": "826a8e8320a1881720f87ced4dae8006a5ec865494a85d3f1d33458ff8cec1e3",
@@ -121,7 +121,7 @@
       "tests/test_curl_dns.c": "9d4c53003b83fe5df4af8d9b4c786bdde2adb6e6833cc6bb9b0a30ff232834c3",
       "tests/test_curl_time.cpp": "e8d79d3f070e863a6af519a047713f7fb0b6b941fe450cec630ef5d7defaa274",
       "tests/test_demo_renderer.cpp": "6adafecef307ab12c3e056492a835bb68f47cc088f437b70f53743d3d6644736",
-      "tests/test_elevation.cpp": "518afe9c100fb6af55f9ee836b87627b50b026ccc768811261753be6b6fc5be2",
+      "tests/test_elevation.cpp": "cb6ed90b8271e91de893e6778bd86f2421f562c1535dd51312f1f020c15dc10f",
       "tests/test_executable_writer.py": "7dc8184354c5c6bdd8e327aaa0745c6a2ac17e80d83c4c4e0508bbd8c846d6d7",
       "tests/test_https_trust.cpp": "94edfc67641c2d6291510cf3b6e7a6f7074c54604bd31e344ea3d3692161b8f3",
       "tests/test_incremental_build.py": "1aa28211d769475f089905a1a7ce5501c723234f83730003c5e9e4808d853634",
@@ -176,7 +176,8 @@
     "local_changes": {
       "examples/sandbox-elevation/elevation.hpp": "Diagnostics only: elevation::step() and step_code() report the last step request() reached. Store-only until the boilerplate kit takes it.",
       "examples/sandbox-elevation/src/elevation.cpp": "Diagnostics only: elevation::step() and step_code() report the last step request() reached. Store-only until the boilerplate kit takes it.",
-      "tools/build-lapy-helper.py": "Lapy helper from blackbearreloaded/PS5-Lapy-JB-Daemon c3bdfe3 (our donor-release fix, upstream PR 48, plus upstream PR 49 for the 32-byte credential attributes) built with payload SDK v0.42, which knows firmware 13.40 to 13.60. Store-only until upstream merges both."
+      "tools/build-lapy-helper.py": "Lapy helper from blackbearreloaded/PS5-Lapy-JB-Daemon c3bdfe3 (our donor-release fix, upstream PR 48, plus upstream PR 49 for the 32-byte credential attributes) built with payload SDK v0.42, which knows firmware 13.40 to 13.60. Store-only until upstream merges both.",
+      ".github/workflows/tooling.yml": "The store's own workflow: lint, its tests, the release ZIP only (entries 0777), a pre-release for a v-tag."
     }
   },
   {

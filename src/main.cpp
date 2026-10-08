@@ -319,7 +319,7 @@ int main()
     [[maybe_unused]] const char *note = "", *previous_note = "";
     [[maybe_unused]] std::int64_t tour_until = 0, tour_next = 0;
     [[maybe_unused]] unsigned tour_step = 0;
-    [[maybe_unused]] std::string press_keys;         // development: buttons still to press
+    [[maybe_unused]] std::string press_keys; // development: buttons still to press
     [[maybe_unused]] std::int64_t press_next = 0;
     [[maybe_unused]] bool shot_wanted = false;       // development: save the next frame
     [[maybe_unused]] std::string shot_name = "shot"; // ... as /data/prosperostore/dev/<name>.tga

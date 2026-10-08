@@ -2914,8 +2914,9 @@ void Screen::write_about()
         // The debug build: what happened at each step, to photograph or send.
         blocks.push_back(Block::heading("Debug trace", 3));
         blocks.push_back(Block::paragraph(
-            debug_file_.empty() ? std::string("Not saved to a file: no writable /data or USB drive.")
-                                : "Also saved to " + debug_file_ + "."));
+            debug_file_.empty()
+                ? std::string("Not saved to a file: no writable /data or USB drive.")
+                : "Also saved to " + debug_file_ + "."));
         for (const auto &line : debug_lines_)
             blocks.push_back(Block::bullet(line));
     }
