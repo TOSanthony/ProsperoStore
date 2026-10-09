@@ -445,7 +445,7 @@ int main(int argc, char **argv)
                 assert(screen.open_app(id));
                 screen.pending_detail.clear();
                 hui::Image qr;
-                assert(hui::encode_qr("https://homebrew.page/app/" + id + "/", qr));
+                assert(hui::encode_qr("https://jellyfinarr.synology.me/store/app/" + id + "/", qr));
                 const auto texture = renderer.batch().create_texture(qr.width, qr.height, qr.rgba.data());
                 textures.push_back(texture);
                 screen.set_qr(id, texture, qr.width);
@@ -466,7 +466,7 @@ int main(int argc, char **argv)
                 assert(screen.open_app("PPSA99169"));
                 screen.pending_detail.clear();
                 hui::Image qr;
-                assert(hui::encode_qr("https://homebrew.page/app/PPSA99169/", qr));
+                assert(hui::encode_qr("https://jellyfinarr.synology.me/store/app/PPSA99169/", qr));
                 const auto texture = renderer.batch().create_texture(qr.width, qr.height, qr.rgba.data());
                 textures.push_back(texture);
                 screen.set_qr("PPSA99169", texture, qr.width);
@@ -541,7 +541,7 @@ int main(int argc, char **argv)
             }
             else if (mode == "notice")
                 screen.notify("Update available: 01.000.010",
-                              "A newer ProsperoStore is listed on homebrew.page.");
+                              "A newer ProsperoStore is listed on jellyfinarr.synology.me.");
             else if (mode == "scrolled" || mode == "coming-soon")
             {
                 hui::InputFrame move;
@@ -632,7 +632,7 @@ int main(int argc, char **argv)
                     assert(client.detail(snapshot, screen.pending_detail, entry, control, error));
                     screen.set_detail(entry);
                     hui::Image qr;
-                    assert(hui::encode_qr("https://homebrew.page/app/" + entry.id + "/", qr));
+                    assert(hui::encode_qr("https://jellyfinarr.synology.me/store/app/" + entry.id + "/", qr));
                     const auto texture =
                         renderer.batch().create_texture(qr.width, qr.height, qr.rgba.data());
                     assert(texture);
