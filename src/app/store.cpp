@@ -2637,8 +2637,8 @@ void Screen::draw_page(const ui::Fonts &fonts, std::uint32_t glass)
         list.image(qr_texture_, code, gfx::kFullUv, kWhite);
         ui::text(list, fonts.semibold, "Scan for its page and source", code.x + code.w + 26.0f,
                  code.y + 38.0f, 20, kInk.with_alpha(0.86f));
-        ui::text(list, fonts.mono, "jellyfinarr.synology.me/store/app/" + app.title_id, code.x + code.w + 26.0f,
-                 code.y + 68.0f, 17, kInk.with_alpha(0.55f));
+        ui::text(list, fonts.mono, "jellyfinarr.synology.me/store/app/" + app.title_id,
+                 code.x + code.w + 26.0f, code.y + 68.0f, 17, kInk.with_alpha(0.55f));
         list.pop_opacity();
     }
 
