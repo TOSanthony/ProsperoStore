@@ -16,7 +16,7 @@ namespace store::catalog
 constexpr std::size_t kIndexLimit = 4 * 1024 * 1024;
 constexpr std::size_t kDetailLimit = 64 * 1024;
 constexpr std::size_t kVersionsLimit = 1024 * 1024;
-constexpr std::uint64_t kArtifactLimit = 2ULL * 1024 * 1024 * 1024;
+constexpr std::uint64_t kArtifactLimit = 512ULL * 1024 * 1024 * 1024;
 
 bool title_id(std::string_view value);
 bool version(std::string_view value);
