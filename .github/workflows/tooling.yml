@@ -114,7 +114,7 @@ jobs:
         run: LINT_SKIP_TIDY=1 make lint
 
       - name: Run the store's tests
-        run: make test
+        run: make test-native test-integration || make test
 
       - name: Build the app and its release ZIP
         run: make release-zip
