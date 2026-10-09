@@ -19,6 +19,6 @@ std::string trace_file();
 // The checks a report needs, before and after elevation: firmware, clock, the
 // app's folder, /data access, the payload loader on port 9021.
 void trace_console(const char *when);
-// One HEAD request to homebrew.page through libcurl, with every step curl reports.
+// One HEAD request to jellyfinarr.synology.me through libcurl, with every step curl reports.
 void curl_probe(const char *when);
 } // namespace store::diag
