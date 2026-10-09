@@ -19,7 +19,7 @@ namespace store::diag
 namespace
 {
 constexpr const char *kCa = "/system/common/cert/CA_LIST.cer";
-constexpr const char *kUrl = "https://homebrew.page/api/v1/manifest.json";
+constexpr const char *kUrl = "https://jellyfinarr.synology.me/store/api/v1/manifest.json";
 
 std::string error_text()
 {
