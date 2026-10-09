@@ -196,6 +196,7 @@ bool api_url(std::string_view url)
 {
     return host(url) == "jellyfinarr.synology.me" || host(url) == "homebrew.page";
 }
+
 bool artifact_url(std::string_view url, bool redirected)
 {
     const auto domain = host(url);
