@@ -194,7 +194,7 @@ bool update_available(std::string_view installed, std::string_view available)
 
 bool api_url(std::string_view url)
 {
-    return host(url) == "homebrew.page";
+    return host(url) == "jellyfinarr.synology.me" || host(url) == "homebrew.page";
 }
 bool artifact_url(std::string_view url, bool redirected)
 {
