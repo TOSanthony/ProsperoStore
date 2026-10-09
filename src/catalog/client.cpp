@@ -13,7 +13,7 @@ namespace store::catalog
 {
 namespace
 {
-constexpr const char *kApi = "https://homebrew.page/api/v1/";
+constexpr const char *kApi = "https://jellyfinarr.synology.me/store/api/v1/";
 // open with O_NOFOLLOW also works where the sandbox prohibits lstat. Keep the
 // descriptor through validation and read so a path swap cannot replace it.
 int read_trust(const std::string &path, std::string &out)
