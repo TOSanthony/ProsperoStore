@@ -199,7 +199,8 @@ bool api_url(std::string_view url)
 bool artifact_url(std::string_view url, bool redirected)
 {
     const auto domain = host(url);
-    return domain == "jellyfinarr.synology.me" ||
+    return domain == "github.com" ||
+           domain == "jellyfinarr.synology.me" ||
            (redirected && domain == "release-assets.githubusercontent.com");
 }
 
