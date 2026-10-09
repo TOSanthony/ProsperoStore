@@ -226,6 +226,10 @@ bool download(const Environment &environment, const catalog::Entry &entry, const
     const std::uint64_t limit = entry.size ? entry.size : catalog::kArtifactLimit;
     for (unsigned attempt = 0; attempt < 3; ++attempt)
     {
+        LOG("[DOWNLOAD] retry=%u response_ok=%d error=%s",
+            attempt,
+            response.ok(),
+            response.error.c_str());
         if (!remove_tree(path))
         {
             error = "The download could not be saved";
@@ -300,6 +304,9 @@ bool download(const Environment &environment, const catalog::Entry &entry, const
             error = "The download could not be saved";
         else
             error = response.error.empty() ? "The download failed" : response.error;
+        
+        LOG("[DOWNLOAD] failed: %s", error.c_str());
+        
         if (control.cancelled.load() || !saved || error == "The download address is not allowed")
             return false;
         if (attempt < 2)
