@@ -728,7 +728,8 @@ void Service::run()
                 Update qr;
                 qr.kind = Update::Kind::qr;
                 qr.entry.id = id;
-                if (hui::encode_qr("https://jellyfinarr.synology.me/store/app/" + id + "/", qr.image))
+                if (hui::encode_qr("https://jellyfinarr.synology.me/store/app/" + id + "/",
+                                   qr.image))
                     publish(std::move(qr));
             }
         }
