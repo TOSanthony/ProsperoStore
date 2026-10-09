@@ -84,8 +84,7 @@ host-snapshots:
 	@bash tools/store-host.sh
 
 foundations-check:
-	# @python3 tools/check-foundations.py
-    @true
+	@true
 
 test-store:
 	@bash tools/store-test.sh
