@@ -200,4 +200,4 @@ jobs:
             --prerelease \
             --generate-notes \
             --title "ProsperoStore ${GITHUB_REF_NAME#v} (alpha)"
-
+            
