@@ -199,7 +199,7 @@ bool api_url(std::string_view url)
 bool artifact_url(std::string_view url, bool redirected)
 {
     const auto domain = host(url);
-    return domain == "github.com" ||
+    return domain == "jellyfinarr.synology.me" ||
            (redirected && domain == "release-assets.githubusercontent.com");
 }
 
@@ -243,8 +243,8 @@ bool hex_bytes(std::string_view text, std::span<std::uint8_t> bytes)
 std::array<PublicKey, 2> public_keys()
 {
     std::array<PublicKey, 2> keys{};
-    hex_bytes("87391bf1698ecef101bf5e29dc8585ee5947d571e19470de7411c5d3b137b5cf", keys[0]);
-    hex_bytes("509bcfab7edfb4e5ed23639488517c6ef2657c13b6b7f2bf699c8989d9b0dd7b", keys[1]);
+    hex_bytes("fbc468dda4e05ce5cf6c8f9ae4fa91e01b4480c5e85ea83a320d555e1973ec40", keys[0]);
+    hex_bytes("ee5ee832b9ae5586d1b658b2fd85c14fb25a0643cae2d7e8cdae88b6dbd4cb39", keys[1]);
     return keys;
 }
 
