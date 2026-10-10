@@ -279,7 +279,7 @@ bool download(const Environment &environment, const catalog::Entry &entry, const
             control);
         saved = writer.finish() && saved;
         writer = {};
-        if (response.ok() && response.status == 200 && saved)
+        if (response.ok() && (response.status == 200 || response.status == 206) && saved)
         {
             std::array<std::uint8_t, 32> digest{}, expected{};
             hash.finish();
