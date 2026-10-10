@@ -17,6 +17,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <vector>
+#include <dirent.h>
 
 namespace store::install
 {
@@ -71,6 +72,31 @@ void budget_free(void *opaque, void *address)
     std::memcpy(&previous, block, sizeof(previous));
     static_cast<Budget *>(opaque)->used -= previous;
     std::free(block);
+}
+
+void recursive_chmod_777(const std::string &dir_path)
+{
+    chmod(dir_path.c_str(), 0777);
+    DIR *d = opendir(dir_path.c_str());
+    if (!d) return;
+
+    struct dirent *entry;
+    while ((entry = readdir(d)) != nullptr)
+    {
+        if (std::strcmp(entry->d_name, ".") == 0 || std::strcmp(entry->d_name, "..") == 0)
+            continue;
+
+        std::string full_path = dir_path + "/" + entry->d_name;
+        chmod(full_path.c_str(), 0777);
+
+        // Détection robuste du type de dossier via stat()
+        struct stat st{};
+        if (stat(full_path.c_str(), &st) == 0 && S_ISDIR(st.st_mode))
+        {
+            recursive_chmod_777(full_path);
+        }
+    }
+    closedir(d);
 }
 
 class Reader
@@ -505,6 +531,13 @@ bool extract_archive(const std::string &path, std::string_view title,
                      const std::string &destination, const std::atomic<bool> &cancelled,
                      std::atomic<std::uint64_t> &written, std::string &error, ExtractTimes *times)
 {
+    // RAII Guard : restaure l'umask original automatiquement à la sortie de la fonction
+    struct UmaskGuard {
+        mode_t original;
+        UmaskGuard() : original(umask(0000)) {}
+        ~UmaskGuard() { umask(original); }
+    } umask_guard;
+
     const auto started = now_ms();
     std::vector<Entry> entries;
     ArchiveInfo info;
@@ -519,7 +552,7 @@ bool extract_archive(const std::string &path, std::string_view title,
             return false;
     }
     error = "The app could not be unpacked";
-    if (mkdir(destination.c_str(), 0755) != 0 || !open_to_all(destination))
+    if (mkdir(destination.c_str(), 0777) != 0 || !open_to_all(destination))
         return false;
     ExtractWork work{path, destination, entries, cancelled, written};
     pthread_t workers[8];
@@ -538,6 +571,7 @@ bool extract_archive(const std::string &path, std::string_view title,
     }
     if (work.failed.load())
         return false;
+
     // Files and folders alike are made durable together, before the app is put in place.
     std::vector<std::string> paths;
     for (const auto &entry : entries)
@@ -554,6 +588,10 @@ bool extract_archive(const std::string &path, std::string_view title,
             error = "Cancelled";
         return false;
     }
+
+    // Assure les permissions complètes sur l'ensemble du jeu extrait
+    recursive_chmod_777(destination);
+
     if (times)
         *times = {work.write_ms.load(), now_ms() - syncing, now_ms() - started, files};
     error.clear();
