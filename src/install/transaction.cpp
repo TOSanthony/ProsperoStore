@@ -277,12 +277,6 @@ bool download(const Environment &environment, const catalog::Entry &entry, const
                 return true;
             },
             control);
-        
-        hui::sys::log("[DOWNLOAD] attempt=%u status=%d ok=%d received=%llu error=%s",
-                      attempt, response.status, response.ok(),
-                      static_cast<unsigned long long>(received),
-                      response.error.c_str());
-        
         saved = writer.finish() && saved;
         writer = {};
         if (response.ok() && response.status == 200 && saved)
@@ -306,9 +300,6 @@ bool download(const Environment &environment, const catalog::Entry &entry, const
             error = "The download could not be saved";
         else
             error = response.error.empty() ? "The download failed" : response.error;
-        
-        hui::sys::log("[DOWNLOAD] failed=%s", error.c_str());
-        
         if (control.cancelled.load() || !saved || error == "The download address is not allowed")
             return false;
         if (attempt < 2)
