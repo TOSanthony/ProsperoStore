@@ -140,24 +140,31 @@ Response curl_request(const std::string &url, std::uint64_t limit, const Sink &s
         return out;
     }
     const auto result = curl_easy_perform(curl);
-  
+    long status = 0;
+    const auto info = curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status);
+    
     hui::sys::log(
         "[CURL] result=%d status=%ld received=%llu",
         (int)result,
         status,
         (unsigned long long)state.received);
   
-    long status = 0;
-    const auto info = curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status);
     out.status = static_cast<int>(status);
     if (control.cancelled.load())
+    {
         out.error = "Cancelled";
+    }
     else if ((result != CURLE_OK || info != CURLE_OK) && out.error.empty())
+    {
         out.error =
-            "The network request failed (curl " + std::to_string(static_cast<int>(result)) + ")";
+            "The network request failed (curl " +
+            std::to_string(static_cast<int>(result)) + ")";
         hui::sys::log("[CURL] ERROR %s", out.error.c_str());
+    }
     else if (!read_headers(state.headers, out))
+    {
         out.error = "The response headers are invalid";
+    }
     return out;
 }
 } // namespace store::net
