@@ -121,11 +121,11 @@ Response curl_request(const std::string &url, std::uint64_t limit, const Sink &s
     set(CURLOPT_FOLLOWLOCATION, 0L);
     set(CURLOPT_SSL_VERIFYPEER, 1L);
     set(CURLOPT_SSL_VERIFYHOST, 2L);
-    set(CURLOPT_USERAGENT, "ProsperoStore/01.000.040");
+    set(CURLOPT_USERAGENT, "ProsperoStore/01.000.050");
     set(CURLOPT_ACCEPT_ENCODING, "identity");
     set(CURLOPT_CONNECTTIMEOUT, 10L);
     set(CURLOPT_LOW_SPEED_LIMIT, 1L);
-    set(CURLOPT_LOW_SPEED_TIME, 5L);
+    set(CURLOPT_LOW_SPEED_TIME, 60L);
     set(CURLOPT_HTTPHEADER, list);
     set(CURLOPT_WRITEFUNCTION, write);
     set(CURLOPT_WRITEDATA, &state);
@@ -142,29 +142,14 @@ Response curl_request(const std::string &url, std::uint64_t limit, const Sink &s
     const auto result = curl_easy_perform(curl);
     long status = 0;
     const auto info = curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status);
-    
-    hui::sys::log(
-        "[CURL] result=%d status=%ld received=%llu",
-        (int)result,
-        status,
-        (unsigned long long)state.received);
-  
     out.status = static_cast<int>(status);
     if (control.cancelled.load())
-    {
         out.error = "Cancelled";
-    }
     else if ((result != CURLE_OK || info != CURLE_OK) && out.error.empty())
-    {
         out.error =
-            "The network request failed (curl " +
-            std::to_string(static_cast<int>(result)) + ")";
-        hui::sys::log("[CURL] ERROR %s", out.error.c_str());
-    }
+            "The network request failed (curl " + std::to_string(static_cast<int>(result)) + ")";
     else if (!read_headers(state.headers, out))
-    {
         out.error = "The response headers are invalid";
-    }
     return out;
 }
 } // namespace store::net
