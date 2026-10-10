@@ -241,8 +241,7 @@ bool download(const Environment &environment, const catalog::Entry &entry, const
                 error = "The download could not be saved";
                 return false;
             }
-            auto written_since_sync = std::make_shared<std::size_t>(0);
-            writer.write = [descriptor, written_since_sync](std::string_view chunk)
+            writer.write = [descriptor](std::string_view chunk)
             {
                 std::size_t done = 0;
                 while (done < chunk.size())
@@ -253,12 +252,6 @@ bool download(const Environment &environment, const catalog::Entry &entry, const
                     if (count <= 0)
                         return false;
                     done += static_cast<std::size_t>(count);
-                }
-                *written_since_sync += chunk.size();
-                if (*written_since_sync >= (32ULL * 1024 * 1024))
-                {
-                    fdatasync(descriptor);
-                    *written_since_sync = 0;
                 }
                 return true;
             };
@@ -286,7 +279,7 @@ bool download(const Environment &environment, const catalog::Entry &entry, const
             control);
         saved = writer.finish() && saved;
         writer = {};
-        if (response.ok() && (response.status == 200 || response.status == 206) && saved)
+        if (response.ok() && response.status == 200 && saved)
         {
             std::array<std::uint8_t, 32> digest{}, expected{};
             hash.finish();
