@@ -101,7 +101,8 @@ void Control::cancel()
 Response request_once(const std::string &url, std::uint64_t limit, const Sink &sink,
                       Control &control, const std::string &etag)
 {
-    if (elevated_transport)
+    //if (elevated_transport)
+    if (true)
     {
         if (!curl_ready)
         {
@@ -154,13 +155,13 @@ Response request_once(const std::string &url, std::uint64_t limit, const Sink &s
     if (result >= 0)
         result = sceHttpSetAutoRedirect(resources.tmpl, 0);
     if (result >= 0)
-        result = sceHttpSetResolveTimeOut(resources.tmpl, 5000000);
+        result = sceHttpSetResolveTimeOut(resources.tmpl, 60000000);
     if (result >= 0)
-        result = sceHttpSetConnectTimeOut(resources.tmpl, 5000000);
+        result = sceHttpSetConnectTimeOut(resources.tmpl, 60000000);
     if (result >= 0)
-        result = sceHttpSetSendTimeOut(resources.tmpl, 5000000);
+        result = sceHttpSetSendTimeOut(resources.tmpl, 60000000);
     if (result >= 0)
-        result = sceHttpSetRecvTimeOut(resources.tmpl, 5000000);
+        result = sceHttpSetRecvTimeOut(resources.tmpl, 60000000);
     if (result >= 0)
         result = sceHttpsEnableOption(resources.tmpl, 0x01 | 0x04 | 0x08 | 0x10 | 0x20 | 0x80);
     if (result >= 0)
@@ -190,7 +191,7 @@ Response request_once(const std::string &url, std::uint64_t limit, const Sink &s
     if (result >= 0 && (!headers || !read_headers(std::string_view(headers, size), out)))
         result = -1;
     std::vector<char> buffer(64 * 1024);
-    while (result >= 0 && out.status == 200 && !control.cancelled.load())
+    while (result >= 0 && (out.status == 200 || out.status == 206) && !control.cancelled.load())
     {
         const auto wanted =
             static_cast<std::size_t>(std::min<std::uint64_t>(buffer.size(), limit - out.bytes + 1));
@@ -202,7 +203,7 @@ Response request_once(const std::string &url, std::uint64_t limit, const Sink &s
             result = got;
             break;
         }
-        if (static_cast<std::uint64_t>(got) > limit - out.bytes)
+        if (limit > 0 && static_cast<std::uint64_t>(got) > limit - out.bytes)
         {
             out.error = "The response exceeds its size limit";
             break;
