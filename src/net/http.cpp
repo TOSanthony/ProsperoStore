@@ -83,7 +83,8 @@ Response get(const std::string &url, Purpose purpose, std::uint64_t limit, const
         if (response.status != 301 && response.status != 302 && response.status != 303 &&
             response.status != 307 && response.status != 308)
         {
-            if (response.status != 200 && response.status != 206 && !(response.status == 304 && !etag.empty()))
+            if (response.status != 200 && response.status != 206 &&
+                !(response.status == 304 && !etag.empty()))
                 response.error = "The server refused the request";
             return response;
         }
