@@ -142,12 +142,20 @@ Response curl_request(const std::string &url, std::uint64_t limit, const Sink &s
     const auto result = curl_easy_perform(curl);
     long status = 0;
     const auto info = curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status);
+  
+    hui::sys::log("[CURL] result=%d received=%llu",
+                  static_cast<int>(result),
+                  static_cast<unsigned long long>(state.received));
+      
     out.status = static_cast<int>(status);
     if (control.cancelled.load())
         out.error = "Cancelled";
     else if ((result != CURLE_OK || info != CURLE_OK) && out.error.empty())
         out.error =
             "The network request failed (curl " + std::to_string(static_cast<int>(result)) + ")";
+  
+        hui::sys::log("[CURL] ERROR=%s", out.error.c_str());
+  
     else if (!read_headers(state.headers, out))
         out.error = "The response headers are invalid";
     return out;
