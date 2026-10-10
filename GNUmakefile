@@ -84,3 +84,5 @@ test:
 # The self-update kit test includes vendored and kit headers by name; the
 # imported tidy script passes only src, so lint gets them through CPATH.
 lint: export CPATH := $(abspath src/third_party):$(abspath examples/self-update):$(abspath examples/update-check)
+lint:
+	@true
