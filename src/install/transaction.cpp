@@ -277,11 +277,11 @@ bool download(const Environment &environment, const catalog::Entry &entry, const
                 return true;
             },
             control);
-
-        LOG("[DOWNLOAD] retry=%u response_ok=%d error=%s",
-            attempt,
-            response.ok(),
-            response.error.c_str());
+        
+        hui::sys::log("[DOWNLOAD] attempt=%u status=%d ok=%d received=%llu error=%s",
+                      attempt, response.status, response.ok(),
+                      static_cast<unsigned long long>(received),
+                      response.error.c_str());
         
         saved = writer.finish() && saved;
         writer = {};
@@ -307,7 +307,7 @@ bool download(const Environment &environment, const catalog::Entry &entry, const
         else
             error = response.error.empty() ? "The download failed" : response.error;
         
-        LOG("[DOWNLOAD] failed: %s", error.c_str());
+        hui::sys::log("[DOWNLOAD] failed=%s", error.c_str());
         
         if (control.cancelled.load() || !saved || error == "The download address is not allowed")
             return false;
