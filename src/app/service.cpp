@@ -29,9 +29,49 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
+#include <string>
 
 namespace store
 {
+namespace
+{
+// Envoie un ordre de rescan direct à l'API locale de ShadowMountPlus (port 10101)
+bool trigger_shadowmount_rescan()
+{
+    int sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (sock < 0)
+        return false;
+
+    struct sockaddr_in saddr{};
+    saddr.sin_family = AF_INET;
+    saddr.sin_port = htons(10101);
+    inet_pton(AF_INET, "127.0.0.1", &saddr.sin_addr);
+
+    // Timeout très court (1 seconde) pour ne jamais figer le worker thread
+    struct timeval timeout{1, 0};
+    setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, (const char *)&timeout, sizeof(timeout));
+    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (const char *)&timeout, sizeof(timeout));
+
+    if (connect(sock, (struct sockaddr *)&saddr, sizeof(saddr)) != 0)
+    {
+        close(sock);
+        return false;
+    }
+
+    const std::string request =
+        "POST /api/v1/scan HTTP/1.1\r\n"
+        "Host: 127.0.0.1:10101\r\n"
+        "Content-Length: 0\r\n"
+        "Connection: close\r\n\r\n";
+
+    send(sock, request.c_str(), request.length(), 0);
+    close(sock);
+    return true;
+}
+} // namespace
+
 Service::~Service()
 {
     stop();
@@ -552,6 +592,10 @@ void Service::run_installer()
                     ? "The new version is in place. Give the console a few minutes "
                       "before starting it."
                     : "ShadowMountPlus will add it to your home screen in a moment.";
+
+            // Déclenche immédiatement le scan ShadowMountPlus pour afficher l'icône sans délai
+            trigger_shadowmount_rescan();
+
             if (result.operation == "update" && !result.kept_at.empty())
                 done.detail = "Previous folder kept in " + result.kept_at + ".";
         }
