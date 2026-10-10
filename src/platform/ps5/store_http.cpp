@@ -190,7 +190,8 @@ Response request_once(const std::string &url, std::uint64_t limit, const Sink &s
         result = sceHttpGetAllResponseHeaders(resources.request, &headers, &size);
     if (result >= 0 && (!headers || !read_headers(std::string_view(headers, size), out)))
         result = -1;
-    std::vector<char> buffer(64 * 1024);
+    //std::vector<char> buffer(64 * 1024);
+    std::vector<char> buffer(256 * 1024);
     while (result >= 0 && (out.status == 200 || out.status == 206) && !control.cancelled.load())
     {
         const auto wanted =
