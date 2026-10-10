@@ -43,20 +43,24 @@ bool trigger_shadowmount_rescan()
 {
     int sock = socket(AF_INET, SOCK_STREAM, 0);
     if (sock < 0)
+    {
+        hui::sys::log("[STORE] ShadowMount socket error: %d", errno);
         return false;
+    }
 
     struct sockaddr_in saddr{};
     saddr.sin_family = AF_INET;
     saddr.sin_port = htons(10101);
     inet_pton(AF_INET, "127.0.0.1", &saddr.sin_addr);
 
-    // Timeout très court (1 seconde) pour ne jamais figer le worker thread
-    struct timeval timeout{1, 0};
+    struct timeval timeout{1, 500000}; // 1.5s
     setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, (const char *)&timeout, sizeof(timeout));
     setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (const char *)&timeout, sizeof(timeout));
 
     if (connect(sock, (struct sockaddr *)&saddr, sizeof(saddr)) != 0)
     {
+        hui::sys::log("[STORE] ShadowMount connect failed (port 10101): errno=%d (%s)", 
+                      errno, strerror(errno));
         close(sock);
         return false;
     }
@@ -64,10 +68,32 @@ bool trigger_shadowmount_rescan()
     const std::string request =
         "POST /api/v1/scan HTTP/1.1\r\n"
         "Host: 127.0.0.1:10101\r\n"
+        "User-Agent: ProsperoStore\r\n"
         "Content-Length: 0\r\n"
         "Connection: close\r\n\r\n";
 
-    send(sock, request.c_str(), request.length(), 0);
+    if (send(sock, request.c_str(), request.length(), 0) < 0)
+    {
+        hui::sys::log("[STORE] ShadowMount send failed: errno=%d", errno);
+        close(sock);
+        return false;
+    }
+
+    char response[256]{};
+    int received = recv(sock, response, sizeof(response) - 1, 0);
+    if (received > 0)
+    {
+        response[received] = '\0';
+        // Affiche la première ligne de réponse (ex: HTTP/1.1 200 OK ou 202 Accepted)
+        char *end = strstr(response, "\r\n");
+        if (end) *end = '\0';
+        hui::sys::log("[STORE] ShadowMount API response: %s", response);
+    }
+    else
+    {
+        hui::sys::log("[STORE] ShadowMount API: no response (errno=%d)", errno);
+    }
+
     close(sock);
     return true;
 }
