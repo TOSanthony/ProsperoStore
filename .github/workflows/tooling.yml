@@ -1,10 +1,15 @@
-# ProsperoStore - Lint, test, build the release ZIP, and publish/update release assets.
+# ProsperoStore - Lint, test, build the release ZIP, and publish it.
+# Copyright (C) 2026 BlackBearReloaded
+# SPDX-License-Identifier: GPL-3.0-or-later
 name: Build
 
 on:
   push:
     branches:
       - main
+    tags:
+      - "v[0-9]*.[0-9][0-9][0-9].[0-9][0-9][0-9]"
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -25,10 +30,10 @@ jobs:
 
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.13"
 
@@ -38,7 +43,7 @@ jobs:
           sudo apt-get install --yes clang-18 clang-format-18 lld-18 make ninja-build ccache pkg-config tar unzip wget git libcurl4-openssl-dev openssl
 
       - name: Restore dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: |
             .deps/native
@@ -49,10 +54,10 @@ jobs:
           key: deps-${{ runner.os }}-${{ runner.arch }}-ubuntu24-python313-${{ hashFiles('tools/setup-*-dependencies.sh', 'tools/build-lapy-helper.py', 'tools/fetch-opengl-sdk.sh', 'tools/prepare-opengl.sh') }}
 
       - name: Restore compiler cache
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: .deps/ccache
-          key: ccache-${{ runner.os }}-${{ runner.arch }}-clang18-${{ github.sha }}-${{ github.run_id }}
+          key: ccache-${{ runner.os }}-${{ runner.arch }}-clang18-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             ccache-${{ runner.os }}-${{ runner.arch }}-clang18-
 
@@ -67,8 +72,25 @@ jobs:
         run: |
           metadata=$(python3 -c 'import json; p=json.load(open("sce_sys/param.json")); print(p["titleId"], p["contentVersion"])')
           read -r title_id content_version <<< "$metadata"
+          [[ $title_id =~ ^PPSA[0-9]{5}$ ]] || exit 2
+          [[ $content_version =~ ^[0-9]{2}\.[0-9]{3}\.[0-9]{3}$ ]] || exit 2
           echo "TITLE_ID=$title_id" >> "$GITHUB_ENV"
           echo "CONTENT_VERSION=$content_version" >> "$GITHUB_ENV"
+
+      - name: Name this build
+        id: label
+        shell: bash
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [[ $GITHUB_EVENT_NAME == pull_request ]]; then
+            short=${PR_HEAD:0:7}
+            echo "artifact=${GITHUB_REPOSITORY##*/}-PR$PR_NUMBER-$short" >> "$GITHUB_OUTPUT"
+            echo "BUILD_LABEL=PR $PR_NUMBER, $short" >> "$GITHUB_ENV"
+          else
+            echo "artifact=prosperostore-$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Lint source and metadata
         run: LINT_SKIP_TIDY=1 make lint
@@ -104,38 +126,63 @@ jobs:
           sha256sum "$TITLE_ID.zip" > SHA256SUMS
           cat SHA256SUMS
 
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+      - name: Upload build
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: prosperostore-build
+          name: ${{ steps.label.outputs.artifact }}
           path: |
             dist/${{ env.TITLE_ID }}.zip
             dist/SHA256SUMS
           if-no-files-found: error
-          retention-days: 1
+          compression-level: 0
+          retention-days: 14
 
   release:
-    name: Update Release Assets
+    name: GitHub release
+    if: github.event_name != 'pull_request'
     needs: build
     runs-on: ubuntu-24.04
     permissions:
+      actions: read
       contents: write
 
     steps:
-      - name: Download build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: prosperostore-build
-          path: release-files
-
-      - name: Publish or Update Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: latest
-          name: "ProsperoStore (Latest Build)"
-          prerelease: true
-          files: |
-            release-files/PPSA99000.zip
-            release-files/SHA256SUMS
+      - name: Download verified build
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh run download "$GITHUB_RUN_ID"
+          --repo "$GITHUB_REPOSITORY"
+          --name "prosperostore-$GITHUB_SHA"
+          --dir release
+
+      - name: Publish or update the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd release
+          mapfile -t zips < <(find . -type f -name 'PPSA*.zip')
+          mapfile -t sums < <(find . -type f -name 'SHA256SUMS')
+          if (( ${#zips[@]} != 1 || ${#sums[@]} != 1 )); then
+            echo "Expected exactly one app-folder ZIP and SHA256SUMS." >&2
+            exit 1
+          fi
+          (cd "$(dirname "${sums[0]}")" && sha256sum -c SHA256SUMS)
+
+          TARGET_TAG="latest"
+
+          # Si la release n'existe pas encore, on la crée
+          if ! gh release view "$TARGET_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$TARGET_TAG" "${zips[0]}" "${sums[0]}" \
+              --repo "$GITHUB_REPOSITORY" \
+              --prerelease \
+              --title "ProsperoStore (Latest)" \
+              --notes "Automated build updated at commit $GITHUB_SHA"
+          else
+            # Si elle existe déjà, on remplace les fichiers sans toucher au reste
+            gh release upload "$TARGET_TAG" "${zips[0]}" "${sums[0]}" \
+              --repo "$GITHUB_REPOSITORY" \
+              --clobber
+          fi
