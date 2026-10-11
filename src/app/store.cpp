@@ -397,13 +397,13 @@ void Screen::rebuild()
             shelves_.push_back(std::move(next));
         };
         const auto listed = [](const App &a) { return a.catalog_badge != "Coming soon"; };
-        shelf("Updates for you", [](const App &a) { return a.badge == "Update"; }, false);
-        shelf("New and updated", [&](const App &a) { return !a.local_only && listed(a); }, true);
-        shelf("Apps", [&](const App &a) { return a.kind == "app" && listed(a); }, false);
-        shelf("Games", [&](const App &a) { return a.kind == "game" && listed(a); }, false);
-        shelf("Tools", [&](const App &a) { return a.kind == "tool" && listed(a); }, false);
-        shelf("Coming soon", [](const App &a) { return a.catalog_badge == "Coming soon"; }, false);
-        shelf("On this console", [](const App &a) { return !a.installed.empty(); }, false);
+        shelf("Mises à jour pour vous", [](const App &a) { return a.badge == "Update"; }, false);
+        shelf("Nouveautés et mises à jour", [&](const App &a) { return !a.local_only && listed(a); }, true);
+        shelf("Applications", [&](const App &a) { return a.kind == "app" && listed(a); }, false);
+        shelf("Jeux", [&](const App &a) { return a.kind == "game" && listed(a); }, false);
+        shelf("Outils", [&](const App &a) { return a.kind == "tool" && listed(a); }, false);
+        shelf("Bientôt disponible", [](const App &a) { return a.catalog_badge == "Coming soon"; }, false);
+        shelf("Sur cette console", [](const App &a) { return !a.installed.empty(); }, false);
     }
     // The stage features the newest releases.
     featured_.clear();
@@ -1176,7 +1176,7 @@ void Screen::update_page(const InputFrame &input, ui::Feedback &feedback)
             ask_ = Ask::adopt;
             ask_id_ = shown.title_id;
             dialog_.open({ui::StatusKind::question,
-                          "Manage " + shown.name + " with ProsperoStore?",
+                          "Manage " + shown.name + " with Store?",
                           "Nothing is changed now. From then on its updates are offered here. An "
                           "update replaces the app's whole folder; the previous one, with "
                           "anything you added inside it, is kept in the store's \"previous\" "
@@ -2157,12 +2157,12 @@ Screen::Offer Screen::offer(const App &app) const
         const auto phase = waiting ? Phase::idle : static_cast<Phase>(activity_.phase);
         out.busy = true;
         out.tone = 1;
-        out.headline = phase == Phase::downloading  ? "Downloading"
-                       : phase == Phase::verifying  ? "Verifying"
-                       : phase == Phase::unpacking  ? "Unpacking"
-                       : phase == Phase::activating ? "Finishing"
-                       : phase == Phase::removing   ? "Removing"
-                                                    : "Waiting";
+        out.headline = phase == Phase::downloading  ? "Téléchargement"
+                       : phase == Phase::verifying  ? "Vérification"
+                       : phase == Phase::unpacking  ? "Décompression"
+                       : phase == Phase::activating ? "Finalisation"
+                       : phase == Phase::removing   ? "Suppression"
+                                                    : "En attente";
         const bool measured =
             (phase == Phase::downloading || phase == Phase::unpacking) && activity_.total > 0;
         if (measured)
@@ -2201,7 +2201,7 @@ Screen::Offer Screen::offer(const App &app) const
         out.reason = restart_needed_
                          ? "Close ProsperoStore and open it again to use the new version."
                      : newer ? ""
-                             : "You are using it right now.";
+                             : "Vous utilisez actuellement cette application.";
         if (newer && !restart_needed_)
         {
             out.label = "Update";
@@ -2413,7 +2413,7 @@ void Screen::draw_action_box(const ui::Fonts &fonts, std::uint32_t glass, const 
         ui::text(list, fonts.semibold,
                  fonts.semibold.font->fit(ui::upper(state.headline), 13, 110.0f), cx, cy + 42.0f,
                  13, kInk.with_alpha(0.62f), gfx::Align::center, 2.0f);
-        const char *names[] = {"Download", "Verify", "Unpack", "Finish"};
+        const char *names[] = {"Télécharger", "Vérifier", "Décompresser", "Terminer"};
         const int step = !mine                         ? -1
                          : phase == Phase::downloading ? 0
                          : phase == Phase::verifying   ? 1
