@@ -381,7 +381,7 @@ class Screen
     bool inventory_ready_ = false, catalog_current_ = false;
     std::string query_;
     std::string qr_id_;
-    std::uint32_t qr_texture_ = 0, coming_soon_art_ = 0;
+    std::uint32_t qr_texture_ = 0, coming_soon_art_ = 0, playstation_logo_texture_ = 0;
     int qr_width_ = 0;
     Sort sort_ = Sort::name;
 
