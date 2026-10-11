@@ -665,8 +665,8 @@ void Screen::refresh_detail()
         }
         if (!entry.source.empty())
         {
-            blocks.push_back(Block::heading("Source", 3));
-            blocks.push_back(Block::paragraph(entry.source));
+            //blocks.push_back(Block::heading("Source", 3));
+            //blocks.push_back(Block::paragraph(entry.source));
         }
     }
     else if (app.detail_error.empty() && !app.local_only)
@@ -674,7 +674,7 @@ void Screen::refresh_detail()
     for (const auto &installed : app.installed)
     {
         blocks.push_back(
-            Block::heading(installed.image ? "Image installée" : "Sur cette console", 3));
+            Block::heading(installed.image ? "Image installée" : "Installer sur cette console :", 3));
         blocks.push_back(Block::paragraph(installed.path));
     }
     article_.set_content(std::move(blocks));
@@ -2420,8 +2420,10 @@ void Screen::draw_action_box(const ui::Fonts &fonts, std::uint32_t glass, const 
 
     const Offer state = offer(app);
     const float x = box.x + 34.0f, w = box.w - 68.0f;
-    ui::text(list, fonts.semibold, "SUR CETTE CONSOLE", x, box.y + 54.0f, 16, kInk.with_alpha(0.55f),
-             gfx::Align::left, 3.5f);
+    //ui::text(list, fonts.semibold, "SUR CETTE CONSOLE", x, box.y + 54.0f, 16, kInk.with_alpha(0.55f),
+    //         gfx::Align::left, 3.5f);
+    ui::text(list, fonts.semibold, "Installer sur cette console", box.cx(), box.y + 54.0f, 16, kInk.with_alpha(0.55f),
+               gfx::Align::center, 3.5f);
     const float cx = box.cx(), cy = box.y + 196.0f;
     if (state.busy)
     {
@@ -2674,10 +2676,10 @@ void Screen::draw_page(const ui::Fonts &fonts, std::uint32_t glass)
         const Rect code{kActionBox.x + 4.0f, kActionBox.y + kActionBox.h + 26.0f, 92.0f, 92.0f};
         list.rounded_rect(code.inset(-6.0f), 12, kWhite);
         list.image(qr_texture_, code, gfx::kFullUv, kWhite);
-        ui::text(list, fonts.semibold, "Scannez pour la page et la source", code.x + code.w + 26.0f,
+        ui::text(list, fonts.semibold, "Scannez le QR Code pour accéder à la page", code.x + code.w + 26.0f,
                  code.y + 38.0f, 20, kInk.with_alpha(0.86f));
-        ui::text(list, fonts.mono, "jellyfinarr.synology.me/store/app/" + app.title_id,
-                 code.x + code.w + 26.0f, code.y + 68.0f, 17, kInk.with_alpha(0.55f));
+        //ui::text(list, fonts.mono, "jellyfinarr.synology.me/store/app/" + app.title_id,
+        //         code.x + code.w + 26.0f, code.y + 68.0f, 17, kInk.with_alpha(0.55f));
         list.pop_opacity();
     }
 
