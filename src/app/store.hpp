@@ -113,8 +113,7 @@ class Screen
     {
         playstation_logo_texture_ = texture;
     }
-    float stage_button_width_ = 276.0f;
-    // A floating notice in the top-right corner; it leaves after ten seconds.
+    // A floatng notice in the top-right corner; it leaves after ten seconds.
     void notify(std::string title, std::string body);
     // A newer ProsperoStore is listed: asked once each time the store opens
     // (Update now / What's new / Skip), with the release notes in a view of their own.
@@ -281,6 +280,7 @@ class Screen
     hui::gfx::Rect focus_target() const;
     float focus_radius() const;
     float scroll_target() const;
+    float stage_button_width_ = 276.0f;
     void refuse(hui::ui::Feedback &feedback, bool repeat, float dx, float dy);
     void step_section(int delta, bool repeat, hui::ui::Feedback &feedback);
     void show_banner(int slot);
