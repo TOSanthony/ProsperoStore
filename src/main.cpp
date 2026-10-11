@@ -940,6 +940,10 @@ int main()
     pad.close();
     if (coming_soon_texture)
         glDeleteTextures(1, &coming_soon_texture);
+
+    if (ps_logo_texture)
+        glDeleteTextures(1, &ps_logo_texture);
+    
     for (auto &[id, art] : textures)
     {
         (void)id;
