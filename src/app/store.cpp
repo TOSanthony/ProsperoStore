@@ -1680,17 +1680,37 @@ void Screen::draw_stage(const ui::Fonts &fonts)
 
     // The call to action lights up when the stage holds the focus; beside
     // it, what the app is on this console.
+    //if (stage_ < 0)
+    //    return; // nothing on the stage yet: no call to action
+    //const float lit = banner_focus_.value;
+    //const Rect b = kStageButton;
+    //list.glow(b, b.h * 0.5f, 26, kAccent.with_alpha((0.22f + 0.08f * breath()) * lit));
+    //list.bordered_rect(b, b.h * 0.5f, gfx::mix(kInk.with_alpha(0.1f), kAccent, lit), 1.5f,
+    //                   gfx::mix(kInk.with_alpha(0.34f), kAccent, lit));
+    //const auto glyphs = lit > 0.5f ? ui::GlyphStyle::light() : ui::GlyphStyle::dark();
+    //ui::draw_button(list, fonts, glyphs, ui::Button::cross, b.x + 22.0f, b.cy(), 32);
+    //ui::text(list, fonts.semibold, "Afficher les détails", b.x + 70.0f, centred(b.cy(), 24), 24,
+    //         gfx::mix(kInk, kOnAccent, lit));
     if (stage_ < 0)
         return; // nothing on the stage yet: no call to action
     const float lit = banner_focus_.value;
-    const Rect b = kStageButton;
+    
+    // Calcul dynamique de la largeur en fonction du texte "Afficher les détails"
+    const std::string action_label = "Afficher les détails";
+    const float text_width = fonts.semibold.measure(action_label, 24);
+    // Icône de la croix (32px) + marges autour (22px à gauche, 24px entre l'icône et le texte, 24px à droite)
+    const float dynamic_width = 22.0f + 32.0f + 24.0f + text_width + 24.0f;
+    
+    const Rect b{kStageButton.x, kStageButton.y, dynamic_width, kStageButton.h};
+
     list.glow(b, b.h * 0.5f, 26, kAccent.with_alpha((0.22f + 0.08f * breath()) * lit));
     list.bordered_rect(b, b.h * 0.5f, gfx::mix(kInk.with_alpha(0.1f), kAccent, lit), 1.5f,
                        gfx::mix(kInk.with_alpha(0.34f), kAccent, lit));
     const auto glyphs = lit > 0.5f ? ui::GlyphStyle::light() : ui::GlyphStyle::dark();
     ui::draw_button(list, fonts, glyphs, ui::Button::cross, b.x + 22.0f, b.cy(), 32);
-    ui::text(list, fonts.semibold, "Afficher les détails", b.x + 70.0f, centred(b.cy(), 24), 24,
+    ui::text(list, fonts.semibold, action_label, b.x + 22.0f + 32.0f + 24.0f, centred(b.cy(), 24), 24,
              gfx::mix(kInk, kOnAccent, lit));
+
     if (stage_ >= 0)
     {
         const App &app = apps_[static_cast<std::size_t>(stage_)];
@@ -2759,11 +2779,11 @@ void Screen::draw_intro(const ui::Fonts &fonts)
     list.push_opacity(1.0f - tween::smoothstep(intro_leave_ * 2.0f));
     const float name = still ? 1.0f : tween::cubic_out(tween::clamp01((t - 0.45f) / 0.7f));
     if (name > 0.0f)
-        ui::text(list, fonts.semibold, "PROSPEROSTORE", cx, centred(660.0f, 40), 40,
+        ui::text(list, fonts.semibold, "STORE", cx, centred(660.0f, 40), 40,
                  kInk.with_alpha(name), gfx::Align::center, tween::lerp(26.0f, 11.0f, name));
     const float source = still ? 1.0f : tween::smoothstep((t - 0.8f) / 0.5f);
     if (source > 0.0f)
-        ui::text(list, fonts.semibold, "homebrew.page", cx, centred(716.0f, 24), 24,
+        ui::text(list, fonts.semibold, "Catalogue PS5", cx, centred(716.0f, 24), 24,
                  gold.with_alpha(0.92f * source), gfx::Align::center, 2.0f);
     // A longer wait says what it is waiting for, with a line of light running along a track.
     const float waiting = tween::smoothstep((t - 2.2f) / 0.5f);
@@ -3436,9 +3456,19 @@ void Screen::draw_panel(const ui::Fonts &fonts, std::uint32_t glass)
         // About: the store's mark, its name and version, then the article.
         const float cx = px + 64.0f, cy = panel.y + 96.0f;
         list.glow({cx - 56.0f, cy - 56.0f, 112.0f, 112.0f}, 40, 50, kAccent.with_alpha(0.2f));
-        list.rotated_rect({cx - 40.0f, cy - 40.0f, 80.0f, 80.0f}, 16.0f, 0.7854f, kAccent);
-        list.rotated_rect({cx - 18.0f, cy - 18.0f, 36.0f, 36.0f}, 7.0f, 0.7854f, kDeep);
-        ui::text(list, fonts.display, "ProsperoStore", px + 150.0f, panel.y + 98.0f, 52, kInk);
+        //list.rotated_rect({cx - 40.0f, cy - 40.0f, 80.0f, 80.0f}, 16.0f, 0.7854f, kAccent);
+        //list.rotated_rect({cx - 18.0f, cy - 18.0f, 36.0f, 36.0f}, 7.0f, 0.7854f, kDeep);
+
+        // Affichage de la texture PlayStation à la place des formes géométriques
+        if (playstation_logo_texture_ != 0)
+        {
+            list.image(playstation_logo_texture_, {cx - 40.0f, cy - 40.0f, 80.0f, 80.0f}, gfx::kFullUv, kWhite, 16.0f);
+        }
+
+        //ui::text(list, fonts.display, "ProsperoStore", px + 150.0f, panel.y + 98.0f, 52, kInk);
+        // Exemple : Afficher "PS5" à la place des formes géométriques du logo
+        ui::text(list, fonts.display, "PS5", cx, centred(cy, 32), 32, kAccent, gfx::Align::center);
+
         float words = ui::text(list, fonts.regular, "Applications depuis ", px + 152.0f, panel.y + 136.0f, 22,
                                kInk.with_alpha(0.62f));
         ui::text(list, fonts.semibold, "homebrew.page", px + 152.0f + words, panel.y + 136.0f, 22,
