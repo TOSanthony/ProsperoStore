@@ -210,6 +210,7 @@ int main()
         elevated && pthread_create(&request_thread, nullptr, development_requests, nullptr) == 0;
     store::Screen screen;
     screen.play_intro();
+    
     // The picture for coming-soon apps that have no artwork of their own.
     std::uint32_t coming_soon_texture = 0;
     {
@@ -221,6 +222,19 @@ int main()
                 renderer.batch().create_texture(image.width, image.height, image.rgba.data());
         screen.set_coming_soon_art(coming_soon_texture);
     }
+
+    // The picture for the PlayStation logo.
+    std::uint32_t ps_logo_texture = 0;
+    {
+        std::string encoded;
+        Image image;
+        if (save::read_file(app_root + "/assets/images/playstation-logo.png", &encoded, 2u << 20) &&
+            decode_png(encoded, image))
+            ps_logo_texture =
+                renderer.batch().create_texture(image.width, image.height, image.rgba.data());
+        screen.set_playstation_logo_texture(ps_logo_texture);
+    }
+    
     const std::string own_version = read_content_version(app_root + "/sce_sys/param.json");
     store::Service service(elevated ? storage_root : "", own_version);
     screen.set_self("PPSA99000", own_version);
