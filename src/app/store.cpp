@@ -3455,28 +3455,28 @@ void Screen::draw_panel(const ui::Fonts &fonts, std::uint32_t glass)
     {
         // About: the store's mark, its name and version, then the article.
         const float cx = px + 64.0f, cy = panel.y + 96.0f;
-        list.glow({cx - 56.0f, cy - 56.0f, 112.0f, 112.0f}, 40, 50, kAccent.with_alpha(0.2f));
+        //list.glow({cx - 56.0f, cy - 56.0f, 112.0f, 112.0f}, 40, 50, kAccent.with_alpha(0.2f));
         //list.rotated_rect({cx - 40.0f, cy - 40.0f, 80.0f, 80.0f}, 16.0f, 0.7854f, kAccent);
         //list.rotated_rect({cx - 18.0f, cy - 18.0f, 36.0f, 36.0f}, 7.0f, 0.7854f, kDeep);
 
         // Affichage de la texture PlayStation à la place des formes géométriques
         if (playstation_logo_texture_ != 0)
         {
-            list.image(playstation_logo_texture_, {cx - 40.0f, cy - 40.0f, 80.0f, 80.0f}, gfx::kFullUv, kWhite, 16.0f);
+            list.image(playstation_logo_texture_, {cx - 40.0f, cy - 40.0f, 100.0f, 100.0f}, gfx::kFullUv, kWhite, 16.0f);
         }
 
         //ui::text(list, fonts.display, "ProsperoStore", px + 150.0f, panel.y + 98.0f, 52, kInk);
         // Exemple : Afficher "PS5" à la place des formes géométriques du logo
-        ui::text(list, fonts.display, "PS5", cx, centred(cy, 32), 32, kAccent, gfx::Align::center);
+        //ui::text(list, fonts.display, "PS5", cx, centred(cy, 32), 32, kAccent, gfx::Align::center);
 
-        float words = ui::text(list, fonts.regular, "Applications depuis ", px + 152.0f, panel.y + 136.0f, 22,
-                               kInk.with_alpha(0.62f));
-        ui::text(list, fonts.semibold, "homebrew.page", px + 152.0f + words, panel.y + 136.0f, 22,
-                 kAccent);
-        words = ui::text(list, fonts.regular, "Proposé par ", px + 152.0f, panel.y + 168.0f,
-                         22, kInk.with_alpha(0.62f));
-        ui::text(list, fonts.semibold, "BlackBearReloaded", px + 152.0f + words, panel.y + 168.0f,
-                 22, kInk);
+        //float words = ui::text(list, fonts.regular, "Applications depuis ", px + 152.0f, panel.y + 136.0f, 22,
+        //                       kInk.with_alpha(0.62f));
+        //ui::text(list, fonts.semibold, "homebrew.page", px + 152.0f + words, panel.y + 136.0f, 22,
+        //         kAccent);
+        //words = ui::text(list, fonts.regular, "Proposé par ", px + 152.0f, panel.y + 168.0f,
+        //                 22, kInk.with_alpha(0.62f));
+        //ui::text(list, fonts.semibold, "BlackBearReloaded", px + 152.0f + words, panel.y + 168.0f,
+        //         22, kInk);
         if (!self_version_.empty())
             pill(list, fonts, "Version " + self_version_,
                  px + pw - fonts.semibold.measure("Version " + self_version_, 21.0f) - 34.0f,
