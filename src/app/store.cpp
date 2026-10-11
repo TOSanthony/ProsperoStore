@@ -839,9 +839,15 @@ Rect Screen::focus_target() const
 {
     if (zone_ == Zone::banner)
     {
-        Rect button = kStageButton.inset(-7.0f);
+        //Rect button = kStageButton.inset(-7.0f);
+        //button.y += scroll_.value;
+        //return button;
+        // Utilise la largeur dynamique calculée pour le bouton de la bannière
+        Rect button{kStageButton.x, kStageButton.y, stage_button_width_, kStageButton.h};
+        button = button.inset(-7.0f);
         button.y += scroll_.value;
         return button;
+        
     }
     if (zone_ == Zone::chips || visible_.empty())
     {
@@ -1699,9 +1705,9 @@ void Screen::draw_stage(const ui::Fonts &fonts)
     const std::string action_label = "Afficher les détails";
     const float text_width = fonts.semibold.measure(action_label, 24);
     // Icône de la croix (32px) + marges autour (22px à gauche, 24px entre l'icône et le texte, 24px à droite)
-    const float dynamic_width = 22.0f + 32.0f + 24.0f + text_width + 24.0f;
+    stage_button_width_ = 22.0f + 32.0f + 24.0f + text_width + 24.0f;
     
-    const Rect b{kStageButton.x, kStageButton.y, dynamic_width, kStageButton.h};
+    const Rect b{kStageButton.x, kStageButton.y, stage_button_width_, kStageButton.h};
 
     list.glow(b, b.h * 0.5f, 26, kAccent.with_alpha((0.22f + 0.08f * breath()) * lit));
     list.bordered_rect(b, b.h * 0.5f, gfx::mix(kInk.with_alpha(0.1f), kAccent, lit), 1.5f,
