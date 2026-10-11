@@ -1525,14 +1525,21 @@ void Screen::draw_top_bar(const ui::Fonts &fonts)
     auto &list = scene_;
     // A soft band of Farlight's dark, so the bar reads over any key art.
     list.gradient_rect({0, 0, kWidth, 200.0f}, 0, kDeep.with_alpha(0.7f), kDeep.with_alpha(0.0f));
-    list.rotated_rect({kMargin + 2.0f, kTopY - 11.0f, 22.0f, 22.0f}, 5.0f, 0.7854f, kAccent);
-    list.rotated_rect({kMargin + 8.0f, kTopY - 5.0f, 10.0f, 10.0f}, 2.0f, 0.7854f, kDeep);
-    const float brand = ui::text(list, fonts.semibold, "PROSPEROSTORE", kMargin + 42.0f,
+    //list.rotated_rect({kMargin + 2.0f, kTopY - 11.0f, 22.0f, 22.0f}, 5.0f, 0.7854f, kAccent);
+    //list.rotated_rect({kMargin + 8.0f, kTopY - 5.0f, 10.0f, 10.0f}, 2.0f, 0.7854f, kDeep);
+
+    // Remplacement des rotated_rect par la texture du logo PlayStation dans la barre du haut
+    if (playstation_logo_texture_ != 0)
+    {
+        list.image(playstation_logo_texture_, {kMargin, kTopY - 14.0f, 28.0f, 28.0f}, gfx::kFullUv, kWhite);
+    }
+    
+    const float brand = ui::text(list, fonts.semibold, "PlayStation Store", kMargin + 42.0f,
                                  centred(kTopY, 22), 22, kInk, gfx::Align::left, 5.0f);
     // Where the apps come from, said once and quietly beside the name.
     const float x = kMargin + 42.0f + brand + 20.0f;
     list.rounded_rect({x, kTopY - 11.0f, 1.5f, 22.0f}, 0, kInk.with_alpha(0.25f));
-    ui::text(list, fonts.semibold, "homebrew.page", x + 20.0f, centred(kTopY, 20), 20,
+    ui::text(list, fonts.semibold, "Catalogue PS5", x + 20.0f, centred(kTopY, 20), 20,
              kAccent.with_alpha(0.92f));
 
     // The sections: words, the active one lit, one gold line gliding under it.
@@ -3218,7 +3225,8 @@ void Screen::draw_panel(const ui::Fonts &fonts, std::uint32_t glass)
     list.push_transform(1.0f, 0, 0, 0, 24.0f * motion() * (1.0f - tween::cubic_out(t)));
 
     // The left: whose room this is, the room's name, and the three rooms.
-    constexpr const char *kTabs[] = {"Téléchargements", "Paramètres", "À propos"};
+    //constexpr const char *kTabs[] = {"Téléchargements", "Paramètres", "À propos"};
+    constexpr const char *kTabs[] = {"Installations", "Paramètres", "À propos"};
     ui::text(list, fonts.semibold, "PROSPEROSTORE", kMargin, 170.0f, 18, kAccent, gfx::Align::left,
              4.0f);
     ui::text(list, fonts.display, kTabs[panel_tab_], kMargin - 3.0f, 248.0f, 64, kInk);
@@ -3402,13 +3410,13 @@ void Screen::draw_panel(const ui::Fonts &fonts, std::uint32_t glass)
         } rows[] = {
             {3, "Emplacement d'installation", "Où vont les nouvelles applications : un dossier analysé par ShadowMountPlus.", 0, place,
              true},
-            {4, "Rechercher une mise à jour de ProsperoStore", "Vérifié au démarrage ; une notification apparaît le cas échéant.", 1, "",
+            {4, "Rechercher les mises à jour de l'application", "Vérifie au démarrage et affiche une notification le cas échéant.", 1, "",
              settings_.check_updates},
             {5, "Sons", "Les sons de l'interface.", 1, "", settings_.sounds},
             {6, "Vibration", "Léger retour haptique de la manette.", 1, "", settings_.vibration},
             {8, "Réduire les mouvements", "Désactive les effets de glissement ou de flottement au profit de fondus.", 1, "",
              settings_.reduce_motion},
-            {7, "ProsperoStore", "Sa page permet de le mettre à jour.", 2,
+            {7, "PlayStation®Store", "Sa page permet de le mettre à jour.", 2,
              restart_needed_ ? "Redémarrer pour terminer"
              : newer          ? "Version " + self->available_version + " disponible"
                               : "Version " + self_version_ + (self ? ", à jour" : ""),
