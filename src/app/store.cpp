@@ -84,8 +84,15 @@ constexpr Rect kActionBox{1336.0f, 212.0f, 488.0f, 604.0f};
 constexpr Rect kPageHero{96.0f, 84.0f, 212.0f, 212.0f}; // the icon, when it is the app's picture
 constexpr float kButtonRadius = 18.0f;
 
-constexpr const char *kSectionNames[] = {"Discover",    "Apps",      "Games",  "Tools",
-                                         "Coming soon", "Installed", "Updates"};
+constexpr const char *kSectionNames[] = {
+    "Découvrir", 
+    "Applications", 
+    "Jeux", 
+    "Outils",
+    "Bientôt disponible", 
+    "Installés", 
+    "Mises à jour"
+};
 
 // What one pass over the cards records: all covers, then all shapes, then each
 // face, so a grid costs a few draw calls instead of several per card.
@@ -284,9 +291,8 @@ void Screen::open_store_offer(ui::Feedback &feedback)
     buttons.push_back({"Update now", ui::ButtonKind::primary});
     const int update_now = static_cast<int>(buttons.size()) - 1;
     dialog_.open({ui::StatusKind::info, "ProsperoStore " + store_offer_version_ + " is available",
-                  "You have " + self_version_ +
-                      ". The update is checked against the signed catalog, and ProsperoStore "
-                      "closes when it is installed.",
+                  "Vous utilisez la version " + self_version_ +
+                      ". La mise à jour est vérifiée à l'aide du catalogue signé, et le Store se fermera une fois l'installation terminée. ",
                   std::move(buttons), update_now},
                  feedback);
     store_offer_ = StoreOffer::asked;
