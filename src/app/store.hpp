@@ -113,6 +113,7 @@ class Screen
     {
         playstation_logo_texture_ = texture;
     }
+    float stage_button_width_ = 276.0f;
     // A floating notice in the top-right corner; it leaves after ten seconds.
     void notify(std::string title, std::string body);
     // A newer ProsperoStore is listed: asked once each time the store opens
